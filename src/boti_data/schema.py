@@ -1,0 +1,245 @@
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+import re
+from typing import Any
+
+import dask.dataframe as dd
+import pandas as pd
+import pyarrow as pa
+
+
+DataFrameLike = pd.DataFrame | dd.DataFrame
+
+_CANONICAL_DTYPE_ALIASES = {
+    "int64": "Int64",
+    "int64[pyarrow]": "Int64",
+    "int32": "Int32",
+    "int32[pyarrow]": "Int32",
+    "float64": "Float64",
+    "float64[pyarrow]": "Float64",
+    "double[pyarrow]": "Float64",
+    "bool": "boolean",
+    "boolean": "boolean",
+    "boolean[pyarrow]": "boolean",
+    "string": "string",
+    "string[python]": "string",
+    "string[pyarrow]": "string",
+    "large_string[pyarrow]": "string",
+    "datetime64[ns, utc]": "datetime64[ns, UTC]",
+    "datetime64[us, utc]": "datetime64[ns, UTC]",
+    "datetime64[ms, utc]": "datetime64[ns, UTC]",
+    "timestamp[ns, tz=utc][pyarrow]": "datetime64[ns, UTC]",
+    "timestamp[us, tz=utc][pyarrow]": "datetime64[ns, UTC]",
+    "timestamp[ms, tz=utc][pyarrow]": "datetime64[ns, UTC]",
+    "datetime64[ns]": "datetime64[ns]",
+    "datetime64[us]": "datetime64[ns]",
+    "datetime64[ms]": "datetime64[ns]",
+    "timestamp[ns][pyarrow]": "datetime64[ns]",
+    "timestamp[us][pyarrow]": "datetime64[ns]",
+    "timestamp[ms][pyarrow]": "datetime64[ns]",
+    "category": "category",
+    "object": "object",
+}
+
+_BOOLEAN_LITERAL_MAP = {
+    "true": True,
+    "false": False,
+    "1": True,
+    "0": False,
+    "yes": True,
+    "no": False,
+    "y": True,
+    "n": False,
+    "t": True,
+    "f": False,
+}
+
+_PANDAS_DATETIME_DTYPE_RE = re.compile(r"^datetime64\[(?P<unit>[^,\]]+)(?:,\s*(?P<tz>[^\]]+))?\]$")
+_PYARROW_TIMESTAMP_DTYPE_RE = re.compile(
+    r"^timestamp\[(?P<unit>[^,\]]+)(?:,\s*tz=(?P<tz>[^\]]+))?\]\[pyarrow\]$"
+)
+
+
+class SchemaValidationError(TypeError):
+    """Raised when a DataFrame does not satisfy an expected schema contract."""
+
+
+def normalize_dtype_alias(dtype: Any) -> str:
+    """Normalize pandas/Dask/PyArrow dtype strings to a canonical comparison form."""
+    dtype_str = str(dtype).strip()
+    lowered = dtype_str.lower()
+    if lowered in _CANONICAL_DTYPE_ALIASES:
+        return _CANONICAL_DTYPE_ALIASES[lowered]
+    pandas_datetime_match = _PANDAS_DATETIME_DTYPE_RE.match(lowered)
+    if pandas_datetime_match:
+        timezone = pandas_datetime_match.group("tz")
+        if timezone is not None:
+            return "datetime64[ns, UTC]" if timezone == "utc" else dtype_str
+        return "datetime64[ns]"
+
+    pyarrow_timestamp_match = _PYARROW_TIMESTAMP_DTYPE_RE.match(lowered)
+    if pyarrow_timestamp_match:
+        timezone = pyarrow_timestamp_match.group("tz")
+        if timezone is not None:
+            return "datetime64[ns, UTC]" if timezone == "utc" else dtype_str
+        return "datetime64[ns]"
+    return dtype_str
+
+
+def normalize_schema_map(schema_map: Mapping[str, str]) -> dict[str, str]:
+    """Normalize an expected schema map to the canonical dtype alias form."""
+    return {column: normalize_dtype_alias(dtype) for column, dtype in schema_map.items()}
+
+
+def infer_schema_map(
+    dataframe: DataFrameLike,
+    *,
+    columns: Sequence[str] | None = None,
+) -> dict[str, str]:
+    """Infer the normalized dtype map for the given DataFrame."""
+    selected_columns = columns or list(dataframe.columns)
+    missing = [column for column in selected_columns if column not in dataframe.columns]
+    if missing:
+        raise SchemaValidationError(f"Missing column(s) while inferring schema: {missing}.")
+
+    return {
+        column: normalize_dtype_alias(dataframe.dtypes[column])
+        for column in selected_columns
+    }
+
+
+def _drop_timezone_partition(series: pd.Series) -> pd.Series:
+    try:
+        return series.dt.tz_localize(None)
+    except (AttributeError, TypeError):
+        return series
+
+
+def _coerce_boolean_partition(series: pd.Series) -> pd.Series:
+    normalized = series.astype("string").str.strip().str.lower()
+    coerced = normalized.map(_BOOLEAN_LITERAL_MAP)
+    unresolved = coerced.isna() & normalized.notna()
+    if unresolved.any():
+        numeric = pd.to_numeric(normalized[unresolved], errors="coerce")
+        coerced.loc[unresolved] = numeric.map(
+            lambda value: pd.NA if pd.isna(value) else bool(int(value))
+        )
+    return pd.Series(coerced, index=series.index, dtype="boolean")
+
+
+def _coerce_series(series: Any, target_dtype: str, *, is_dask: bool) -> Any:
+    if target_dtype == "datetime64[ns, UTC]":
+        if is_dask:
+            return dd.to_datetime(series, errors="coerce", utc=True)
+        return pd.to_datetime(series, errors="coerce", utc=True)
+
+    if target_dtype == "datetime64[ns]":
+        if is_dask:
+            converted = dd.to_datetime(series, errors="coerce")
+            return converted.map_partitions(
+                _drop_timezone_partition,
+                meta=(series.name, "datetime64[ns]"),
+            )
+        return _drop_timezone_partition(pd.to_datetime(series, errors="coerce"))
+
+    if target_dtype in {"Int64", "Int32", "Float64"}:
+        if is_dask:
+            return dd.to_numeric(series, errors="coerce").astype(target_dtype)
+        return pd.to_numeric(series, errors="coerce").astype(target_dtype)
+
+    if target_dtype == "boolean":
+        if is_dask:
+            return series.map_partitions(
+                _coerce_boolean_partition,
+                meta=(series.name, "boolean"),
+            )
+        return _coerce_boolean_partition(series)
+
+    if target_dtype == "string":
+        return series.astype("string")
+
+    if target_dtype == "category":
+        return series.astype("category")
+
+    return series.astype(target_dtype)
+
+
+def apply_schema_map(
+    dataframe: DataFrameLike,
+    schema_map: Mapping[str, str],
+    *,
+    require_columns: bool = False,
+    use_arrow: bool = True,
+) -> DataFrameLike:
+    """Cast the provided DataFrame columns to a canonical schema."""
+    normalized_schema = normalize_schema_map(schema_map)
+    missing = [column for column in normalized_schema if column not in dataframe.columns]
+    if missing and require_columns:
+        raise SchemaValidationError(f"Missing required column(s): {missing}.")
+
+    if use_arrow and not isinstance(dataframe, dd.DataFrame):
+        from boti_data.arrow_schema import ArrowSchema
+
+        try:
+            arrow_schema = ArrowSchema.from_dict(normalized_schema)
+            table = pa.Table.from_pandas(dataframe, preserve_index=False)
+            table = arrow_schema.cast_table(table)
+            return arrow_schema.to_pandas(table)
+        except (KeyError, TypeError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError):
+            pass
+
+    is_dask = isinstance(dataframe, dd.DataFrame)
+    transforms = {}
+    for column, target_dtype in normalized_schema.items():
+        if column not in dataframe.columns:
+            continue
+        transforms[column] = _coerce_series(
+            dataframe[column],
+            target_dtype,
+            is_dask=is_dask,
+        )
+
+    if not transforms:
+        return dataframe
+    return dataframe.assign(**transforms)
+
+
+def validate_schema(
+    dataframe: DataFrameLike,
+    expected_schema_map: Mapping[str, str],
+    *,
+    require_columns: bool = True,
+) -> None:
+    """Validate that the current DataFrame dtypes match the expected schema."""
+    normalized_expected = normalize_schema_map(expected_schema_map)
+    errors: list[str] = []
+
+    for column, expected_dtype in normalized_expected.items():
+        if column not in dataframe.columns:
+            if require_columns:
+                errors.append(f"Missing column '{column}'.")
+            continue
+
+        current_dtype = normalize_dtype_alias(dataframe.dtypes[column])
+        if current_dtype != expected_dtype:
+            errors.append(
+                f"Column '{column}': expected '{expected_dtype}', found '{dataframe.dtypes[column]}'."
+            )
+
+    if errors:
+        raise SchemaValidationError("Schema validation failed:\n" + "\n".join(errors))
+
+
+def align_frames_for_join(
+    left: DataFrameLike,
+    right: DataFrameLike,
+    join_schema_map: Mapping[str, str],
+) -> tuple[DataFrameLike, DataFrameLike]:
+    """Normalize and validate both DataFrames against a shared join-key schema."""
+    normalized_schema = normalize_schema_map(join_schema_map)
+    left_aligned = apply_schema_map(left, normalized_schema, require_columns=True)
+    right_aligned = apply_schema_map(right, normalized_schema, require_columns=True)
+    validate_schema(left_aligned, normalized_schema, require_columns=True)
+    validate_schema(right_aligned, normalized_schema, require_columns=True)
+    return left_aligned, right_aligned
