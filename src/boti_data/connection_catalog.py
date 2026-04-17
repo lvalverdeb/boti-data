@@ -119,3 +119,63 @@ class ConnectionCatalog:
 
     def make_filesystem_factory(self, name: str):
         return functools.partial(create_filesystem, self.filesystem_config(name))
+
+
+class S3Catalog:
+    """Local helper for S3-compatible servers configured from a prefixed .env block.
+
+    Expected keys are PREFIX + field_name.upper(), for example:
+
+        MINIO_FS_TYPE=s3
+        MINIO_FS_PATH=my-bucket/raw/events
+        MINIO_FS_KEY=...
+        MINIO_FS_SECRET=...
+        MINIO_FS_ENDPOINT=https://minio.local:9000
+        MINIO_FS_REGION=us-east-1
+        MINIO_FS_VERIFY_SSL=false
+    """
+
+    def __init__(
+        self,
+        prefix: str,
+        *,
+        env_file: str | Path = ".env",
+        max_attempts: int = 3,
+        retry_base_delay: float = 0.5,
+        **overrides,
+    ) -> None:
+        self.prefix = prefix
+        self.env_file = Path(env_file)
+        self.max_attempts = max_attempts
+        self.retry_base_delay = retry_base_delay
+
+        self.config = FilesystemConfig.from_env_prefix(
+            prefix,
+            env_file=self.env_file,
+            **overrides,
+        )
+        if self.config.fs_type not in {"s3", "s3a"}:
+            raise ValueError(
+                f"{prefix!r} resolved to fs_type={self.config.fs_type!r}; expected 's3' or 's3a'."
+            )
+
+        self.adapter = FilesystemAdapter(self.config)
+
+    @property
+    def storage_path(self) -> str:
+        return self.adapter.storage_path
+
+    def fs(self):
+        return self.adapter.get_filesystem()
+
+    def open(self, relative_path: str, mode: str = "rb"):
+        return self.fs().open(f"{self.config.fs_path.rstrip('/')}/{relative_path.lstrip('/')}", mode)
+
+    def ls(self, path: str = ""):
+        target = self.config.fs_path.rstrip("/")
+        if path:
+            target = f"{target}/{path.lstrip('/')}"
+        return self.fs().ls(target)
+
+    def invalidate(self) -> None:
+        self.adapter.invalidate()

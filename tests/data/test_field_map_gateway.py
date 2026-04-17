@@ -23,6 +23,7 @@ import polars as pl
 import pandas as pd
 import pyarrow as pa
 import pytest
+from typing import Any
 from pydantic import SecretStr
 from sqlalchemy import String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
@@ -736,7 +737,7 @@ def test_aload_timeout_not_exceeded(legacy_dsn):
     import asyncio
     gw = _legacy_gw(legacy_dsn)
     try:
-        df = asyncio.get_event_loop().run_until_complete(
+        df = asyncio.run(
             gw.aload(timeout=30, as_pandas=True)
         )
         assert len(df) == 3
@@ -757,7 +758,7 @@ def test_aload_timeout_raises_when_exceeded(legacy_dsn, monkeypatch):
     gw = _legacy_gw(legacy_dsn)
     try:
         with pytest.raises(asyncio.TimeoutError):
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 gw.aload(timeout=0.01, as_pandas=True)
             )
     finally:
@@ -844,7 +845,7 @@ def test_aload_period_range(events_dsn):
     import asyncio
     gw = _event_gw(events_dsn)
     try:
-        df = asyncio.get_event_loop().run_until_complete(
+        df = asyncio.run(
             gw.aload_period("event_date", "2024-01-01", "2024-03-31", as_pandas=True)
         )
         assert len(df) == 3
@@ -864,7 +865,7 @@ def test_aload_chunked_in_splits_and_concatenates(legacy_dsn):
     gw = _legacy_gw(legacy_dsn)
     # All 3 rows have global_track_id in [10, 20, 30]; chunk_size=1 forces 3 tasks
     try:
-        df = asyncio.get_event_loop().run_until_complete(
+        df = asyncio.run(
             gw.aload(
                 global_track_id__in=[10, 20, 30],
                 in_chunk_size=1,
@@ -883,7 +884,7 @@ def test_aload_chunked_in_no_split_when_within_limit(legacy_dsn):
 
     gw = _legacy_gw(legacy_dsn)
     try:
-        df = asyncio.get_event_loop().run_until_complete(
+        df = asyncio.run(
             gw.aload(
                 global_track_id__in=[10, 20, 30],
                 in_chunk_size=900,
@@ -901,7 +902,7 @@ def test_aload_chunked_in_empty_result(legacy_dsn):
 
     gw = _legacy_gw(legacy_dsn)
     try:
-        df = asyncio.get_event_loop().run_until_complete(
+        df = asyncio.run(
             gw.aload(
                 global_track_id__in=[999, 888],
                 in_chunk_size=1,
@@ -918,7 +919,7 @@ def test_aload_chunked_in_supports_pandas_index_values(legacy_dsn):
 
     gw = _legacy_gw(legacy_dsn)
     try:
-        df = asyncio.get_event_loop().run_until_complete(
+        df = asyncio.run(
             gw.aload(
                 global_track_id__in=pd.Index([10, 20, 30]),
                 in_chunk_size=1,
@@ -936,7 +937,7 @@ def test_aload_chunked_in_preserves_other_filters(legacy_dsn):
 
     gw = _legacy_gw(legacy_dsn)
     try:
-        df = asyncio.get_event_loop().run_until_complete(
+        df = asyncio.run(
             gw.aload(
                 global_track_id__in=[10, 20, 30],
                 product_type_id=1,
@@ -974,7 +975,7 @@ def test_aload_chunked_in_honors_concurrency_cap():
         return pd.DataFrame({"value": list(opts["field__in"])})
 
     try:
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             gw._chunked_in_load(
                 execute_fn,
                 1,
@@ -994,7 +995,7 @@ def test_aload_chunked_in_accepts_public_concurrency_option(legacy_dsn):
 
     gw = _legacy_gw(legacy_dsn)
     try:
-        df = asyncio.get_event_loop().run_until_complete(
+        df = asyncio.run(
             gw.aload(
                 global_track_id__in=[10, 20, 30],
                 in_chunk_size=1,
@@ -1043,7 +1044,7 @@ def test_aload_chunked_in_auto_uses_filter_hints(legacy_dsn, monkeypatch):
     )
 
     try:
-        df = asyncio.get_event_loop().run_until_complete(
+        df = asyncio.run(
             gw.aload(
                 global_track_id__in=[10, 20, 30],
                 as_pandas=True,
@@ -1090,7 +1091,7 @@ def test_aload_chunked_in_off_disables_auto_hint(legacy_dsn, monkeypatch):
     )
 
     try:
-        df = asyncio.get_event_loop().run_until_complete(
+        df = asyncio.run(
             gw.aload(
                 global_track_id__in=[10, 20, 30],
                 in_chunk_strategy="off",
@@ -1211,7 +1212,7 @@ def test_aload_chunked_in_supports_nested_filter_payloads(legacy_dsn):
     )
     try:
         statement = select(LegacyProduct)
-        df = asyncio.get_event_loop().run_until_complete(
+        df = asyncio.run(
             gw.aload(
                 statement=statement,
                 model=LegacyProduct,

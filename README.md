@@ -118,9 +118,329 @@ from boti_data.parquet import ParquetDataConfig, ParquetDataResource
 from boti_data.schema import validate_schema
 ```
 
+## DataHelper
+
+`DataHelper` is the primary entry point for most use cases. It is a thin facade over `DataGateway` that provides a clean, consistent interface for loading data whether you are working locally, in a notebook, or inside a distributed Dask pipeline.
+
+### Creating a DataHelper
+
+`DataHelper` accepts a `DataGateway`, a backend config object, or a plain dict:
+
+```python
+from boti_data import DataHelper, SqlDatabaseConfig
+
+# From a config object
+config = SqlDatabaseConfig(
+    connection_url="mysql+pymysql://user:pass@host/mydb",
+    query_only=True,
+)
+helper = DataHelper(config, table="orders")
+
+# From a dict (useful for config-driven setups)
+helper = DataHelper({
+    "backend": "sqlalchemy",
+    "connection_url": "mysql+pymysql://user:pass@host/mydb",
+    "table": "orders",
+    "query_only": True,
+})
+
+# From keyword arguments
+helper = DataHelper(
+    backend="sqlalchemy",
+    connection_url="mysql+pymysql://user:pass@host/mydb",
+    table="orders",
+)
+```
+
+Using `DataHelper` as a context manager ensures connections are properly closed:
+
+```python
+with DataHelper(config, table="orders") as helper:
+    df = helper.load(status="confirmed")
+```
+
+Async context managers are also supported:
+
+```python
+async with DataHelper(config, table="orders") as helper:
+    df = await helper.aload(status="confirmed")
+```
+
+---
+
+## Output engines: pandas, polars, and dask
+
+`DataHelper` exposes three engine-bound views that pin the output type for a call chain:
+
+```python
+helper = DataHelper(config, table="orders")
+
+# Always returns pandas.DataFrame
+df = helper.pandas.load(status="confirmed")
+
+# Always returns polars.DataFrame
+df = helper.polars.load(status="confirmed")
+
+# Always returns dask.dataframe.DataFrame (lazy)
+df = helper.dask.load(status="confirmed")
+```
+
+These are the cleanest way to use a single helper across different downstream contexts. You can also pass `return_type` explicitly to `load` or `aload` when you need more control:
+
+```python
+# Explicit return_type on a single call
+df = helper.load(status="confirmed", return_type="polars")
+df = helper.load(status="confirmed", return_type="pandas")
+df = helper.load(status="confirmed", return_type="dask")
+df = helper.load(status="confirmed", return_type="arrow")  # pyarrow.Table
+```
+
+### Choosing an output engine
+
+| Engine | Type returned | Best for |
+|---|---|---|
+| `pandas` | `pandas.DataFrame` | Small-to-medium data, notebooks, local analysis |
+| `polars` | `polars.DataFrame` | CPU-intensive transforms, single-machine performance |
+| `arrow` | `pyarrow.Table` | Zero-copy interchange, serialisation, ML pipelines |
+| `dask` | `dask.dataframe.DataFrame` | Large datasets, distributed clusters, lazy evaluation |
+| `auto` | decided at runtime | Unknown result size; `boti-data` probes row count and chooses |
+
+`return_type="auto"` uses pandas when the result is small (≤ 10,000 rows or ≤ 32 MB) and switches to Dask otherwise. Use it when you do not know the result size in advance and want sensible defaults.
+
+---
+
+## Non-distributed usage
+
+For local analysis, notebooks, or small-scale pipelines, use `DataHelper` without any Dask cluster. The default output is a Dask DataFrame, but you can force pandas or polars.
+
+```python
+from boti_data import DataHelper, SqlDatabaseConfig
+
+config = SqlDatabaseConfig(
+    connection_url="sqlite:///local.db",
+    query_only=True,
+)
+
+with DataHelper(config, table="orders") as helper:
+    # Pandas — eager, in-memory
+    df = helper.pandas.load(status="shipped")
+
+    # Polars — eager, high-performance single-machine
+    df = helper.polars.load(status="shipped")
+
+    # Date range load with pandas output
+    df = helper.pandas.load_period("created_at", "2024-01-01", "2024-03-31")
+```
+
+For async contexts (FastAPI, async services):
+
+```python
+async def get_orders(status: str) -> pd.DataFrame:
+    async with DataHelper(config, table="orders") as helper:
+        return await helper.pandas.aload(status=status)
+```
+
+### Parquet sources
+
+```python
+from boti_data import DataHelper, ParquetDataConfig
+
+config = ParquetDataConfig(
+    parquet_storage_path="/data/orders/",
+    parquet_start_date=date(2024, 1, 1),
+    parquet_end_date=date(2024, 3, 31),
+)
+
+with DataHelper(config) as helper:
+    df = helper.pandas.load()
+    df = helper.polars.load()
+```
+
+---
+
+## Distributed usage with Dask
+
+For large datasets or cluster workloads, `DataHelper` integrates natively with Dask. The `DataHelper.session()` factory creates a `DaskSession` that manages cluster and client lifecycle.
+
+### Local cluster (development)
+
+```python
+from dask.distributed import LocalCluster
+from boti_data import DataHelper, SqlDatabaseConfig
+
+config = SqlDatabaseConfig(
+    connection_url="mysql+pymysql://user:pass@host/mydb",
+    query_only=True,
+    worker_connection_env_var="DB_URL",  # see pickleable section below
+)
+
+with DataHelper.session(cluster_factory=LocalCluster) as client:
+    with DataHelper(config, table="orders") as helper:
+        # Returns dask.dataframe.DataFrame — lazy, partitioned
+        ddf = helper.dask.load(status="confirmed")
+
+        # Trigger computation
+        df = ddf.compute()
+```
+
+### Remote cluster
+
+```python
+with DataHelper.session(scheduler_address="tcp://scheduler:8786") as client:
+    with DataHelper(config, table="events") as helper:
+        ddf = helper.dask.load(region="EU", return_type="dask")
+        result = ddf.groupby("customer_id").agg({"amount": "sum"}).compute()
+```
+
+### Persisting on the cluster
+
+Use `persist=True` to push the loaded data into distributed memory before further computation. This avoids re-reading from the database on every downstream operation:
+
+```python
+with DataHelper.session(scheduler_address="tcp://scheduler:8786") as client:
+    with DataHelper(config, table="transactions") as helper:
+        # Data is loaded and held in cluster memory
+        ddf = helper.load(year=2024, persist=True)
+
+        # Subsequent operations reuse the persisted graph
+        monthly = ddf.groupby("month").agg({"amount": "sum"}).compute()
+        by_region = ddf.groupby("region").size().compute()
+```
+
+### Semi-join across distributed frames
+
+```python
+import pandas as pd
+
+active_customers = pd.Series([1001, 1002, 1003, 1099])
+
+with DataHelper(config, table="orders") as helper:
+    # Loads only rows where customer_id is in active_customers
+    ddf = helper.semi_join(active_customers, on="customer_id")
+    df = ddf.compute()
+```
+
+`semi_join` also accepts Dask Series, enabling fully lazy distributed joins:
+
+```python
+with DataHelper(config, table="customers") as customer_helper:
+    with DataHelper(config, table="orders") as order_helper:
+        active_ids = customer_helper.dask.load(active=True)["customer_id"]
+
+        # Lazy — no computation happens yet
+        orders_ddf = order_helper.semi_join(active_ids, on="customer_id")
+
+        # Single compute triggers both loads
+        result = orders_ddf.compute()
+```
+
+---
+
+## The `pickleable` setting in distributed systems
+
+When Dask distributes tasks across workers, it serialises (pickles) the task function and all its arguments to send them over the network. This creates a problem: **database connection objects, engine pools, and credentials cannot be pickled**.
+
+`boti-data` addresses this through the `worker_connection_env_var` setting on `SqlDatabaseConfig`.
+
+### How it works
+
+Instead of serialising the full `SqlDatabaseConfig` (which contains the connection URL and credentials), `boti-data` extracts a minimal `WorkerSqlConfig` for each worker task. If `worker_connection_env_var` is set, workers read the DSN from that environment variable instead of having it embedded in the task payload.
+
+```
+Scheduler                              Worker
+─────────                              ──────
+SqlDatabaseConfig (full config)        WorkerSqlConfig (minimal, safe to pickle)
+  connection_url = "mysql://..."   →     connection_env_var = "DB_URL"
+  pool_size = 10                         query_only = True
+  ...                                    pool_recycle = 1800
+                                         (reads DB_URL from os.environ on worker)
+```
+
+### Setting it up
+
+**Step 1.** Set the environment variable on all workers. For a local cluster:
+
+```bash
+export DB_URL="mysql+pymysql://user:pass@host/mydb"
+```
+
+For a Kubernetes-deployed cluster, inject it as a secret.
+
+**Step 2.** Reference the variable in your config:
+
+```python
+from boti_data import DataHelper, SqlDatabaseConfig
+
+config = SqlDatabaseConfig(
+    connection_url="mysql+pymysql://user:pass@host/mydb",
+    query_only=True,
+    worker_connection_env_var="DB_URL",  # workers use this instead of pickling credentials
+)
+```
+
+**Step 3.** Use `DataHelper` normally. Credential serialisation is handled transparently:
+
+```python
+with DataHelper.session(scheduler_address="tcp://scheduler:8786") as client:
+    with DataHelper(config, table="orders") as helper:
+        ddf = helper.dask.load(status="confirmed")
+        result = ddf.compute()
+```
+
+### Why this matters
+
+Without `worker_connection_env_var`, using a real database DSN with distributed Dask will either:
+
+- fail with a pickle error (connection pool objects are not serialisable)
+- embed plaintext credentials in task payloads that flow through scheduler memory and worker logs
+
+Setting `worker_connection_env_var` prevents both problems and is the recommended approach for any distributed SQL workflow.
+
+### Parquet in distributed settings
+
+Parquet resources use `fsspec` for filesystem access. The filesystem object is not pickled directly; instead, `ParquetDataResource` uses a `fs_factory` callable or a `filesystem_profile` name that workers can use to reconstruct the filesystem independently.
+
+```python
+from boti_data import DataHelper, ParquetDataConfig, ConnectionCatalog
+
+catalog = ConnectionCatalog()
+catalog.load_filesystem("s3_prod", prefix="S3_")  # reads S3_ENDPOINT, S3_KEY, etc.
+
+config = ParquetDataConfig(
+    filesystem_profile="s3_prod",  # workers resolve filesystem from catalog
+    parquet_storage_path="s3://my-bucket/orders/",
+)
+
+with DataHelper.session(cluster_factory=LocalCluster) as client:
+    with DataHelper(config) as helper:
+        ddf = helper.dask.load()
+        result = ddf.compute()
+```
+
+---
+
+## Choosing between distributed and non-distributed
+
+Use the following as a guide:
+
+| Scenario | Recommended approach |
+|---|---|
+| Exploratory analysis in a notebook | `helper.pandas.load()` — simple, no overhead |
+| Single-machine pipeline, large-ish data | `helper.polars.load()` — fast, low memory |
+| Result size unknown at design time | `helper.load(return_type="auto")` — adapts |
+| Data does not fit in one machine's RAM | `helper.dask.load()` + local or remote cluster |
+| Heavy transforms over millions of rows | `helper.dask.load()` + Dask cluster |
+| Async service (FastAPI, ASGI) | `await helper.pandas.aload()` or `await helper.dask.aload()` |
+| Joining two large tables on a cluster | `helper.semi_join(series, on="key")` |
+| Scheduled overnight batch job | Dask cluster + `persist=True` for multi-pass jobs |
+
+**Rule of thumb:** start with `pandas`, switch to `polars` when single-machine performance matters, and move to `dask` when data size exceeds available RAM or when the task benefits from parallelism across workers.
+
+---
+
 ## Examples
 
-### SQL resource
+### SQL resource (low-level)
 
 ```python
 from boti_data import SqlDatabaseConfig, SqlDatabaseResource
@@ -132,7 +452,7 @@ with SqlDatabaseResource(config) as db:
         rows = session.execute(...)
 ```
 
-### Gateway
+### Gateway (mid-level)
 
 ```python
 from boti_data import DataGateway, SqlDatabaseConfig
@@ -143,6 +463,114 @@ gateway = DataGateway(
 )
 ```
 
+### DataHelper — local pandas
+
+```python
+from boti_data import DataHelper, SqlDatabaseConfig
+
+config = SqlDatabaseConfig(
+    connection_url="postgresql+asyncpg://user:pass@host/mydb",
+    query_only=True,
+)
+
+with DataHelper(config, table="sales") as helper:
+    df = helper.pandas.load(year=2024, region="EMEA")
+    print(df.head())
+```
+
+### DataHelper — local polars
+
+```python
+with DataHelper(config, table="sales") as helper:
+    df = helper.polars.load(year=2024)
+    summary = df.group_by("region").agg(pl.col("amount").sum())
+```
+
+### DataHelper — lazy Dask, no cluster
+
+```python
+with DataHelper(config, table="sales") as helper:
+    ddf = helper.dask.load(year=2024)
+    # Graph is not executed yet; chain transforms lazily
+    result = ddf.groupby("region")["amount"].sum().compute()
+```
+
+### DataHelper — distributed Dask cluster
+
+```python
+from dask.distributed import LocalCluster
+from boti_data import DataHelper, SqlDatabaseConfig
+
+config = SqlDatabaseConfig(
+    connection_url="mysql+pymysql://user:pass@host/mydb",
+    query_only=True,
+    worker_connection_env_var="DB_URL",
+)
+
+with DataHelper.session(cluster_factory=LocalCluster, n_workers=4) as client:
+    with DataHelper(config, table="events") as helper:
+        ddf = helper.dask.load(event_type="purchase", persist=True)
+        result = ddf.groupby("user_id").size().compute()
+```
+
+### DataHelper — async service
+
+```python
+from boti_data import DataHelper, SqlDatabaseConfig
+
+config = SqlDatabaseConfig(
+    connection_url="mysql+asyncmy://user:pass@host/mydb",
+    query_only=True,
+)
+
+async def load_orders(status: str) -> pd.DataFrame:
+    async with DataHelper(config, table="orders") as helper:
+        return await helper.pandas.aload(status=status)
+```
+
+### DataHelper — date-range load
+
+```python
+with DataHelper(config, table="transactions") as helper:
+    # Inclusive date range; dt_field is the semantic field name
+    df = helper.pandas.load_period("created_at", "2024-01-01", "2024-06-30")
+```
+
+### DataHelper — parquet source
+
+```python
+from boti_data import DataHelper, ParquetDataConfig
+from datetime import date
+
+config = ParquetDataConfig(
+    parquet_storage_path="/data/warehouse/orders/",
+    parquet_start_date=date(2024, 1, 1),
+    parquet_end_date=date(2024, 6, 30),
+)
+
+with DataHelper(config) as helper:
+    df = helper.pandas.load()
+    ddf = helper.dask.load()  # lazy, partitioned read
+```
+
+### Connection catalog
+
+```python
+from boti_data import ConnectionCatalog, DataHelper
+
+catalog = ConnectionCatalog()
+catalog.load_sql("prod", prefix="PROD_DB_")  # reads PROD_DB_URL, PROD_DB_POOL_SIZE, etc.
+catalog.load_sql("reporting", prefix="REPORT_DB_")
+
+prod_config = catalog.sql_config("prod")
+report_config = catalog.sql_config("reporting")
+
+with DataHelper(prod_config, table="orders") as helper:
+    df = helper.pandas.load(status="confirmed")
+```
+
+---
+
 ## Relationship to `boti`
 
 `boti-data` depends on `boti`, and reuses:
@@ -152,5 +580,9 @@ gateway = DataGateway(
 - secure I/O helpers
 - project/environment utilities
 
-If you only need the runtime primitives, install `boti`.  
+If you only need the runtime primitives, install `boti`.
 If you need a stronger data access and transformation layer, install `boti-data` or `boti[data]`.
+
+## Development & Deployment
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for publishing instructions.

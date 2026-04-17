@@ -21,11 +21,11 @@ import pyarrow.fs as pafs
 from fsspec.implementations.local import LocalFileSystem
 from pydantic import Field, field_validator, model_validator
 
-from boti_data.filters import FilterHandler
 from boti.core.filesystem import FilesystemConfig, create_filesystem
 from boti.core.models import ResourceConfig
 from boti.core.secure_io import SecureResource
 from boti.core.security import is_valid_identifier
+from boti_data.filters import FilterHandler
 
 
 def create_local_filesystem() -> fsspec.AbstractFileSystem:
@@ -158,9 +158,7 @@ class ParquetDataResource(SecureResource):
         return self.parquet_storage_path
 
     def _uses_nonlocal_explicit_fs(self) -> bool:
-        fs = self.fs
-        if fs is None:
-            return False
+        fs = self.require_fs()
         if isinstance(fs, pafs.FileSystem):
             return not isinstance(fs, pafs.LocalFileSystem)
         if isinstance(fs, LocalFileSystem):
@@ -305,7 +303,10 @@ class ParquetDataResource(SecureResource):
                 format="parquet",
                 partitioning=partitioning,
             )
-        except (FileNotFoundError, OSError, pa.ArrowInvalid):
+        except (FileNotFoundError, OSError, pa.ArrowInvalid, pa.ArrowException) as exc:
+            if self._is_missing_path_error(exc):
+                self.logger.warning("Parquet path does not exist: %s", self.parquet_storage_path)
+                return []
             return self._discover_partitioned_files_via_listing(partition_key)
 
         start_date = self.config.parquet_start_date
@@ -355,7 +356,14 @@ class ParquetDataResource(SecureResource):
         message = str(exc).lower()
         return any(
             token in message
-            for token in ("not found", "no such file", "does not exist", "path does not exist")
+            for token in (
+                "not found",
+                "no such file",
+                "does not exist",
+                "path does not exist",
+                "no such bucket",
+                "bucket does not exist",
+            )
         )
 
     @staticmethod
@@ -365,15 +373,25 @@ class ParquetDataResource(SecureResource):
     def _list_candidate_files(self) -> list[str]:
         base_path = self.parquet_storage_path
         fs = self.require_fs()
-        if isinstance(fs, pafs.FileSystem):
-            selector = pafs.FileSelector(base_dir=base_path, recursive=True)
-            infos = fs.get_file_info(selector)
-            return [info.path for info in infos if getattr(info, "type", None) == pafs.FileType.File]
+        try:
+            if isinstance(fs, pafs.FileSystem):
+                selector = pafs.FileSelector(base_dir=base_path, recursive=True)
+                infos = fs.get_file_info(selector)
+                return [
+                    info.path for info in infos if getattr(info, "type", None) == pafs.FileType.File
+                ]
 
-        if hasattr(fs, "find"):
-            return list(fs.find(base_path))
-        if hasattr(fs, "glob"):
-            return [path for path in fs.glob(f"{base_path.rstrip('/')}/**") if not path.endswith("/")]
+            if hasattr(fs, "find"):
+                return list(fs.find(base_path))
+            if hasattr(fs, "glob"):
+                return [
+                    path for path in fs.glob(f"{base_path.rstrip('/')}/**") if not path.endswith("/")
+                ]
+        except (FileNotFoundError, OSError, pa.ArrowInvalid, pa.ArrowException) as exc:
+            if self._is_missing_path_error(exc):
+                self.logger.warning("Parquet path does not exist for listing: %s", base_path)
+                return []
+            raise
         return []
 
     @staticmethod
@@ -404,11 +422,13 @@ class ParquetDataResource(SecureResource):
                 format="parquet",
                 partitioning=None,
             )
-        except (FileNotFoundError, OSError, pa.ArrowInvalid) as exc:
+        except (FileNotFoundError, OSError, pa.ArrowInvalid, pa.ArrowException) as exc:
             if self._is_missing_path_error(exc):
                 self.logger.warning("Parquet path does not exist: %s", self.parquet_storage_path)
                 return []
-            raise self._filesystem_runtime_error("scan parquet dataset", self.parquet_storage_path, exc) from exc
+            raise self._filesystem_runtime_error(
+                "scan parquet dataset", self.parquet_storage_path, exc
+            ) from exc
         return [self._restore_protocol(path) for path in dataset.files]
 
     def determine_recency(self) -> bool:
@@ -487,9 +507,9 @@ class ParquetDataResource(SecureResource):
     def _dataset_source(self) -> tuple[str, Optional[Any]]:
         parsed = urlparse(self.parquet_storage_path)
         if parsed.scheme and parsed.scheme != "file":
-            return self._strip_protocol(self.parquet_storage_path), self.require_fs()
+            return self._strip_protocol(self.parquet_storage_path), self._arrow_filesystem()
         if self._uses_nonlocal_explicit_fs():
-            return self.parquet_storage_path, self.require_fs()
+            return self.parquet_storage_path, self._arrow_filesystem()
 
         local_path = str(self._secure_local_path(self.parquet_storage_path))
         return local_path, None

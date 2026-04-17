@@ -8,5 +8,6 @@ wheels/
 .idea/
 .pytest_cache/
 logs/
+docs/
 .env
-.env.local
+.env.*

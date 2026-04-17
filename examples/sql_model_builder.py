@@ -23,7 +23,7 @@ def main() -> None:
     builder = SqlAlchemyModelBuilder(
         engine,
         "report_rows",
-        config=BuilderConfig(module_label="boti.examples.dynamic_models"),
+        config=BuilderConfig(module_label="boti_data.examples.dynamic_models"),
     )
     model = builder.build_model()
 
