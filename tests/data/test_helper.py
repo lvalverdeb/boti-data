@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import Date, String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
-from boti_data import DataHelper, DataGateway, ParquetReader
+from boti_data import DataGateway, DataHelper, ParquetReader
 from boti_data.db import SqlDatabaseConfig
 from boti_data.parquet import ParquetDataConfig
 

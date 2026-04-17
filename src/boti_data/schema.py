@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 import re
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import dask.dataframe as dd
 import pandas as pd
 import pyarrow as pa
-
 
 DataFrameLike = pd.DataFrame | dd.DataFrame
 

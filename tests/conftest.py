@@ -2,12 +2,12 @@
 Shared pytest fixtures for sibi_tools.core tests.
 """
 import datetime
-import sqlite3
-
-import pytest
 import shutil
+import sqlite3
 from pathlib import Path
 from tempfile import mkdtemp
+
+import pytest
 
 # Python 3.12+ deprecated the implicit sqlite3 date/datetime adapters.
 # Register explicit ISO-string adapters so SQLAlchemy tests using SQLite

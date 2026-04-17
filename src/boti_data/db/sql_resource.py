@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
+from boti.core.logger import Logger
+from boti.core.managed_resource import ManagedResource
 from sqlalchemy.engine import Engine
-from sqlalchemy.engine import url as sqlalchemy_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, sessionmaker
 
-from boti.core.logger import Logger
-from boti.core.managed_resource import ManagedResource
 from boti_data.db.engine_registry import EngineRegistry
 from boti_data.db.sql_config import SqlDatabaseConfig
 from boti_data.db.sql_engine import (
@@ -35,10 +34,10 @@ class SqlDatabaseResource(ManagedResource):
         super().__init__(config=config, **kwargs)
         self.config: SqlDatabaseConfig = config
 
-        self._engine: Optional[Engine] = None
-        self._engine_view: Optional[Any] = None
-        self._session_factory: Optional[sessionmaker] = None
-        self._engine_key: Optional[tuple] = None
+        self._engine: Engine | None = None
+        self._engine_view: Any | None = None
+        self._session_factory: sessionmaker | None = None
+        self._engine_key: tuple | None = None
 
         self._initialize_sql_environment()
 
@@ -125,16 +124,16 @@ class AsyncSqlDatabaseResource:
     def __init__(self, config: SqlDatabaseConfig) -> None:
         self.config = config
         self.logger = Logger.default_logger(logger_name=self.__class__.__name__)
-        self._engine: Optional[AsyncEngine] = None
-        self._engine_view: Optional[Any] = None
-        self._session_factory: Optional[async_sessionmaker[AsyncSession]] = None
-        self._engine_key: Optional[tuple] = None
+        self._engine: AsyncEngine | None = None
+        self._engine_view: Any | None = None
+        self._session_factory: async_sessionmaker[AsyncSession] | None = None
+        self._engine_key: tuple | None = None
         self._is_open = False
 
     def _get_engine_key(self) -> tuple:
         return _build_async_engine_key(self.config)
 
-    async def __aenter__(self) -> "AsyncSqlDatabaseResource":
+    async def __aenter__(self) -> AsyncSqlDatabaseResource:
         connection_url = _normalize_connection_url(self.config.connection_url.get_secret_value())
         parsed = _validate_async_driver_url(connection_url)
         ensure_greenlet_available()

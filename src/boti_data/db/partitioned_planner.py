@@ -4,7 +4,7 @@ import asyncio
 import datetime as dt
 import math
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 from sqlalchemy import func, select
@@ -27,9 +27,9 @@ from sqlalchemy.sql.sqltypes import (
 )
 
 from boti_data.db.partitioned_types import (
+    SqlPartitionedLoadRequest,
     SqlPartitionPlan,
     SqlPartitionSpec,
-    SqlPartitionedLoadRequest,
     _infer_primary_key_name,
     _resolve_model_column,
 )
@@ -234,7 +234,7 @@ class SqlPartitionPlanner:
         *,
         statement: Select[Any],
         model: Any,
-        order_column: Optional[str],
+        order_column: str | None,
         total_rows: int,
         chunk_size: int,
     ) -> tuple[SqlPartitionSpec, ...]:

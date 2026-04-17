@@ -4,10 +4,12 @@ Security regression tests for recently fixed audit findings.
 
 from __future__ import annotations
 
+import warnings
+
 import pytest
 
-from boti_data.db.sql_manager import AsyncSqlDatabaseResource, EngineRegistry, SqlDatabaseConfig, SqlDatabaseResource
-
+from boti_data.db.sql_config import SqlDatabaseConfig, WorkerSqlConfig
+from boti_data.db.sql_manager import AsyncSqlDatabaseResource, EngineRegistry, SqlDatabaseResource
 
 pytestmark = pytest.mark.security_regression
 
@@ -82,3 +84,57 @@ def test_query_only_and_writable_registry_entries_can_coexist_without_collision(
     finally:
         readonly_resource.close()
         writable_resource.close()
+
+
+# ---------------------------------------------------------------------------
+# Worker credential serialisation tests
+# ---------------------------------------------------------------------------
+
+
+def test_worker_config_uses_env_var_when_set():
+    """WorkerSqlConfig must NOT carry the raw DSN when worker_connection_env_var is configured."""
+    config = SqlDatabaseConfig(
+        connection_url="mysql+pymysql://user:secret@localhost/test_db",
+        query_only=True,
+        poolclass="sqlalchemy.pool.NullPool",
+        worker_connection_env_var="DB_DSN",
+    )
+    worker = WorkerSqlConfig.from_database_config(config)
+    assert worker.connection_env_var == "DB_DSN"
+    assert worker.connection_url is None, "DSN must not be serialized when env var is set"
+
+
+def test_worker_config_warns_when_no_env_var_set():
+    """WorkerSqlConfig.from_database_config must emit a UserWarning when falling back to raw DSN."""
+    config = SqlDatabaseConfig(
+        connection_url="mysql+pymysql://user:secret@localhost/test_db",
+        query_only=True,
+        poolclass="sqlalchemy.pool.NullPool",
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        worker = WorkerSqlConfig.from_database_config(config)
+
+    credential_warnings = [
+        w for w in caught
+        if issubclass(w.category, UserWarning) and "worker_connection_env_var" in str(w.message)
+    ]
+    assert credential_warnings, "Expected a UserWarning about worker_connection_env_var not being set"
+    assert worker.connection_url is not None  # fallback still works
+
+
+def test_worker_config_raw_dsn_fallback_carries_credentials():
+    """Sanity-check: when no env var is configured the raw DSN is present (so callers are aware)."""
+    config = SqlDatabaseConfig(
+        connection_url="mysql+pymysql://user:secret@localhost/test_db",
+        query_only=True,
+        poolclass="sqlalchemy.pool.NullPool",
+    )
+    with warnings.catch_warnings(record=True):
+        warnings.simplefilter("always")
+        worker = WorkerSqlConfig.from_database_config(config)
+
+    assert worker.connection_env_var is None
+    secret_val = worker.connection_url.get_secret_value()  # type: ignore[union-attr]
+    assert "secret" in secret_val
+

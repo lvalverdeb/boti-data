@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import logging
+import warnings
 from pathlib import Path
-from typing import Any, Dict, Optional, Type, Union
-
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
-from sqlalchemy.pool import NullPool, Pool, QueuePool, StaticPool
+from typing import Any
 
 from boti.core.models import ResourceConfig
 from boti.core.security import is_valid_env_var_name
 from boti.core.settings import SqlDatabaseSettings, load_prefixed_model
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from sqlalchemy.pool import NullPool, Pool, QueuePool, StaticPool
 
+_logger = logging.getLogger(__name__)
 _ALLOWED_POOLCLASS_IMPORTS = {
     "sqlalchemy.pool.NullPool": NullPool,
     "sqlalchemy.pool.QueuePool": QueuePool,
@@ -30,7 +32,7 @@ class SqlDatabaseConfig(ResourceConfig):
             "Set explicitly to false to allow writes."
         ),
     )
-    worker_connection_env_var: Optional[str] = Field(
+    worker_connection_env_var: str | None = Field(
         default=None,
         description=(
             "Optional environment variable name that worker processes use to resolve the DB DSN "
@@ -42,12 +44,12 @@ class SqlDatabaseConfig(ResourceConfig):
     pool_timeout: int = Field(default=30, ge=0)
     pool_recycle: int = Field(default=1800)
     pool_pre_ping: bool = Field(default=True)
-    poolclass: Type[Pool] = QueuePool
-    connect_args: Dict[str, Any] = Field(
+    poolclass: type[Pool] = QueuePool
+    connect_args: dict[str, Any] = Field(
         default_factory=dict,
         description="Driver-specific connection arguments.",
     )
-    execution_options: Dict[str, Any] = Field(
+    execution_options: dict[str, Any] = Field(
         default_factory=dict,
         description="Engine execution options",
     )
@@ -57,7 +59,7 @@ class SqlDatabaseConfig(ResourceConfig):
         cls,
         settings: SqlDatabaseSettings,
         **overrides: Any,
-    ) -> "SqlDatabaseConfig":
+    ) -> SqlDatabaseConfig:
         payload = settings.model_dump(exclude_none=True)
         payload.update(overrides)
         return cls(**payload)
@@ -66,9 +68,9 @@ class SqlDatabaseConfig(ResourceConfig):
     def from_env(
         cls,
         *,
-        env_file: Optional[Union[str, Path]] = None,
+        env_file: str | Path | None = None,
         **overrides: Any,
-    ) -> "SqlDatabaseConfig":
+    ) -> SqlDatabaseConfig:
         return cls.from_env_prefix("DB_", env_file=env_file, **overrides)
 
     @classmethod
@@ -76,9 +78,9 @@ class SqlDatabaseConfig(ResourceConfig):
         cls,
         prefix: str,
         *,
-        env_file: Optional[Union[str, Path]] = None,
+        env_file: str | Path | None = None,
         **overrides: Any,
-    ) -> "SqlDatabaseConfig":
+    ) -> SqlDatabaseConfig:
         settings = load_prefixed_model(SqlDatabaseSettings, prefix, env_file=env_file)
         return cls.from_settings(settings, **overrides)
 
@@ -98,7 +100,7 @@ class SqlDatabaseConfig(ResourceConfig):
 
     @field_validator("worker_connection_env_var")
     @classmethod
-    def _validate_worker_connection_env_var(cls, value: Optional[str]) -> Optional[str]:
+    def _validate_worker_connection_env_var(cls, value: str | None) -> str | None:
         if value is None:
             return None
         if not is_valid_env_var_name(value):
@@ -113,17 +115,17 @@ class WorkerSqlConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    connection_url: Optional[SecretStr] = Field(default=None)
-    connection_env_var: Optional[str] = Field(default=None)
+    connection_url: SecretStr | None = Field(default=None)
+    connection_env_var: str | None = Field(default=None)
     query_only: bool = Field(default=True)
     pool_recycle: int = Field(default=1800)
     pool_pre_ping: bool = Field(default=True)
-    connect_args: Dict[str, Any] = Field(default_factory=dict)
-    execution_options: Dict[str, Any] = Field(default_factory=dict)
+    connect_args: dict[str, Any] = Field(default_factory=dict)
+    execution_options: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("connection_env_var")
     @classmethod
-    def _validate_connection_env_var(cls, value: Optional[str]) -> Optional[str]:
+    def _validate_connection_env_var(cls, value: str | None) -> str | None:
         if value is None:
             return None
         if not is_valid_env_var_name(value):
@@ -131,7 +133,7 @@ class WorkerSqlConfig(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _validate_source(self) -> "WorkerSqlConfig":
+    def _validate_source(self) -> WorkerSqlConfig:
         if bool(self.connection_url) == bool(self.connection_env_var):
             raise ValueError(
                 "WorkerSqlConfig requires exactly one of connection_url or connection_env_var."
@@ -139,8 +141,8 @@ class WorkerSqlConfig(BaseModel):
         return self
 
     @classmethod
-    def from_database_config(cls, config: SqlDatabaseConfig) -> "WorkerSqlConfig":
-        payload: Dict[str, Any] = {
+    def from_database_config(cls, config: SqlDatabaseConfig) -> WorkerSqlConfig:
+        payload: dict[str, Any] = {
             "query_only": config.query_only,
             "pool_recycle": config.pool_recycle,
             "pool_pre_ping": config.pool_pre_ping,
@@ -150,5 +152,17 @@ class WorkerSqlConfig(BaseModel):
         if config.worker_connection_env_var is not None:
             payload["connection_env_var"] = config.worker_connection_env_var
         else:
+            warnings.warn(
+                "Distributed SQL task payloads will carry the raw DSN credential because "
+                "'worker_connection_env_var' is not set on SqlDatabaseConfig. "
+                "Set 'worker_connection_env_var' to the name of an environment variable "
+                "that resolves the DSN on each worker to avoid serializing credentials.",
+                stacklevel=2,
+                category=UserWarning,
+            )
+            _logger.warning(
+                "WorkerSqlConfig created with raw DSN fallback; "
+                "set worker_connection_env_var to avoid credential serialization."
+            )
             payload["connection_url"] = config.connection_url
         return cls(**payload)

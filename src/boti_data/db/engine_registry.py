@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
+from boti.core.logger import Logger
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import create_async_engine
-
-from boti.core.logger import Logger
 
 _log = logging.getLogger(__name__)
 
@@ -17,10 +16,10 @@ class EngineRegistry:
     """Thread-safe cache for SQLAlchemy engines constructed with identical footprints."""
 
     _lock = threading.RLock()
-    _registry: Dict[tuple, Dict[str, Any]] = {}
+    _registry: dict[tuple, dict[str, Any]] = {}
 
     @classmethod
-    def get_or_create(cls, key: tuple, url: str, **kwargs: Any) -> Tuple[Engine, bool]:
+    def get_or_create(cls, key: tuple, url: str, **kwargs: Any) -> tuple[Engine, bool]:
         with cls._lock:
             if key in cls._registry:
                 wrapper = cls._registry[key]
@@ -43,7 +42,7 @@ class EngineRegistry:
             return engine, False
 
     @classmethod
-    async def get_or_create_async(cls, key: tuple, url: str, **kwargs: Any) -> Tuple[Any, bool]:
+    async def get_or_create_async(cls, key: tuple, url: str, **kwargs: Any) -> tuple[Any, bool]:
         with cls._lock:
             if key in cls._registry:
                 wrapper = cls._registry[key]
@@ -63,7 +62,7 @@ class EngineRegistry:
             return engine, False
 
     @classmethod
-    def release(cls, key: tuple, logger: Optional[Logger] = None) -> None:
+    def release(cls, key: tuple, logger: Logger | None = None) -> None:
         if cls._lock is None:
             return
 
@@ -93,7 +92,7 @@ class EngineRegistry:
             _log.debug("Error during engine registry release for key %s", key, exc_info=True)
 
     @classmethod
-    async def release_async(cls, key: tuple, logger: Optional[Logger] = None) -> None:
+    async def release_async(cls, key: tuple, logger: Logger | None = None) -> None:
         if cls._lock is None:
             return
 

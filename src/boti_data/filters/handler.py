@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Callable, ClassVar
+from collections.abc import Callable
+from typing import Any, ClassVar
 
 import dask.dataframe as dd
 import pyarrow as pa
-
 from boti.core.logger import Logger
+
+from . import arrow_kernels
 from .expressions import (
     And,
     ColOp,
@@ -31,7 +33,6 @@ from .utils import (
     rewrite_date_logic,
     suggest_in_filter_chunking,
 )
-from . import arrow_kernels
 
 
 class FilterHandler:

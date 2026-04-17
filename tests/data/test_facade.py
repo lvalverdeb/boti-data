@@ -11,12 +11,12 @@ import pandas as pd
 import polars as pl
 import pyarrow as pa
 import pytest
-import boti_data.gateway.core as gateway_core
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
+import boti_data.gateway.core as gateway_core
 from boti_data.db import SqlDatabaseConfig, SqlDatabaseResource
-from boti_data.gateway import DataFrameParams, DataGateway
+from boti_data.gateway import DataGateway
 from boti_data.parquet import ParquetDataConfig, ParquetDataResource
 
 
@@ -491,6 +491,279 @@ def test_facade_can_force_lazy_fetch_for_pandas_sql(tmp_path, monkeypatch):
     assert frame["status"].tolist() == ["active", "inactive"]
     assert lazy_calls == [True]
     assert not eager_calls
+
+
+def test_facade_resilient_persist_uses_safe_persist_for_lazy_sql(tmp_path, monkeypatch):
+    class Base(DeclarativeBase):
+        pass
+
+    class User(Base):
+        __tablename__ = "resilient_sql_users"
+
+        id: Mapped[int] = mapped_column(primary_key=True)
+        status: Mapped[str] = mapped_column(String(32))
+
+    db_path = tmp_path / "resilient_sql.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as session:
+            session.add_all([User(status="active"), User(status="inactive")])
+            session.commit()
+    finally:
+        engine.dispose()
+
+    config = SqlDatabaseConfig(
+        connection_url=f"sqlite:///{db_path}",
+        poolclass="sqlalchemy.pool.NullPool",
+        query_only=False,
+    )
+    calls: list[int] = []
+
+    def tracking_safe_persist(frame, *, dask_client=None, logger=None):
+        calls.append(frame.npartitions)
+        return frame.persist()
+
+    monkeypatch.setattr(gateway_core, "safe_persist", tracking_safe_persist)
+
+    with DataGateway(config) as facade:
+        frame = facade.load(
+            statement=select(User),
+            model=User,
+            persist=True,
+            resilient=True,
+        )
+
+    assert isinstance(frame, dd.DataFrame)
+    assert calls == [frame.npartitions]
+    assert frame.compute()["status"].tolist() == ["active", "inactive"]
+
+
+def test_facade_dry_run_returns_lazy_dask_graph_without_persist(tmp_path, monkeypatch):
+    class Base(DeclarativeBase):
+        pass
+
+    class User(Base):
+        __tablename__ = "dry_run_sql_users"
+
+        id: Mapped[int] = mapped_column(primary_key=True)
+        status: Mapped[str] = mapped_column(String(32))
+
+    db_path = tmp_path / "dry_run_sql.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as session:
+            session.add_all([User(status="active"), User(status="inactive")])
+            session.commit()
+    finally:
+        engine.dispose()
+
+    config = SqlDatabaseConfig(
+        connection_url=f"sqlite:///{db_path}",
+        poolclass="sqlalchemy.pool.NullPool",
+        query_only=False,
+    )
+
+    def fail_safe_persist(*_args, **_kwargs):
+        raise AssertionError("safe_persist should not be called during dry run")
+
+    monkeypatch.setattr(gateway_core, "safe_persist", fail_safe_persist)
+
+    with DataGateway(config) as facade:
+        frame = facade.load(
+            statement=select(User),
+            model=User,
+            persist=True,
+            resilient=True,
+            dry_run=True,
+        )
+        computed = frame.compute()
+
+    assert isinstance(frame, dd.DataFrame)
+    assert computed["status"].tolist() == ["active", "inactive"]
+
+
+def test_facade_dry_run_rejects_eager_return_types(tmp_path):
+    class Base(DeclarativeBase):
+        pass
+
+    class User(Base):
+        __tablename__ = "dry_run_eager_sql_users"
+
+        id: Mapped[int] = mapped_column(primary_key=True)
+        status: Mapped[str] = mapped_column(String(32))
+
+    db_path = tmp_path / "dry_run_eager_sql.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as session:
+            session.add(User(status="active"))
+            session.commit()
+    finally:
+        engine.dispose()
+
+    config = SqlDatabaseConfig(
+        connection_url=f"sqlite:///{db_path}",
+        poolclass="sqlalchemy.pool.NullPool",
+        query_only=False,
+    )
+
+    with DataGateway(config) as facade:
+        with pytest.raises(ValueError, match="dry_run=True is only supported"):
+            facade.load(
+                statement=select(User),
+                model=User,
+                return_type="pandas",
+                dry_run=True,
+            )
+
+
+def test_facade_preview_uses_safe_head_for_lazy_sql(tmp_path, monkeypatch):
+    class Base(DeclarativeBase):
+        pass
+
+    class User(Base):
+        __tablename__ = "preview_sql_users"
+
+        id: Mapped[int] = mapped_column(primary_key=True)
+        status: Mapped[str] = mapped_column(String(32))
+
+    db_path = tmp_path / "preview_sql.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as session:
+            session.add_all([User(status="active"), User(status="inactive")])
+            session.commit()
+    finally:
+        engine.dispose()
+
+    config = SqlDatabaseConfig(
+        connection_url=f"sqlite:///{db_path}",
+        poolclass="sqlalchemy.pool.NullPool",
+        query_only=False,
+    )
+    calls: list[tuple[int, int]] = []
+
+    def tracking_safe_head(frame, *, n=5, npartitions=1, dask_client=None, logger=None, dry_run=False):
+        calls.append((n, npartitions))
+        return frame.head(n, npartitions=npartitions)
+
+    monkeypatch.setattr(gateway_core, "safe_head", tracking_safe_head)
+
+    with DataGateway(config) as facade:
+        preview = facade.preview(
+            statement=select(User),
+            model=User,
+            n=1,
+            npartitions=1,
+        )
+
+    assert preview["status"].tolist() == ["active"]
+    assert calls == [(1, 1)]
+
+
+@pytest.mark.asyncio
+async def test_facade_aload_resilient_persist_uses_safe_persist_for_lazy_sql(tmp_path, monkeypatch):
+    class Base(DeclarativeBase):
+        pass
+
+    class User(Base):
+        __tablename__ = "async_resilient_sql_users"
+
+        id: Mapped[int] = mapped_column(primary_key=True)
+        status: Mapped[str] = mapped_column(String(32))
+
+    db_path = tmp_path / "async_resilient_sql.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as session:
+            session.add_all([User(status="active"), User(status="inactive")])
+            session.commit()
+    finally:
+        engine.dispose()
+
+    config = SqlDatabaseConfig(
+        connection_url=f"sqlite:///{db_path}",
+        poolclass="sqlalchemy.pool.NullPool",
+        query_only=False,
+    )
+    calls: list[int] = []
+
+    def tracking_safe_persist(frame, *, dask_client=None, logger=None):
+        calls.append(frame.npartitions)
+        return frame.persist()
+
+    monkeypatch.setattr(gateway_core, "safe_persist", tracking_safe_persist)
+
+    async with DataGateway(config) as facade:
+        frame = await facade.aload(
+            statement=select(User),
+            model=User,
+            persist=True,
+            resilient=True,
+        )
+
+    assert isinstance(frame, dd.DataFrame)
+    assert calls == [frame.npartitions]
+    assert frame.compute()["status"].tolist() == ["active", "inactive"]
+
+
+@pytest.mark.asyncio
+async def test_facade_apreview_uses_async_safe_head_for_lazy_sql(tmp_path, monkeypatch):
+    class Base(DeclarativeBase):
+        pass
+
+    class User(Base):
+        __tablename__ = "apreview_sql_users"
+
+        id: Mapped[int] = mapped_column(primary_key=True)
+        status: Mapped[str] = mapped_column(String(32))
+
+    db_path = tmp_path / "apreview_sql.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as session:
+            session.add_all([User(status="active"), User(status="inactive")])
+            session.commit()
+    finally:
+        engine.dispose()
+
+    config = SqlDatabaseConfig(
+        connection_url=f"sqlite:///{db_path}",
+        poolclass="sqlalchemy.pool.NullPool",
+        query_only=False,
+    )
+    calls: list[tuple[int, int]] = []
+
+    async def tracking_async_safe_head(
+        frame,
+        *,
+        n=5,
+        npartitions=1,
+        dask_client=None,
+        logger=None,
+        dry_run=False,
+    ):
+        calls.append((n, npartitions))
+        return frame.head(n, npartitions=npartitions)
+
+    monkeypatch.setattr(gateway_core, "async_safe_head", tracking_async_safe_head)
+
+    async with DataGateway(config) as facade:
+        preview = await facade.apreview(
+            statement=select(User),
+            model=User,
+            n=1,
+            npartitions=1,
+        )
+
+    assert preview["status"].tolist() == ["active"]
+    assert calls == [(1, 1)]
 
 
 def test_facade_can_return_polars_frame_for_parquet(temp_project_root):

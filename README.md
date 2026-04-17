@@ -93,6 +93,9 @@ pip install "boti[data]"
 
 ## Imports
 
+> **Breaking change:** Dask runtime/session/resilience helpers are no longer re-exported from `boti_data`.
+> Update imports like `from boti_data import DaskSession, safe_compute` to `from boti_dask import DaskSession, safe_compute`.
+
 `boti-data` uses the top-level Python package `boti_data`:
 
 ```python
@@ -106,6 +109,30 @@ from boti_data import (
     SqlAlchemyModelBuilder,
     SqlDatabaseConfig,
     SqlDatabaseResource,
+)
+```
+
+For Dask runtime/session/resilience utilities, import from `boti_dask` directly:
+
+```python
+from boti_dask import (
+    DaskSession,
+    UniqueValuesExtractor,
+    apply_recommended_dask_config,
+    async_safe_compute,
+    async_safe_gather,
+    async_safe_head,
+    async_safe_persist,
+    async_safe_wait,
+    dask_is_empty,
+    dask_is_probably_empty,
+    dask_session,
+    inspect_graph,
+    safe_compute,
+    safe_gather,
+    safe_head,
+    safe_persist,
+    safe_wait,
 )
 ```
 
@@ -203,9 +230,14 @@ df = helper.load(status="confirmed", return_type="arrow")  # pyarrow.Table
 | `polars` | `polars.DataFrame` | CPU-intensive transforms, single-machine performance |
 | `arrow` | `pyarrow.Table` | Zero-copy interchange, serialisation, ML pipelines |
 | `dask` | `dask.dataframe.DataFrame` | Large datasets, distributed clusters, lazy evaluation |
-| `auto` | decided at runtime | Unknown result size; `boti-data` probes row count and chooses |
+| `auto` | decided at runtime | Unknown result size; `boti-data` uses backend-aware size heuristics |
 
-`return_type="auto"` uses pandas when the result is small (≤ 10,000 rows or ≤ 32 MB) and switches to Dask otherwise. Use it when you do not know the result size in advance and want sensible defaults.
+`return_type="auto"` uses pandas for small results and switches to Dask for larger scans, with backend-specific checks:
+
+- SQL: probes up to 10,000 rows (and respects `limit` / explicit `partitioned` controls).
+- Parquet: uses pandas when the selected scan is small enough to estimate eagerly (typically up to 4 files and <= 32 MB total), otherwise Dask.
+
+Use `auto` when result size is uncertain and you want sensible defaults without hardcoding an engine.
 
 ---
 
@@ -238,6 +270,98 @@ For async contexts (FastAPI, async services):
 async def get_orders(status: str) -> pd.DataFrame:
     async with DataHelper(config, table="orders") as helper:
         return await helper.pandas.aload(status=status)
+```
+
+---
+
+## Dask resilience helpers
+
+`boti-data` integrates with `boti_dask` for opt-in Dask runtime and resilience workflows.
+
+Available helpers:
+
+- `inspect_graph(...)`
+- `safe_compute(...)`
+- `safe_head(...)`
+- `safe_gather(...)`
+- `safe_persist(...)`
+- `safe_wait(...)`
+- `async_safe_compute(...)`
+- `async_safe_head(...)`
+- `async_safe_gather(...)`
+- `async_safe_persist(...)`
+- `async_safe_wait(...)`
+- `dask_is_probably_empty(...)`
+- `dask_is_empty(...)`
+- `UniqueValuesExtractor`
+- `apply_recommended_dask_config(...)`
+
+### Core rules
+
+- Dask DataFrame-like graphs do **not** silently fall back to local threaded compute.
+- Retry behavior is limited to recoverable communication failures.
+- The helpers are opt-in and designed to complement explicit `DaskSession` ownership.
+
+### Minimal example
+
+```python
+import asyncio
+import dask
+import dask.dataframe as dd
+import pandas as pd
+
+from boti_dask import (
+    apply_recommended_dask_config,
+    async_safe_compute,
+    dask_session,
+    inspect_graph,
+    safe_compute,
+    safe_persist,
+    safe_wait,
+)
+
+frame = dd.from_pandas(pd.DataFrame({"id": [1, 2, 3]}), npartitions=2)
+
+with apply_recommended_dask_config():
+    with dask_session(cluster_kwargs={"n_workers": 1, "threads_per_worker": 1, "processes": False}) as client:
+        metrics = inspect_graph(frame)
+        persisted = safe_persist(frame, dask_client=client)
+        safe_wait(persisted, dask_client=client)
+        total = safe_compute(frame["id"].sum(), dask_client=client)
+        preview = safe_head(frame, n=2, dask_client=client)
+
+        async def run_async() -> int:
+            delayed_value = dask.delayed(lambda: 6 * 7)()
+            return await async_safe_compute(delayed_value, dask_client=client)
+
+        async_total = asyncio.run(run_async())
+```
+
+### Dry-run and preview on gateway loads
+
+Use `dry_run=True` to build and inspect a lazy Dask load graph without materializing it, and `preview(...)` / `apreview(...)` to safely sample rows inside the session:
+
+```python
+with DataHelper.session(scheduler_address="tcp://scheduler:8786", verify_connectivity=True) as client:
+    with DataHelper(config, table="transactions") as helper:
+        ddf = helper.dask.load(year=2024, dry_run=True, diagnostics=True)
+        preview = helper.dask.preview(year=2024, n=5)
+```
+
+### Resilient joins
+
+For large indexed distributed joins, opt into resilient persistence:
+
+```python
+joined = helper.left_join(
+    left,
+    right,
+    join_key="id",
+    join_schema_map={"id": "Int64"},
+    persist=True,
+    resilient=True,
+    diagnostics=True,
+)
 ```
 
 ### Parquet sources
@@ -305,6 +429,23 @@ with DataHelper.session(scheduler_address="tcp://scheduler:8786") as client:
         # Subsequent operations reuse the persisted graph
         monthly = ddf.groupby("month").agg({"amount": "sum"}).compute()
         by_region = ddf.groupby("region").size().compute()
+
+        # Preview persisted data before the managed session closes.
+        preview = helper.preview(year=2024, n=5, persist=True)
+```
+
+### Shared sessions for repeated notebook cells
+
+When repeated cells need to reuse the same scheduler connection, opt into shared-session reuse explicitly:
+
+```python
+with DataHelper.session(
+    scheduler_address="tcp://scheduler:8786",
+    shared=True,
+    shared_key="notebook-main-cluster",
+) as client:
+    with DataHelper(config, table="transactions") as helper:
+        ddf = helper.dask.load(year=2024)
 ```
 
 ### Semi-join across distributed frames

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import Column, inspect as sa_inspect
+from sqlalchemy import Column
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import ColumnProperty
 from sqlalchemy.sql import Select
 
@@ -75,10 +76,10 @@ class SqlPartitionedLoadRequest(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     partitioned: bool = True
     partition_strategy: PartitionStrategy = "offset"
-    partition_column: Optional[str] = None
-    order_column: Optional[str] = None
+    partition_column: str | None = None
+    order_column: str | None = None
     chunk_size: int = Field(default=50_000, ge=1)
-    limit: Optional[int] = Field(default=None, ge=1)
+    limit: int | None = Field(default=None, ge=1)
     max_concurrent_fetches: int = Field(
         default=4,
         ge=1,
@@ -89,7 +90,7 @@ class SqlPartitionedLoadRequest(BaseModel):
     use_arrow: bool = True
 
     @model_validator(mode="after")
-    def validate_request(self) -> "SqlPartitionedLoadRequest":
+    def validate_request(self) -> SqlPartitionedLoadRequest:
         if self.partitioned is not True:
             raise ValueError("partitioned SQL requests must set partitioned=True.")
         if not isinstance(self.statement, Select):

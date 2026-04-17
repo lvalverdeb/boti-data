@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import dask.dataframe as dd
 import pandas as pd
@@ -28,13 +28,13 @@ class Expr:
     def to_sqlalchemy_condition(self, model: Any) -> Any:
         raise NotImplementedError
 
-    def __and__(self, other: "Expr") -> "Expr":
+    def __and__(self, other: Expr) -> Expr:
         return And(self, other)
 
-    def __or__(self, other: "Expr") -> "Expr":
+    def __or__(self, other: Expr) -> Expr:
         return Or(self, other)
 
-    def __invert__(self) -> "Expr":
+    def __invert__(self) -> Expr:
         return Not(self)
 
 
@@ -58,10 +58,10 @@ class TrueExpr(Expr):
 @dataclass(frozen=True)
 class ColOp(Expr):
     field: str
-    casting: Optional[str]
+    casting: str | None
     op: str
     value: Any
-    handler: "FilterHandler"
+    handler: FilterHandler
 
     def mask(self, df: dd.DataFrame) -> dd.Series:
         column = self.handler._get_dask_column(df, self.field, self.casting)

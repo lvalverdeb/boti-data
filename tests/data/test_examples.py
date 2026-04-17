@@ -4,7 +4,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-
 EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "examples"
 
 
@@ -71,7 +70,15 @@ def test_helper_distributed_example_runs_and_returns_summary(capsys):
     output = capsys.readouterr().out
 
     assert result["workers"] == 2
+    assert result["shared_client_reused"] is True
+    assert result["dry_run_partitions"] >= 1
+    assert len(result["preview_records"]) == 2
     assert result["matched_rows"] == 3
     assert result["unmatched_rows"] == 1
     assert "Distributed helper workers:" in output
+    assert "Shared session reused: True" in output
+    assert "Dry-run partitions:" in output
+    assert "Helper preview records:" in output
     assert "Joined helper records:" in output
+
+

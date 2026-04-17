@@ -2,21 +2,18 @@ from __future__ import annotations
 
 import asyncio
 from time import perf_counter
-from typing import Any, Optional
+from typing import Any
 
 import dask.dataframe as dd
 import pandas as pd
+from boti.core.logger import Logger
 from sqlalchemy.engine import url as sqlalchemy_url
 
-from boti.core.logger import Logger
 from boti_data.db.partitioned_execution import SqlPartitionExecutor
 from boti_data.db.partitioned_planner import SqlPartitionPlanner
 from boti_data.db.partitioned_types import (
-    PartitionStrategy,
-    SqlPartitionParams,
-    SqlPartitionPlan,
-    SqlPartitionSpec,
     SqlPartitionedLoadRequest,
+    SqlPartitionPlan,
 )
 from boti_data.db.sql_config import SqlDatabaseConfig, WorkerSqlConfig
 from boti_data.db.sql_engine import _get_worker_engine_identity
@@ -30,7 +27,7 @@ class SqlPartitionedLoader:
         self,
         config: SqlDatabaseConfig,
         *,
-        resource: Optional[SqlDatabaseResource] = None,
+        resource: SqlDatabaseResource | None = None,
         use_arrow: bool = True,
     ) -> None:
         self.config = config
@@ -70,7 +67,7 @@ class SqlPartitionedLoader:
         if self._owns_resource:
             self.resource.close()
 
-    def __enter__(self) -> "SqlPartitionedLoader":
+    def __enter__(self) -> SqlPartitionedLoader:
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -78,7 +75,7 @@ class SqlPartitionedLoader:
 
     @staticmethod
     def _coerce_request(
-        request: Optional[SqlPartitionedLoadRequest],
+        request: SqlPartitionedLoadRequest | None,
         options: dict[str, Any],
     ) -> SqlPartitionedLoadRequest:
         if request is not None:
@@ -89,14 +86,14 @@ class SqlPartitionedLoader:
 
     def plan(
         self,
-        request: Optional[SqlPartitionedLoadRequest] = None,
+        request: SqlPartitionedLoadRequest | None = None,
         **options: Any,
     ) -> SqlPartitionPlan:
         return self.plan_request(self._coerce_request(request, options))
 
     async def aplan(
         self,
-        request: Optional[SqlPartitionedLoadRequest] = None,
+        request: SqlPartitionedLoadRequest | None = None,
         **options: Any,
     ) -> SqlPartitionPlan:
         validated_request = self._coerce_request(request, options)
@@ -104,14 +101,14 @@ class SqlPartitionedLoader:
 
     def load(
         self,
-        request: Optional[SqlPartitionedLoadRequest] = None,
+        request: SqlPartitionedLoadRequest | None = None,
         **options: Any,
     ) -> pd.DataFrame | dd.DataFrame:
         return self.load_request(self._coerce_request(request, options))
 
     async def aload(
         self,
-        request: Optional[SqlPartitionedLoadRequest] = None,
+        request: SqlPartitionedLoadRequest | None = None,
         **options: Any,
     ) -> pd.DataFrame | dd.DataFrame:
         validated_request = self._coerce_request(request, options)

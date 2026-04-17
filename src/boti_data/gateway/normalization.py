@@ -21,6 +21,8 @@ LOAD_CONTROL_KEYS = frozenset(
         "as_pandas",
         "execution_mode",
         "persist",
+        "resilient",
+        "dry_run",
         "diagnostics",
         "timeout",
         "in_chunk_size",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional, Type
+from typing import Any
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -104,10 +104,10 @@ def _validate_async_driver_url(
 def _build_sync_engine_kwargs(
     config: SqlDatabaseConfig,
     *,
-    poolclass_override: Optional[Type[Pool]] = None,
-) -> Dict[str, Any]:
+    poolclass_override: type[Pool] | None = None,
+) -> dict[str, Any]:
     poolclass = poolclass_override or config.poolclass
-    kwargs: Dict[str, Any] = {
+    kwargs: dict[str, Any] = {
         "pool_recycle": config.pool_recycle,
         "pool_pre_ping": config.pool_pre_ping,
         "poolclass": poolclass,
@@ -125,9 +125,9 @@ def _build_sync_engine_kwargs(
     return kwargs
 
 
-def _build_async_engine_kwargs(config: SqlDatabaseConfig) -> Dict[str, Any]:
+def _build_async_engine_kwargs(config: SqlDatabaseConfig) -> dict[str, Any]:
     actual_poolclass = config.poolclass
-    kwargs: Dict[str, Any] = {
+    kwargs: dict[str, Any] = {
         "pool_recycle": config.pool_recycle,
         "pool_pre_ping": config.pool_pre_ping,
         "connect_args": config.connect_args,
@@ -215,7 +215,7 @@ def _resolve_worker_connection_url(config: WorkerSqlConfig) -> str:
     return config.connection_url.get_secret_value()
 
 
-def _build_worker_sync_engine_kwargs(config: WorkerSqlConfig) -> Dict[str, Any]:
+def _build_worker_sync_engine_kwargs(config: WorkerSqlConfig) -> dict[str, Any]:
     return {
         "pool_recycle": config.pool_recycle,
         "pool_pre_ping": config.pool_pre_ping,
@@ -225,7 +225,7 @@ def _build_worker_sync_engine_kwargs(config: WorkerSqlConfig) -> Dict[str, Any]:
     }
 
 
-def _build_worker_async_engine_kwargs(config: WorkerSqlConfig) -> Dict[str, Any]:
+def _build_worker_async_engine_kwargs(config: WorkerSqlConfig) -> dict[str, Any]:
     return {
         "pool_recycle": config.pool_recycle,
         "pool_pre_ping": config.pool_pre_ping,

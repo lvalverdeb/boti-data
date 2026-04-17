@@ -7,11 +7,10 @@ significantly faster than their pandas/Dask counterparts.
 """
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence
+from collections.abc import Sequence
 
 import pyarrow as pa
 import pyarrow.compute as pc
-
 
 # ---------------------------------------------------------------------------
 # Sort
@@ -311,8 +310,8 @@ def anti_join(
 def filter_date_range(
     table: pa.Table,
     column: str,
-    start: Optional[str] = None,
-    end: Optional[str] = None,
+    start: str | None = None,
+    end: str | None = None,
 ) -> pa.Table:
     """Filter table rows by date range on a timestamp column.
 

@@ -3,15 +3,16 @@ Unit test suite verifying SqlAlchemyModelBuilder bindings.
 """
 from __future__ import annotations
 
-from sqlalchemy import MetaData, Table, Column, Integer, String, create_engine
 import pytest
-from boti_data.db.sql_model_builder import SqlAlchemyModelBuilder
-from boti_data.db.sql_model_builder import BuilderConfig
+from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine
+
+from boti_data.db.sql_model_builder import BuilderConfig, SqlAlchemyModelBuilder
 from boti_data.db.sql_model_registry import get_global_registry
+
 
 def test_sql_model_builder_resolves_registry_transparently():
     engine = create_engine("sqlite:///:memory:")
-    
+
     metadata = MetaData()
     test_table = Table(
         'facade_users', metadata,
@@ -22,7 +23,7 @@ def test_sql_model_builder_resolves_registry_transparently():
 
     builder = SqlAlchemyModelBuilder(engine, "facade_users")
     FacadeModel = builder.build_model()
-    
+
     assert FacadeModel.__name__ == "FacadeUsers"
     assert FacadeModel.__tablename__ == "facade_users"
 
@@ -33,8 +34,8 @@ def test_sql_model_builder_resolves_registry_transparently():
 
 def test_sql_model_builder_string_normalizations():
     assert SqlAlchemyModelBuilder._normalize_class_name("super_admin_nodes") == "SuperAdminNodes"
-    
-    # Assert column normalization sanitizes reserved keywords securely 
+
+    # Assert column normalization sanitizes reserved keywords securely
     assert SqlAlchemyModelBuilder._normalize_column_name("lambda") == "lambda_field"
     assert SqlAlchemyModelBuilder._normalize_column_name("1invalid_start") == "_1invalid_start"
 

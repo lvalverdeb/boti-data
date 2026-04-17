@@ -6,11 +6,11 @@ import pytest
 from sqlalchemy import String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
-from boti_data.distributed import dask_session, describe_client, describe_frame
-from boti_data.parquet import ParquetDataConfig
+from boti_data.db import SqlDatabaseConfig
+from boti_dask import dask_session
 from boti_data.gateway import DataGateway
 from boti_data.joins import indexed_left_join, left_join_frames
-from boti_data.db import SqlDatabaseConfig
+from boti_data.parquet import ParquetDataConfig
 
 
 class CaptureLogger:
@@ -31,36 +31,6 @@ class CaptureLogger:
 
     def error(self, message: str, *_args, **_kwargs) -> None:
         self.errors.append(message)
-
-
-def test_dask_session_connects_to_scheduler_address():
-    distributed = pytest.importorskip("dask.distributed")
-    Client = distributed.Client
-    LocalCluster = distributed.LocalCluster
-    logger = CaptureLogger()
-
-    with LocalCluster(
-        n_workers=1,
-        threads_per_worker=1,
-        processes=False,
-        dashboard_address=None,
-    ) as cluster, Client(cluster):
-        with dask_session(scheduler_address=cluster.scheduler_address, logger=logger) as client:
-            summary = describe_client(client)
-
-    assert summary["workers"] == 1
-    assert any("Connected Dask client" in message for message in logger.infos)
-
-
-def test_describe_frame_reports_dask_metrics():
-    frame = dd.from_pandas(pd.DataFrame({"id": [1, 2, 3]}), npartitions=2)
-
-    metrics = describe_frame(frame)
-
-    assert metrics["engine"] == "dask"
-    assert metrics["npartitions"] == 2
-    assert metrics["columns"] == 1
-    assert metrics["graph_tasks"] is not None
 
 
 def test_gateway_partitioned_sql_diagnostics_log_plan_and_completion(tmp_path):
@@ -100,6 +70,7 @@ def test_gateway_partitioned_sql_diagnostics_log_plan_and_completion(tmp_path):
 
     assert frame.npartitions == 1
     assert any("Partitioned SQL plan" in message for message in logger.infos)
+    assert any("Gateway load graph metrics=" in message for message in logger.infos)
     assert any("Gateway load completed" in message for message in logger.infos)
 
 
@@ -317,13 +288,7 @@ async def test_gateway_aload_partitioned_sql_diagnostics_log_plan_and_completion
 
     assert frame.npartitions == 1
     assert any("Partitioned SQL plan" in message for message in logger.infos)
+    assert any("Gateway load graph metrics=" in message for message in logger.infos)
     assert any("Gateway load completed" in message for message in logger.infos)
 
 
-def test_dask_session_can_create_managed_local_cluster():
-    pytest.importorskip("dask.distributed")
-
-    with dask_session(cluster_kwargs={"n_workers": 1, "threads_per_worker": 1, "processes": False, "dashboard_address": None}) as client:
-        summary = describe_client(client)
-
-    assert summary["workers"] == 1

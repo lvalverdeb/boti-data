@@ -4,6 +4,12 @@ Tests for the SQLAlchemy connection manager and engine registry.
 import pickle
 
 import pytest
+from pydantic import ValidationError
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from sqlalchemy.orm.exc import UnmappedInstanceError
+
+from boti_data.db.sql_config import WorkerSqlConfig
 from boti_data.db.sql_manager import (
     AsyncSqlDatabaseResource,
     EngineRegistry,
@@ -11,12 +17,8 @@ from boti_data.db.sql_manager import (
     SqlDatabaseResource,
     _create_worker_sync_engine,
 )
-from boti_data.db.sql_config import WorkerSqlConfig
 from boti_data.db.sqlalchemy_async import ensure_greenlet_available
-from pydantic import ValidationError
-from sqlalchemy import text
-from sqlalchemy.exc import OperationalError, SQLAlchemyError
-from sqlalchemy.orm.exc import UnmappedInstanceError
+
 
 def test_config_validation():
     """Verify DSN and initialization constraints are respected."""
@@ -98,11 +100,11 @@ def test_resource_initializes_engine_correctly():
         poolclass="sqlalchemy.pool.StaticPool",
         query_only=False,
     )
-    
+
     with SqlDatabaseResource(config) as db:
         assert db.engine is not None
         assert db.session is not None
-        
+
         # Execute a simple DB Ping via connection
         with db.engine.connect() as conn:
             assert conn is not None
@@ -114,22 +116,22 @@ def test_resource_initializes_engine_correctly():
 def test_engine_registry_reference_counting():
     """Verify the registry correctly shares and discards connection pools."""
     config = SqlDatabaseConfig(connection_url="sqlite:///:memory:", query_only=False)
-    
+
     # Track the underlying key using the config
     # To properly simulate duplicate configs, we create two resources
     res1 = SqlDatabaseResource(config)
     res2 = SqlDatabaseResource(config)
-    
+
     assert res1._engine is res2._engine
-    
+
     key = res1._engine_key
     assert EngineRegistry._registry[key]["ref_count"] == 2
-    
+
     # Close first resource
     res1.close()
     assert key in EngineRegistry._registry
     assert EngineRegistry._registry[key]["ref_count"] == 1
-    
+
     # Close second resource
     res2.close()
     assert key not in EngineRegistry._registry
@@ -192,7 +194,7 @@ def test_resource_cleanup_failure_resilience():
     db = SqlDatabaseResource(config)
     engine = db.engine
     db.close()
-    
+
     with pytest.raises(RuntimeError, match="is closed"):
         _ = db.engine
 

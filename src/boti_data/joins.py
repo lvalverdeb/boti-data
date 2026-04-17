@@ -5,9 +5,14 @@ from time import perf_counter
 from typing import Any
 
 import dask.dataframe as dd
-import pandas as pd
 
-from boti_data.distributed import current_client_summary, describe_frame, diagnostics_logger
+from boti_dask import (
+    current_client_summary,
+    describe_frame,
+    diagnostics_logger,
+    inspect_graph,
+    safe_persist,
+)
 from boti_data.schema import (
     DataFrameLike,
     apply_schema_map,
@@ -55,6 +60,7 @@ def left_join_frames(
     right_on: Sequence[str] | None = None,
     join_schema_map: Mapping[str, str],
     diagnostics: bool = False,
+    dry_run: bool = False,
     logger: Any | None = None,
     label: str = "left_join_frames",
 ) -> DataFrameLike:
@@ -83,6 +89,10 @@ def left_join_frames(
         left_on=resolved_left_on,
         right_on=resolved_right_on,
     )
+    if dry_run and diagnostics and active_logger is not None and isinstance(joined, dd.DataFrame):
+        active_logger.info(
+            f"{label}: dry run requested; execution skipped with graph={inspect_graph(joined)}"
+        )
     if diagnostics and active_logger is not None:
         active_logger.info(
             f"{label}: completed in {perf_counter() - started:.2f}s with metrics={describe_frame(joined)}"
@@ -97,8 +107,10 @@ def indexed_left_join(
     join_key: str,
     join_schema_map: Mapping[str, str],
     persist: bool = False,
+    resilient: bool = False,
     reset_index: bool = True,
     diagnostics: bool = False,
+    dry_run: bool = False,
     logger: Any | None = None,
     label: str = "indexed_left_join",
 ) -> DataFrameLike:
@@ -117,8 +129,12 @@ def indexed_left_join(
             active_logger.info(f"{label}: active client={client_summary}")
         active_logger.info(
             f"{label}: left={describe_frame(left_aligned)} right={describe_frame(right_aligned)} "
-            f"join_key={join_key} persist={persist}"
+            f"join_key={join_key} persist={persist} resilient={resilient}"
         )
+        if isinstance(left_aligned, dd.DataFrame):
+            active_logger.info(f"{label}: left_graph={inspect_graph(left_aligned)}")
+        if isinstance(right_aligned, dd.DataFrame):
+            active_logger.info(f"{label}: right_graph={inspect_graph(right_aligned)}")
         if isinstance(left_aligned, dd.DataFrame) and not persist:
             active_logger.warning(
                 f"{label}: persist=False may recompute expensive set_index/join stages on repeated downstream actions."
@@ -126,17 +142,31 @@ def indexed_left_join(
     left_indexed = left_aligned.set_index(join_key)
     right_indexed = right_aligned.set_index(join_key)
 
-    if persist and isinstance(left_indexed, dd.DataFrame):
-        left_indexed = left_indexed.persist()
-    if persist and isinstance(right_indexed, dd.DataFrame):
-        right_indexed = right_indexed.persist()
+    if dry_run and persist and diagnostics and active_logger is not None:
+        active_logger.info(f"{label}: dry run requested; persist steps skipped.")
+    if persist and not dry_run and isinstance(left_indexed, dd.DataFrame):
+        left_indexed = (
+            safe_persist(left_indexed, logger=active_logger)
+            if resilient
+            else left_indexed.persist()
+        )
+    if persist and not dry_run and isinstance(right_indexed, dd.DataFrame):
+        right_indexed = (
+            safe_persist(right_indexed, logger=active_logger)
+            if resilient
+            else right_indexed.persist()
+        )
 
     joined = left_indexed.join(right_indexed, how="left")
-    if persist and isinstance(joined, dd.DataFrame):
-        joined = joined.persist()
+    if persist and not dry_run and isinstance(joined, dd.DataFrame):
+        joined = safe_persist(joined, logger=active_logger) if resilient else joined.persist()
 
     if reset_index:
         joined = joined.reset_index()
+    if dry_run and diagnostics and active_logger is not None and isinstance(joined, dd.DataFrame):
+        active_logger.info(
+            f"{label}: dry run requested; execution skipped with graph={inspect_graph(joined)}"
+        )
     if diagnostics and active_logger is not None:
         active_logger.info(
             f"{label}: completed in {perf_counter() - started:.2f}s with metrics={describe_frame(joined)}"

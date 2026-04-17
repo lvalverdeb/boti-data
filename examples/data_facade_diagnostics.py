@@ -12,7 +12,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from boti_data.db import SqlDatabaseConfig
-from boti_data.distributed import dask_session, describe_client
+from boti_dask import dask_session, describe_client
 from boti_data.gateway import DataGateway
 from boti_data.joins import indexed_left_join
 

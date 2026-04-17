@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -45,11 +45,11 @@ class DataFrameParams(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    fieldnames: Optional[tuple[str, ...]] = None
-    column_names: Optional[list[str]] = None
-    chunk_size: Optional[int] = Field(default=None, ge=1)
-    index_col: Optional[str] = None
-    datetime_index: Optional[str] = None
+    fieldnames: tuple[str, ...] | None = None
+    column_names: list[str] | None = None
+    chunk_size: int | None = Field(default=None, ge=1)
+    index_col: str | None = None
+    datetime_index: str | None = None
     return_type: ReturnType = "dask"
     execution_mode: ExecutionMode = "auto"
 
@@ -72,11 +72,11 @@ class DataFrameOptions(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    sort_field: Optional[str] = None
-    duplicate_expr: Optional[Union[str, list[str]]] = None
-    duplicate_keep: Union[Literal["first", "last"], bool] = "last"
-    group_by_expr: Optional[Union[str, list[str]]] = None
-    group_expr: Optional[Union[str, dict[str, str]]] = None
+    sort_field: str | None = None
+    duplicate_expr: str | list[str] | None = None
+    duplicate_keep: Literal["first", "last"] | bool = "last"
+    group_by_expr: str | list[str] | None = None
+    group_expr: str | dict[str, str] | None = None
 
 
 class SqlLoadRequest(BaseModel):
@@ -84,19 +84,19 @@ class SqlLoadRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
-    sql: Optional[str] = None
-    statement: Optional[Any] = None
-    model: Optional[Any] = None
+    sql: str | None = None
+    statement: Any | None = None
+    model: Any | None = None
     filters: dict[str, Any] = Field(default_factory=dict)
     params: dict[str, Any] = Field(default_factory=dict)
-    limit: Optional[int] = Field(default=None, ge=0)
-    columns: Optional[list[str]] = None
+    limit: int | None = Field(default=None, ge=0)
+    columns: list[str] | None = None
     as_pandas: bool = False
     diagnostics: bool = False
     return_type: ResolvedReturnType = "pandas"
 
     @model_validator(mode="after")
-    def validate_request(self) -> "SqlLoadRequest":
+    def validate_request(self) -> SqlLoadRequest:
         if not self.sql and self.statement is None:
             raise ValueError("Either sql or statement must be provided.")
         if self.sql and self.statement is not None:
@@ -131,15 +131,15 @@ class ParquetLoadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
     filters: dict[str, Any] = Field(default_factory=dict)
-    raw_filters: Optional[list[Any]] = None
-    limit: Optional[int] = Field(default=None, ge=0)
-    columns: Optional[list[str]] = None
+    raw_filters: list[Any] | None = None
+    limit: int | None = Field(default=None, ge=0)
+    columns: list[str] | None = None
     as_pandas: bool = False
     diagnostics: bool = False
     return_type: ResolvedReturnType = "pandas"
 
     @model_validator(mode="after")
-    def validate_request(self) -> "ParquetLoadRequest":
+    def validate_request(self) -> ParquetLoadRequest:
         if self.filters and self.raw_filters:
             raise ValueError("Use either filters or raw_filters, not both.")
         if self.limit is not None and not self.as_pandas and self.return_type != "arrow":

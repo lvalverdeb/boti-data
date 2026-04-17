@@ -54,7 +54,7 @@ class ArrowSchema:
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_dict(cls, dtype_map: Mapping[str, str]) -> "ArrowSchema":
+    def from_dict(cls, dtype_map: Mapping[str, str]) -> ArrowSchema:
         """Build from a pandas-style dtype mapping (same format as existing schema_map)."""
         from boti_data.db.arrow_schema_mapper import pandas_dtype_to_arrow
         from boti_data.schema import normalize_schema_map
@@ -67,12 +67,12 @@ class ArrowSchema:
         return cls(pa.schema(fields))
 
     @classmethod
-    def from_fields(cls, fields: list[tuple[str, pa.DataType]]) -> "ArrowSchema":
+    def from_fields(cls, fields: list[tuple[str, pa.DataType]]) -> ArrowSchema:
         """Build from explicit (name, arrow_type) pairs."""
         return cls(pa.schema(fields))
 
     @classmethod
-    def from_dataframe(cls, df: Any) -> "ArrowSchema":
+    def from_dataframe(cls, df: Any) -> ArrowSchema:
         """Infer schema from a pandas or Dask DataFrame.
 
         Note: For Dask DataFrames, this computes the schema from metadata
@@ -88,7 +88,7 @@ class ArrowSchema:
         return cls(arrow_schema)
 
     @classmethod
-    def empty(cls) -> "ArrowSchema":
+    def empty(cls) -> ArrowSchema:
         """Build an empty schema (zero columns)."""
         return cls(pa.schema([]))
 
@@ -96,7 +96,7 @@ class ArrowSchema:
     # Schema operations
     # ------------------------------------------------------------------
 
-    def equals(self, other: "ArrowSchema") -> bool:
+    def equals(self, other: ArrowSchema) -> bool:
         """Check if two schemas are equal (column names and types)."""
         return self._schema.equals(other._schema)
 

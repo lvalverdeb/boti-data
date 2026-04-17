@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from boti_data.distributed import DaskSession, dask_session
+from boti_dask import DaskSession, dask_session
 from boti_data.gateway import DataGateway
 from boti_data.gateway.requests import BackendConfig
 from boti_data.joins import indexed_left_join, left_join_frames
@@ -58,6 +58,12 @@ class _EngineBoundHelper:
     async def aload(self, **options: Any) -> Any:
         return await self._helper.aload(**self._bind_options(options))
 
+    def preview(self, *, n: int = 5, npartitions: int = 1, **options: Any) -> Any:
+        return self._helper.preview(n=n, npartitions=npartitions, **self._bind_options(options))
+
+    async def apreview(self, *, n: int = 5, npartitions: int = 1, **options: Any) -> Any:
+        return await self._helper.apreview(n=n, npartitions=npartitions, **self._bind_options(options))
+
     def load_period(self, dt_field: str, start: str, end: str, **kwargs: Any) -> Any:
         return self._helper.load_period(dt_field, start, end, **self._bind_options(kwargs))
 
@@ -94,21 +100,21 @@ class DataHelper:
             self.gateway = DataGateway(config, **overrides)
 
     @classmethod
-    def from_legacy_config(cls, config: dict[str, Any], **overrides: Any) -> "DataHelper":
+    def from_legacy_config(cls, config: dict[str, Any], **overrides: Any) -> DataHelper:
         return cls(config, **overrides)
 
     @classmethod
-    def from_gateway(cls, gateway: DataGateway) -> "DataHelper":
+    def from_gateway(cls, gateway: DataGateway) -> DataHelper:
         return cls(gateway)
 
-    def __enter__(self) -> "DataHelper":
+    def __enter__(self) -> DataHelper:
         self.gateway.__enter__()
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.gateway.__exit__(exc_type, exc_val, exc_tb)
 
-    async def __aenter__(self) -> "DataHelper":
+    async def __aenter__(self) -> DataHelper:
         await self.gateway.__aenter__()
         return self
 
@@ -126,6 +132,12 @@ class DataHelper:
 
     async def aload(self, **options: Any) -> Any:
         return await self.gateway.aload(**options)
+
+    def preview(self, *, n: int = 5, npartitions: int = 1, **options: Any) -> Any:
+        return self.gateway.preview(n=n, npartitions=npartitions, **options)
+
+    async def apreview(self, *, n: int = 5, npartitions: int = 1, **options: Any) -> Any:
+        return await self.gateway.apreview(n=n, npartitions=npartitions, **options)
 
     @property
     def dask(self) -> _EngineBoundHelper:
@@ -165,8 +177,10 @@ class DataHelper:
         left_on: Sequence[str] | None = None,
         right_on: Sequence[str] | None = None,
         persist: bool = False,
+        resilient: bool = False,
         reset_index: bool = True,
         diagnostics: bool = False,
+        dry_run: bool = False,
         logger: Any | None = None,
         label: str | None = None,
     ) -> DataFrameLike:
@@ -177,8 +191,10 @@ class DataHelper:
                 join_key=join_key,
                 join_schema_map=join_schema_map,
                 persist=persist,
+                resilient=resilient,
                 reset_index=reset_index,
                 diagnostics=diagnostics,
+                dry_run=dry_run,
                 logger=logger,
                 label=label or "data_helper.indexed_left_join",
             )
@@ -191,6 +207,7 @@ class DataHelper:
             right_on=right_on,
             join_schema_map=join_schema_map,
             diagnostics=diagnostics,
+            dry_run=dry_run,
             logger=logger,
             label=label or "data_helper.left_join_frames",
         )

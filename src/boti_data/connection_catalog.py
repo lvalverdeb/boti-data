@@ -8,12 +8,11 @@ import functools
 import re
 import threading
 from pathlib import Path
-from typing import Optional
 
 import fsspec
 import pyarrow.fs as pafs
-
 from boti.core.filesystem import FilesystemAdapter, FilesystemConfig, create_filesystem
+
 from boti_data.db.sql_config import SqlDatabaseConfig
 from boti_data.db.sql_resource import AsyncSqlDatabaseResource, SqlDatabaseResource
 
@@ -49,7 +48,7 @@ class ConnectionCatalog:
         name: str,
         prefix: str,
         *,
-        env_file: Optional[str | Path] = None,
+        env_file: str | Path | None = None,
         **overrides: object,
     ) -> SqlDatabaseConfig:
         config = SqlDatabaseConfig.from_env_prefix(prefix, env_file=env_file, **overrides)
@@ -83,7 +82,7 @@ class ConnectionCatalog:
         name: str,
         prefix: str,
         *,
-        env_file: Optional[str | Path] = None,
+        env_file: str | Path | None = None,
         **overrides: object,
     ) -> FilesystemConfig:
         config = FilesystemConfig.from_env_prefix(prefix, env_file=env_file, **overrides)
@@ -179,3 +178,7 @@ class S3Catalog:
 
     def invalidate(self) -> None:
         self.adapter.invalidate()
+
+
+class LocalS3Profile(S3Catalog):
+    """Backward-compatible alias for the legacy local S3 profile helper."""

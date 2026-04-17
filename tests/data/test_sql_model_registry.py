@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine
-from boti_data.db.sql_model_registry import SqlModelRegistry, DefaultBase
-from boti_data.db.sql_model_registry import RegistryConfig
 from sqlalchemy.exc import SQLAlchemyError
+
+from boti_data.db.sql_model_registry import RegistryConfig, SqlModelRegistry
+
 
 def test_registry_dynamic_model_generation():
     engine = create_engine("sqlite:///:memory:")
-    
+
     # Create the db schema manually
     metadata = MetaData()
     test_table = Table(
@@ -22,13 +23,13 @@ def test_registry_dynamic_model_generation():
     metadata.create_all(engine)
 
     registry = SqlModelRegistry()
-    
+
     # Generate model via registry
     UserModel = registry.get_model(engine, "test_dynamic_users")
-    
+
     assert UserModel.__name__ == "TestDynamicUsers"
     assert UserModel.__tablename__ == "test_dynamic_users"
-    
+
     # Test identical model reference is returned from cache on exact subsequent call
     UserModel2 = registry.get_model(engine, "test_dynamic_users")
     assert UserModel is UserModel2
@@ -38,7 +39,7 @@ def test_registry_missing_pk_fallback():
     """Verify registry dynamically falls back to sequential columns when PK is missing."""
     engine = create_engine("sqlite:///:memory:")
     metadata = MetaData()
-    
+
     Table(
         'missing_pk_table', metadata,
         Column('pseudo_id', Integer),
@@ -54,7 +55,7 @@ def test_registry_missing_pk_fallback():
 
     registry = SqlModelRegistry(logger=StubLogger())  # type: ignore[arg-type]
     Model = registry.get_model(engine, "missing_pk_table")
-    
+
     # Should resolve by injecting primary column
     assert any("Missing native Primary Key" in message for message in messages)
     assert Model.__mapper_args__["primary_key"][0].name == "pseudo_id"

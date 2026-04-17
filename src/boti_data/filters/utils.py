@@ -8,7 +8,8 @@ from typing import Any
 
 import dask.dataframe as dd
 import pandas as pd
-from sqlalchemy import Column, String, and_, cast, false, func, inspect as sa_inspect, or_, true
+from sqlalchemy import Column, String, and_, cast, false, func, or_, true
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import ColumnProperty
 from sqlalchemy.sql.sqltypes import Date, Time
 

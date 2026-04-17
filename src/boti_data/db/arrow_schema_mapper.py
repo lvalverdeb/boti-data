@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 import pyarrow as pa
 from sqlalchemy.sql.sqltypes import (
@@ -28,7 +28,6 @@ from sqlalchemy.sql.sqltypes import (
     Unicode,
     UnicodeText,
 )
-
 
 # ---------------------------------------------------------------------------
 # SQLAlchemy → PyArrow type mapping
@@ -254,7 +253,7 @@ def build_empty_arrow_table(schema: pa.Schema) -> pa.Table:
 def arrow_table_to_pandas(
     table: pa.Table,
     *,
-    types_mapper: Optional[Any] = None,
+    types_mapper: Any | None = None,
 ) -> Any:
     """Convert an Arrow Table to pandas with proper type mapping.
 

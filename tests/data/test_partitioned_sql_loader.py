@@ -15,8 +15,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from boti_data.db import (
     SqlDatabaseConfig,
-    SqlPartitionedLoadRequest,
     SqlPartitionedLoader,
+    SqlPartitionedLoadRequest,
 )
 from boti_data.db.partitioned_execution import SqlPartitionExecutor
 from boti_data.db.partitioned_types import MAX_PARTITION_FETCH_CONCURRENCY

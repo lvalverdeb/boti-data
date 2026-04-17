@@ -17,20 +17,21 @@ Parquet            → Files already carry semantic column names; translation an
 """
 from __future__ import annotations
 
-import boti_data.gateway.core as gateway_core
+from typing import Any
+
 import dask.dataframe as dd
-import polars as pl
 import pandas as pd
+import polars as pl
 import pyarrow as pa
 import pytest
-from typing import Any
 from pydantic import SecretStr
 from sqlalchemy import String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
+import boti_data.gateway.core as gateway_core
+from boti_data.db.sql_config import SqlDatabaseConfig
 from boti_data.field_map import FieldMap
 from boti_data.gateway import DataFrameParams, DataGateway
-from boti_data.db.sql_config import SqlDatabaseConfig
 
 # ---------------------------------------------------------------------------
 # Shared field map (DB legacy name → semantic name)
@@ -776,6 +777,7 @@ def test_aload_timeout_raises_when_exceeded(legacy_dsn, monkeypatch):
 
 import datetime as _dt
 
+
 class DateBase(DeclarativeBase):
     pass
 
@@ -1302,7 +1304,6 @@ def test_load_pandas_series_as_in_filter(legacy_dsn):
 
 def test_load_pandas_series_with_nan_drops_nulls(legacy_dsn):
     """NaN values in a pd.Series __in filter are silently discarded."""
-    import numpy as np
 
     gw = _legacy_gw(legacy_dsn)
     try:

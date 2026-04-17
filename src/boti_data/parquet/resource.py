@@ -9,7 +9,7 @@ import datetime as dt
 import functools
 import posixpath
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 import dask.dataframe as dd
@@ -18,13 +18,13 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.fs as pafs
-from fsspec.implementations.local import LocalFileSystem
-from pydantic import Field, field_validator, model_validator
-
 from boti.core.filesystem import FilesystemConfig, create_filesystem
 from boti.core.models import ResourceConfig
 from boti.core.secure_io import SecureResource
 from boti.core.security import is_valid_identifier
+from fsspec.implementations.local import LocalFileSystem
+from pydantic import Field, field_validator, model_validator
+
 from boti_data.filters import FilterHandler
 
 
@@ -36,17 +36,17 @@ def create_local_filesystem() -> fsspec.AbstractFileSystem:
 class ParquetDataConfig(ResourceConfig):
     """Validated configuration for Parquet-backed discovery and loading."""
 
-    parquet_storage_path: Optional[str] = Field(default=None)
-    parquet_filename: Optional[str] = Field(default=None)
-    parquet_start_date: Optional[dt.date] = Field(default=None)
-    parquet_end_date: Optional[dt.date] = Field(default=None)
+    parquet_storage_path: str | None = Field(default=None)
+    parquet_filename: str | None = Field(default=None)
+    parquet_start_date: dt.date | None = Field(default=None)
+    parquet_end_date: dt.date | None = Field(default=None)
     parquet_max_age_minutes: int = Field(default=0, ge=0)
-    partition_on: Optional[list[str]] = Field(default=None)
-    filesystem_profile: Optional[str] = Field(default=None)
+    partition_on: list[str] | None = Field(default=None)
+    filesystem_profile: str | None = Field(default=None)
 
     @field_validator("parquet_storage_path")
     @classmethod
-    def validate_storage_path(cls, value: Optional[str]) -> Optional[str]:
+    def validate_storage_path(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()
@@ -56,7 +56,7 @@ class ParquetDataConfig(ResourceConfig):
 
     @field_validator("parquet_filename")
     @classmethod
-    def validate_filename(cls, value: Optional[str]) -> Optional[str]:
+    def validate_filename(cls, value: str | None) -> str | None:
         if value is None:
             return None
         if not value or value in {".", ".."} or "/" in value or "\\" in value:
@@ -65,7 +65,7 @@ class ParquetDataConfig(ResourceConfig):
 
     @field_validator("partition_on")
     @classmethod
-    def validate_partition_on(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+    def validate_partition_on(cls, value: list[str] | None) -> list[str] | None:
         if value is None:
             return None
         if not value:
@@ -76,7 +76,7 @@ class ParquetDataConfig(ResourceConfig):
 
     @field_validator("filesystem_profile")
     @classmethod
-    def validate_filesystem_profile(cls, value: Optional[str]) -> Optional[str]:
+    def validate_filesystem_profile(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()
@@ -85,7 +85,7 @@ class ParquetDataConfig(ResourceConfig):
         return normalized
 
     @model_validator(mode="after")
-    def validate_date_range(self) -> "ParquetDataConfig":
+    def validate_date_range(self) -> ParquetDataConfig:
         if self.parquet_storage_path is None and self.filesystem_profile is None:
             raise ValueError("Either parquet_storage_path or filesystem_profile must be provided.")
         if bool(self.parquet_start_date) != bool(self.parquet_end_date):
@@ -108,11 +108,11 @@ class ParquetDataResource(SecureResource):
         self,
         config: ParquetDataConfig,
         *,
-        fs: Optional[fsspec.AbstractFileSystem] = None,
-        fs_factory: Optional[Any] = None,
-        catalog: Optional[Any] = None,
+        fs: fsspec.AbstractFileSystem | None = None,
+        fs_factory: Any | None = None,
+        catalog: Any | None = None,
     ) -> None:
-        self._filesystem_config: Optional[FilesystemConfig] = None
+        self._filesystem_config: FilesystemConfig | None = None
         resolved_fs_factory = fs_factory
         if fs is None and resolved_fs_factory is None and config.filesystem_profile is not None:
             if catalog is None:
@@ -147,7 +147,7 @@ class ParquetDataResource(SecureResource):
         raise RuntimeError("Parquet storage path is not configured.")
 
     @property
-    def parquet_filename(self) -> Optional[str]:
+    def parquet_filename(self) -> str | None:
         return self.config.parquet_filename
 
     @property
@@ -172,9 +172,9 @@ class ParquetDataResource(SecureResource):
 
     def load_files(
         self,
-        filters: Optional[list[Any]] = None,
+        filters: list[Any] | None = None,
         *,
-        columns: Optional[list[str]] = None,
+        columns: list[str] | None = None,
     ) -> dd.DataFrame:
         """Load Parquet data using the configured discovery strategy."""
         files_to_load = self._resolve_files_to_load()
@@ -203,9 +203,9 @@ class ParquetDataResource(SecureResource):
 
     def load_arrow(
         self,
-        filters: Optional[list[Any]] = None,
+        filters: list[Any] | None = None,
         *,
-        columns: Optional[list[str]] = None,
+        columns: list[str] | None = None,
     ) -> pa.Table:
         """Load Parquet data as a native Arrow table."""
         files_to_load = self._resolve_files_to_load()
@@ -223,9 +223,9 @@ class ParquetDataResource(SecureResource):
 
     def load_filtered(
         self,
-        filters: Optional[dict[str, Any]] = None,
+        filters: dict[str, Any] | None = None,
         *,
-        columns: Optional[list[str]] = None,
+        columns: list[str] | None = None,
     ) -> dd.DataFrame:
         """Load Parquet data from a high-level filter spec with pushdown + residual masking."""
         filter_handler = FilterHandler(backend="dask", logger=self.logger, debug=self.debug)
@@ -237,9 +237,9 @@ class ParquetDataResource(SecureResource):
 
     def load_filtered_arrow(
         self,
-        filters: Optional[dict[str, Any]] = None,
+        filters: dict[str, Any] | None = None,
         *,
-        columns: Optional[list[str]] = None,
+        columns: list[str] | None = None,
     ) -> pa.Table:
         """Load Parquet data as Arrow with pushdown and Arrow residual filters."""
         filter_handler = FilterHandler(backend="arrow", logger=self.logger, debug=self.debug)
@@ -251,18 +251,18 @@ class ParquetDataResource(SecureResource):
 
     async def aload_files(
         self,
-        filters: Optional[list[Any]] = None,
+        filters: list[Any] | None = None,
         *,
-        columns: Optional[list[str]] = None,
+        columns: list[str] | None = None,
     ) -> dd.DataFrame:
         """Async wrapper for parquet loading."""
         return await asyncio.to_thread(self.load_files, filters, columns=columns)
 
     async def aload_filtered(
         self,
-        filters: Optional[dict[str, Any]] = None,
+        filters: dict[str, Any] | None = None,
         *,
-        columns: Optional[list[str]] = None,
+        columns: list[str] | None = None,
     ) -> dd.DataFrame:
         """Async wrapper for high-level parquet filtering."""
         return await asyncio.to_thread(self.load_filtered, filters, columns=columns)
@@ -446,12 +446,12 @@ class ParquetDataResource(SecureResource):
         if modified_at is None:
             return False
 
-        now = dt.datetime.now(dt.timezone.utc)
+        now = dt.datetime.now(dt.UTC)
         if modified_at.tzinfo is None:
-            modified_at = modified_at.replace(tzinfo=dt.timezone.utc)
+            modified_at = modified_at.replace(tzinfo=dt.UTC)
         return (now - modified_at) <= dt.timedelta(minutes=self.config.parquet_max_age_minutes)
 
-    def _get_file_info(self, path: str) -> Optional[dict[str, Any]]:
+    def _get_file_info(self, path: str) -> dict[str, Any] | None:
         fs = self.require_fs()
         if isinstance(fs, pafs.FileSystem):
             try:
@@ -491,12 +491,12 @@ class ParquetDataResource(SecureResource):
             raise self._filesystem_runtime_error("read parquet file metadata", path, exc) from exc
 
     @staticmethod
-    def _get_mtime_from_info(info: dict[str, Any]) -> Optional[dt.datetime]:
+    def _get_mtime_from_info(info: dict[str, Any]) -> dt.datetime | None:
         modified = info.get("mtime")
         if isinstance(modified, dt.datetime):
             return modified
         if isinstance(modified, (int, float)):
-            return dt.datetime.fromtimestamp(modified, tz=dt.timezone.utc)
+            return dt.datetime.fromtimestamp(modified, tz=dt.UTC)
         if isinstance(modified, str):
             try:
                 return dt.datetime.fromisoformat(modified)
@@ -504,7 +504,7 @@ class ParquetDataResource(SecureResource):
                 return None
         return None
 
-    def _dataset_source(self) -> tuple[str, Optional[Any]]:
+    def _dataset_source(self) -> tuple[str, Any | None]:
         parsed = urlparse(self.parquet_storage_path)
         if parsed.scheme and parsed.scheme != "file":
             return self._strip_protocol(self.parquet_storage_path), self._arrow_filesystem()
@@ -514,7 +514,7 @@ class ParquetDataResource(SecureResource):
         local_path = str(self._secure_local_path(self.parquet_storage_path))
         return local_path, None
 
-    def _arrow_filesystem(self) -> Optional[pafs.FileSystem]:
+    def _arrow_filesystem(self) -> pafs.FileSystem | None:
         parsed = urlparse(self.parquet_storage_path)
         if self._uses_nonlocal_explicit_fs():
             fs = self.require_fs()
@@ -555,7 +555,7 @@ class ParquetDataResource(SecureResource):
         return str(path)
 
     @staticmethod
-    def _raw_filters_to_expression(filters: Optional[list[Any]]) -> ds.Expression | None:
+    def _raw_filters_to_expression(filters: list[Any] | None) -> ds.Expression | None:
         if not filters:
             return None
 

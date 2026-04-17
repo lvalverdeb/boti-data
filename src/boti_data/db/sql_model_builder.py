@@ -5,25 +5,26 @@ from __future__ import annotations
 
 import keyword
 import re
-from typing import Type, Any, Optional, Union
+from typing import Any
 
+from boti.core.security import is_valid_dotted_identifier
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine
-from pydantic import BaseModel, Field, ConfigDict, field_validator
-from boti.core.security import is_valid_dotted_identifier
+
 from boti_data.db.sql_model_registry import get_global_registry
 
 
 class BuilderConfig(BaseModel):
     """Structure managing contextual format overrides across the model boundaries."""
     model_config = ConfigDict(frozen=True)
-    
-    module_label: Optional[str] = Field(default=None)
+
+    module_label: str | None = Field(default=None)
     prefer_stable_names: bool = Field(default=True)
 
     @field_validator("module_label")
     @classmethod
-    def validate_module_label(cls, value: Optional[str]) -> Optional[str]:
+    def validate_module_label(cls, value: str | None) -> str | None:
         """Restrict runtime module injection targets to valid module paths."""
         if value is None:
             return None
@@ -38,12 +39,12 @@ class SqlAlchemyModelBuilder:
     Delegates dynamic reflection tracking natively to the caching registry.
     """
 
-    def __init__(self, engine: Union[Engine, AsyncEngine], table_name: str, config: Optional[BuilderConfig] = None):
+    def __init__(self, engine: Engine | AsyncEngine, table_name: str, config: BuilderConfig | None = None):
         self.engine = engine
         self.table_name = table_name
         self.config = config or BuilderConfig()
 
-    def build_model(self) -> Type[Any]:
+    def build_model(self) -> type[Any]:
         """Reflects the table and returns the stable mapped ORM class."""
         registry = get_global_registry()
 
@@ -54,7 +55,7 @@ class SqlAlchemyModelBuilder:
             prefer_stable_names=self.config.prefer_stable_names,
         )
 
-    async def build_model_async(self) -> Type[Any]:
+    async def build_model_async(self) -> type[Any]:
         """Reflects the table and returns the stable mapped ORM class across parallel async loops."""
         registry = get_global_registry()
 

@@ -7,19 +7,21 @@ import pandas as pd
 import pyarrow as pa
 from sqlalchemy import select, text
 
-from boti_data.db.arrow_schema_mapper import arrow_table_to_pandas
-from boti_data.db.arrow_schema_mapper import (
-    build_arrow_schema_from_sqlalchemy_types,
-    rows_to_arrow_table,
-)
 from boti_data.db import (
     SqlDatabaseConfig,
     SqlDatabaseResource,
-    SqlPartitionedLoadRequest,
     SqlPartitionedLoader,
+    SqlPartitionedLoadRequest,
+)
+from boti_data.db.arrow_schema_mapper import (
+    arrow_table_to_pandas,
+    build_arrow_schema_from_sqlalchemy_types,
+    rows_to_arrow_table,
 )
 from boti_data.db.sql_model_builder import SqlAlchemyModelBuilder
 from boti_data.filters import FilterHandler
+from boti_data.parquet.resource import ParquetDataConfig, ParquetDataResource
+
 from .requests import (
     BackendConfig,
     BackendName,
@@ -27,7 +29,6 @@ from .requests import (
     ParquetLoadRequest,
     SqlLoadRequest,
 )
-from boti_data.parquet.resource import ParquetDataConfig, ParquetDataResource
 
 
 def _prepare_sql_statement(request: SqlLoadRequest, *, logger: Any, debug: bool) -> tuple[Any, dict[str, Any] | None]:

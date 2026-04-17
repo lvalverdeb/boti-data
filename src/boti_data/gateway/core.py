@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from time import perf_counter
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import dask
 import dask.dataframe as dd
@@ -15,11 +15,11 @@ import fsspec
 import pandas as pd
 import polars as pl
 import pyarrow as pa
-from pydantic import SecretStr
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.engine import url as sqlalchemy_url
-
 from boti.core.logger import Logger
+from pydantic import SecretStr
+from sqlalchemy.engine import url as sqlalchemy_url
+from sqlalchemy.exc import SQLAlchemyError
+
 from boti_data.db import (
     AsyncSqlDatabaseResource,
     SqlDatabaseConfig,
@@ -30,10 +30,19 @@ from boti_data.db.partitioned_execution import SqlPartitionExecutor
 from boti_data.db.partitioned_planner import SqlPartitionPlanner
 from boti_data.db.sql_config import WorkerSqlConfig
 from boti_data.db.sql_engine import _get_worker_engine_identity
-from boti_data.distributed import current_client_summary, describe_frame
+from boti_dask import (
+    async_safe_head,
+    current_client_summary,
+    describe_frame,
+    inspect_graph,
+    safe_head,
+    safe_persist,
+)
 from boti_data.field_map import FieldMap
 from boti_data.filters import FilterHandler
+from boti_data.parquet.resource import ParquetDataConfig, ParquetDataResource
 from boti_data.schema import apply_schema_map
+
 from .frame_strategies import FrameResult, FrameStrategy, get_frame_strategy
 from .loaders import (
     build_backend_resource,
@@ -47,7 +56,11 @@ from .loaders import (
 )
 from .normalization import (
     DEFAULT_IN_CHUNK_SIZE as _DEFAULT_IN_CHUNK_SIZE,
+)
+from .normalization import (
     LOAD_CONTROL_KEYS as _LOAD_CONTROL_KEYS,
+)
+from .normalization import (
     build_partitioned_load_options,
     normalize_configured_filters,
     prepare_period_filters,
@@ -66,7 +79,6 @@ from .requests import (
     ReturnType,
     SqlLoadRequest,
 )
-from boti_data.parquet.resource import ParquetDataConfig, ParquetDataResource
 
 _AUTO_EAGER_MAX_ROWS = 10_000
 _AUTO_EAGER_MAX_FILES = 4
@@ -137,8 +149,8 @@ class DataGateway:
         exclude: bool = False,
         df_params: DataFrameParams | None = None,
         df_options: DataFrameOptions | None = None,
-        fs: Optional[fsspec.AbstractFileSystem] = None,
-        fs_factory: Optional[Any] = None,
+        fs: fsspec.AbstractFileSystem | None = None,
+        fs_factory: Any | None = None,
     ) -> None:
         config = _coerce_backend_config(config)
         self.config = config
@@ -149,7 +161,7 @@ class DataGateway:
             _parsed = sqlalchemy_url.make_url(config.connection_url.get_secret_value())
             if _parsed.get_dialect().is_async:
                 self.backend: BackendName = "sqlalchemy"
-                self.resource: Optional[BackendResource] = None
+                self.resource: BackendResource | None = None
             else:
                 self.backend, self.resource = build_backend_resource(
                     config, fs=fs, fs_factory=fs_factory
@@ -159,7 +171,7 @@ class DataGateway:
                 config, fs=fs, fs_factory=fs_factory
             )
 
-        self._async_sql_resource: Optional[AsyncSqlDatabaseResource] = None
+        self._async_sql_resource: AsyncSqlDatabaseResource | None = None
 
         # Configured-mode state
         self._table = table
@@ -670,10 +682,10 @@ class DataGateway:
         cls,
         backend: BackendName,
         *,
-        fs: Optional[fsspec.AbstractFileSystem] = None,
-        fs_factory: Optional[Any] = None,
+        fs: fsspec.AbstractFileSystem | None = None,
+        fs_factory: Any | None = None,
         **config_kwargs: Any,
-    ) -> "DataGateway":
+    ) -> DataGateway:
         if backend == "sqlalchemy":
             return cls(SqlDatabaseConfig(**config_kwargs), fs=fs, fs_factory=fs_factory)
         if backend == "parquet":
@@ -685,7 +697,7 @@ class DataGateway:
         cls,
         config: dict[str, Any],
         **overrides: Any,
-    ) -> "DataGateway":
+    ) -> DataGateway:
         """Build a :class:`DataGateway` from a legacy-style config dict.
 
         Accepts the same keys that ``DfHelper`` used to accept::
@@ -779,13 +791,13 @@ class DataGateway:
         if self.resource is not None:
             self.resource.close()
 
-    def __enter__(self) -> "DataGateway":
+    def __enter__(self) -> DataGateway:
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.close()
 
-    async def __aenter__(self) -> "DataGateway":
+    async def __aenter__(self) -> DataGateway:
         if self.backend == "sqlalchemy":
             assert isinstance(self.config, SqlDatabaseConfig)
             parsed = sqlalchemy_url.make_url(self.config.connection_url.get_secret_value())
@@ -818,6 +830,8 @@ class DataGateway:
             **options: Filter kwargs (configured mode) or load-request fields.
         """
         persist: bool = bool(options.pop("persist", False))
+        resilient: bool = bool(options.pop("resilient", False))
+        dry_run: bool = bool(options.pop("dry_run", False))
         diagnostics: bool = bool(options.pop("diagnostics", False))
         as_pandas: bool = bool(options.get("as_pandas", False))
         in_chunk_strategy = options.pop("in_chunk_strategy", "auto")
@@ -841,6 +855,10 @@ class DataGateway:
             execution_mode=resolved_execution_mode,
             loader_return_type=loader_return_type,
         )
+        if dry_run and (
+            resolved_execution_mode != "lazy" or resolved_return_type != "dask"
+        ):
+            raise ValueError("dry_run=True is only supported for lazy Dask gateway loads.")
         if diagnostics:
             self._log_load_start(
                 requested_return_type=requested_return_type,
@@ -849,6 +867,8 @@ class DataGateway:
                 resolved_execution_mode=resolved_execution_mode,
                 loader_return_type=loader_return_type,
                 persist=persist,
+                resilient=resilient,
+                dry_run=dry_run,
             )
         strategy = self._frame_strategy(resolved_return_type)
         loader_options = self._prepare_structured_loader_options(
@@ -924,8 +944,12 @@ class DataGateway:
         )
 
         result = strategy.normalize(df)
+        if dry_run:
+            if diagnostics:
+                self._log_load_dry_run(result, elapsed=perf_counter() - started, persist=persist)
+            return result
         if persist and isinstance(result, dd.DataFrame):
-            result = get_frame_strategy("dask").persist(result)
+            result = safe_persist(result, logger=self._logger) if resilient else get_frame_strategy("dask").persist(result)
         if diagnostics:
             self._log_load_complete(result, elapsed=perf_counter() - started)
         return result
@@ -945,6 +969,8 @@ class DataGateway:
                 unbounded fan-out behavior.
         """
         persist: bool = bool(options.pop("persist", False))
+        resilient: bool = bool(options.pop("resilient", False))
+        dry_run: bool = bool(options.pop("dry_run", False))
         diagnostics: bool = bool(options.pop("diagnostics", False))
         as_pandas: bool = bool(options.get("as_pandas", False))
         timeout: float | None = options.pop("timeout", None)
@@ -969,6 +995,10 @@ class DataGateway:
             execution_mode=resolved_execution_mode,
             loader_return_type=loader_return_type,
         )
+        if dry_run and (
+            resolved_execution_mode != "lazy" or resolved_return_type != "dask"
+        ):
+            raise ValueError("dry_run=True is only supported for lazy Dask gateway loads.")
         if diagnostics:
             self._log_load_start(
                 requested_return_type=requested_return_type,
@@ -977,6 +1007,8 @@ class DataGateway:
                 resolved_execution_mode=resolved_execution_mode,
                 loader_return_type=loader_return_type,
                 persist=persist,
+                resilient=resilient,
+                dry_run=dry_run,
             )
         strategy = self._frame_strategy(resolved_return_type)
 
@@ -1067,11 +1099,39 @@ class DataGateway:
             max_concurrency=in_chunk_concurrency,
         )
         result = strategy.normalize(df)
+        if dry_run:
+            if diagnostics:
+                self._log_load_dry_run(result, elapsed=perf_counter() - started, persist=persist)
+            return result
         if persist and isinstance(result, dd.DataFrame):
-            result = get_frame_strategy("dask").persist(result)
+            result = safe_persist(result, logger=self._logger) if resilient else get_frame_strategy("dask").persist(result)
         if diagnostics:
             self._log_load_complete(result, elapsed=perf_counter() - started)
         return result
+
+    def preview(
+        self,
+        *,
+        n: int = 5,
+        npartitions: int = 1,
+        **options: Any,
+    ) -> FrameResult:
+        """Load a frame and return a small preview with Dask-safe head semantics."""
+
+        frame = self.load(**options)
+        return self._preview_frame(frame, n=n, npartitions=npartitions)
+
+    async def apreview(
+        self,
+        *,
+        n: int = 5,
+        npartitions: int = 1,
+        **options: Any,
+    ) -> FrameResult:
+        """Async companion to :meth:`preview`."""
+
+        frame = await self.aload(**options)
+        return await self._apreview_frame(frame, n=n, npartitions=npartitions)
 
     def load_period(
         self,
@@ -1622,6 +1682,8 @@ class DataGateway:
         resolved_execution_mode: ResolvedExecutionMode,
         loader_return_type: Literal["pandas", "arrow", "dask"],
         persist: bool,
+        resilient: bool,
+        dry_run: bool,
     ) -> None:
         logger = self._logger
         if logger is None:
@@ -1636,7 +1698,9 @@ class DataGateway:
             f"requested_execution_mode={requested_execution_mode} "
             f"resolved_execution_mode={resolved_execution_mode} "
             f"loader_return_type={loader_return_type} "
-            f"persist={persist}"
+            f"persist={persist} "
+            f"resilient={resilient} "
+            f"dry_run={dry_run}"
         )
         client_summary = current_client_summary()
         if client_summary is not None:
@@ -1648,9 +1712,64 @@ class DataGateway:
             return
         if hasattr(logger, "set_level"):
             logger.set_level(Logger.INFO)
+        if isinstance(frame, dd.DataFrame):
+            logger.info(f"Gateway load graph metrics={inspect_graph(frame)}")
         logger.info(
             f"Gateway load completed elapsed={elapsed:.2f}s metrics={describe_frame(frame)}"
         )
+
+    def _log_load_dry_run(
+        self,
+        frame: FrameResult,
+        *,
+        elapsed: float,
+        persist: bool,
+    ) -> None:
+        logger = self._logger
+        if logger is None:
+            return
+        if hasattr(logger, "set_level"):
+            logger.set_level(Logger.INFO)
+        if isinstance(frame, dd.DataFrame):
+            logger.info(f"Gateway load dry run graph metrics={inspect_graph(frame)}")
+        if persist:
+            logger.info("Gateway load dry run skipped persist=True materialization.")
+        logger.info(
+            f"Gateway load dry run completed elapsed={elapsed:.2f}s metrics={describe_frame(frame)}"
+        )
+
+    def _preview_frame(
+        self,
+        frame: FrameResult,
+        *,
+        n: int,
+        npartitions: int,
+    ) -> FrameResult:
+        if isinstance(frame, dd.DataFrame):
+            return safe_head(frame, n=n, npartitions=npartitions, logger=self._logger)
+        if isinstance(frame, pd.DataFrame):
+            return frame.head(n)
+        if isinstance(frame, pa.Table):
+            return frame.slice(0, n)
+        if isinstance(frame, pl.DataFrame):
+            return frame.head(n)
+        raise TypeError(f"Unsupported frame type: {type(frame)!r}")
+
+    async def _apreview_frame(
+        self,
+        frame: FrameResult,
+        *,
+        n: int,
+        npartitions: int,
+    ) -> FrameResult:
+        if isinstance(frame, dd.DataFrame):
+            return await async_safe_head(
+                frame,
+                n=n,
+                npartitions=npartitions,
+                logger=self._logger,
+            )
+        return self._preview_frame(frame, n=n, npartitions=npartitions)
 
     @staticmethod
     def _coerce_eager_sql_frame(frame: pd.DataFrame, *, statement: Any) -> pd.DataFrame:

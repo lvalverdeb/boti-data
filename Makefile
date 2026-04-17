@@ -1,16 +1,19 @@
-.PHONY: help clean build check upload upload-test install-dev
+.PHONY: help clean build check upload upload-test install-dev test test-security lint
 
 LOAD_ENV = if [ -f .env ]; then set -a; . ./.env; set +a; fi
 REQUIRE_PUBLISH_TOKEN = test -n "$$UV_PUBLISH_TOKEN" || { echo "UV_PUBLISH_TOKEN is required (set it in .env or the environment)."; exit 1; }
 
 help:
 	@echo "Available targets:"
-	@echo "  clean        - Remove build and distribution artifacts"
-	@echo "  build        - Build sdist and wheel"
-	@echo "  check        - Validate the publish command with uv publish --dry-run"
-	@echo "  upload       - Upload to PyPI (loads UV_PUBLISH_TOKEN from .env if present)"
-	@echo "  upload-test  - Upload to TestPyPI (loads UV_PUBLISH_TOKEN from .env if present)"
-	@echo "  install-dev  - Install package with dev dependencies"
+	@echo "  clean          - Remove build and distribution artifacts"
+	@echo "  build          - Build sdist and wheel"
+	@echo "  check          - Validate the publish command with uv publish --dry-run"
+	@echo "  upload         - Upload to PyPI (loads UV_PUBLISH_TOKEN from .env if present)"
+	@echo "  upload-test    - Upload to TestPyPI (loads UV_PUBLISH_TOKEN from .env if present)"
+	@echo "  install-dev    - Install package with dev dependencies"
+	@echo "  test           - Run full test suite (excluding security regressions)"
+	@echo "  test-security  - Run security regression tests only"
+	@echo "  lint           - Run ruff linter on src/ and tests/"
 
 clean:
 	rm -rf build/ dist/ *.egg-info src/*.egg-info
@@ -29,3 +32,13 @@ upload-test: build
 
 install-dev:
 	uv pip install -e ".[dev]"
+
+test:
+	uv run pytest tests/ -m "not security_regression" --tb=short -q
+
+test-security:
+	uv run pytest tests/ -m security_regression --tb=short -q
+
+lint:
+	uv run ruff check src/ tests/
+

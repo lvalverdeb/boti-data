@@ -20,4 +20,7 @@ python examples/data_helper_legacy.py
 python examples/data_helper_distributed.py
 ```
 
+Pure Dask runtime/resilience examples now live in the `boti-dask` repo, e.g.
+`../boti-dask/examples/data_facade_dask_resilience.py`.
+
 See [`docs/BIG_DATA_READYNESS.md`](../docs/BIG_DATA_READYNESS.md) for operating guidance.

@@ -12,9 +12,9 @@ import pandas as pd
 import pyarrow.dataset as ds
 import pyarrow.fs as pafs
 import pytest
+from boti.core.filesystem import FilesystemConfig
 from pydantic import ValidationError
 
-from boti.core.filesystem import FilesystemConfig
 from boti_data import ConnectionCatalog, ParquetDataConfig, ParquetDataResource
 
 
@@ -289,7 +289,7 @@ def test_parquet_determine_recency_uses_single_info_lookup(temp_project_root):
 
         def info(self, _path: str):
             self.info_calls += 1
-            return {"mtime": dt.datetime.now(dt.timezone.utc)}
+            return {"mtime": dt.datetime.now(dt.UTC)}
 
         def modified(self, _path: str):
             self.modified_calls += 1

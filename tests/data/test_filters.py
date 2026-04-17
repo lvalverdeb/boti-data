@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import ForeignKey, String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 
-from boti_data.filters import FilterHandler, Expr, ColOp, And, Or, Not, TrueExpr
+from boti_data.filters import And, ColOp, FilterHandler, Not, Or, TrueExpr
 
 
 @pytest.fixture
@@ -51,24 +51,24 @@ def test_split_pushdown_and_residual(dask_handler):
         "description__icontains": "urgent",
         "created_at__date__gte": "2024-01-01",
     }
-    
+
     parquet_filters, residual_filters = dask_handler.split_pushdown_and_residual(filters)
-    
+
     # Check residuals (icontains is not a pushdown op)
     assert "description__icontains" in residual_filters
     assert residual_filters["description__icontains"] == "urgent"
-    
+
     # Check pushdowns
     pushdown_fields = [f for f, op, val in parquet_filters]
     assert "status" in pushdown_fields
     assert "created_at" in pushdown_fields
-    
+
     # Verify the date rewrite to UTC TS
     for f, op, val in parquet_filters:
             if f == "created_at":
                 assert op == ">="
                 assert isinstance(val, pd.Timestamp)
-                assert val.tz == dt.timezone.utc
+                assert val.tz == dt.UTC
                 assert val == pd.Timestamp("2024-01-01", tz="UTC")
 
 
@@ -93,13 +93,13 @@ def test_ast_compilation(dask_handler):
             {"status__in": ["VIP", "Pro"]}
         ]
     }
-    
+
     expr = dask_handler.compile_filters(filters)
-    
+
     assert isinstance(expr, Or)
     assert isinstance(expr.left, ColOp)
     assert isinstance(expr.right, ColOp)
-    
+
     assert expr.left.field == "price"
     assert expr.left.op == "gt"
     assert expr.right.field == "status"
@@ -124,7 +124,7 @@ def test_ast_compilation_implicit_and(dask_handler):
         "price__lt": 100
     }
     expr = dask_handler.compile_filters(filters)
-    
+
     # Initial state is TrueExpr() & ColOp. And(TrueExpr, ColOp) -> And(And, ColOp)
     # Just asserting it built successfully
     assert isinstance(expr, And)

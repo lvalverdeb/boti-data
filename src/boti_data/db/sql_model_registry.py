@@ -7,28 +7,29 @@ designed to bypass serialisation constraints using structural module injections.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 import sys
-import types
 import threading
-import asyncio
-from typing import Dict, Optional, Tuple, Type, Any, Union
+import types
+from typing import Any
 
-from sqlalchemy import MetaData, Table
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.ext.asyncio import AsyncEngine
-from pydantic import BaseModel, Field, ConfigDict, field_validator
 from boti.core.logger import Logger
 from boti.core.security import is_valid_dotted_identifier
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import MetaData, Table
+from sqlalchemy.engine import Engine
+from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.orm import DeclarativeBase
+
 from boti_data.db.sqlalchemy_async import ensure_greenlet_available
 
 
 class RegistryConfig(BaseModel):
     """Configuration mapping establishing deterministic registry footprints."""
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
-    
+
     default_module_label: str = Field(default="boti_data.dynamic_models")
 
     @field_validator("default_module_label")
@@ -54,31 +55,31 @@ class SqlModelRegistry:
     _DYNAMIC_MODULE_SENTINEL = "__boti_dynamic_model_namespace__"
 
     def __init__(
-        self, 
-        config: Optional[RegistryConfig] = None,
-        logger: Optional[Logger] = None
+        self,
+        config: RegistryConfig | None = None,
+        logger: Logger | None = None
     ) -> None:
         self.config = config or RegistryConfig()
         self.logger = logger or Logger.default_logger(logger_name=self.__class__.__name__)
-        
-        self._metadata_cache: Dict[Tuple[str, Optional[str]], MetaData] = {}
-        self._model_cache: Dict[Tuple[str, Optional[str], str], Type[Any]] = {}
+
+        self._metadata_cache: dict[tuple[str, str | None], MetaData] = {}
+        self._model_cache: dict[tuple[str, str | None, str], type[Any]] = {}
         self._lock = threading.RLock()
-        self._md_locks: Dict[Tuple[str, Optional[str]], threading.Lock] = {}
+        self._md_locks: dict[tuple[str, str | None], threading.Lock] = {}
         self._async_lock = asyncio.Lock()
-        self._md_async_locks: Dict[Tuple[str, Optional[str]], asyncio.Lock] = {}
+        self._md_async_locks: dict[tuple[str, str | None], asyncio.Lock] = {}
 
     @staticmethod
-    def _engine_key(engine: Union[Engine, AsyncEngine]) -> str:
+    def _engine_key(engine: Engine | AsyncEngine) -> str:
         """Derive deterministic engine footprint securely escaping passwords via Dialect string rendering."""
         return engine.url.render_as_string(hide_password=True)
 
     @staticmethod
-    def _qualified_key(schema: Optional[str], table: str) -> str:
+    def _qualified_key(schema: str | None, table: str) -> str:
         return f"{schema}.{table}" if schema else table
 
     @staticmethod
-    def _split_schema_and_table(name: str) -> Tuple[Optional[str], str]:
+    def _split_schema_and_table(name: str) -> tuple[str | None, str]:
         if "." in name:
             s, t = name.split(".", 1)
             return (s or None), t
@@ -108,7 +109,7 @@ class SqlModelRegistry:
             return hasattr(sys.modules[module_label], class_name)
         return False
 
-    def _find_existing_model_for_table(self, tbl: Table, base_class: Type[Any]) -> Optional[Type[Any]]:
+    def _find_existing_model_for_table(self, tbl: Table, base_class: type[Any]) -> type[Any] | None:
         """Scan SQLAlchemy's registry to prevent redundant mapping of identical Tables.
 
         Uses strict object-identity matching only.  Name-based matching is
@@ -126,7 +127,7 @@ class SqlModelRegistry:
         return None
 
     @staticmethod
-    def _resolve_module_label(module_label: Optional[str], default_module_label: str) -> str:
+    def _resolve_module_label(module_label: str | None, default_module_label: str) -> str:
         resolved = module_label or default_module_label
         if not is_valid_dotted_identifier(resolved):
             raise ValueError("module_label must be a valid dotted Python module path.")
@@ -137,7 +138,7 @@ class SqlModelRegistry:
             )
         return resolved
 
-    def _get_or_create_metadata(self, ekey: str, schema: Optional[str]) -> MetaData:
+    def _get_or_create_metadata(self, ekey: str, schema: str | None) -> MetaData:
         md_key = (ekey, schema)
         with self._lock:
             md = self._metadata_cache.get(md_key)
@@ -146,7 +147,7 @@ class SqlModelRegistry:
                 self._metadata_cache[md_key] = md
             return md
 
-    def _get_or_create_md_lock(self, md_key: Tuple[str, Optional[str]]) -> threading.Lock:
+    def _get_or_create_md_lock(self, md_key: tuple[str, str | None]) -> threading.Lock:
         with self._lock:
             lock = self._md_locks.get(md_key)
             if lock is None:
@@ -154,7 +155,7 @@ class SqlModelRegistry:
                 self._md_locks[md_key] = lock
             return lock
 
-    async def _get_or_create_md_lock_async(self, md_key: Tuple[str, Optional[str]]) -> asyncio.Lock:
+    async def _get_or_create_md_lock_async(self, md_key: tuple[str, str | None]) -> asyncio.Lock:
         async with self._async_lock:
             lock = self._md_async_locks.get(md_key)
             if lock is None:
@@ -209,11 +210,11 @@ class SqlModelRegistry:
         table_name: str,
         *,
         refresh: bool = False,
-        schema: Optional[str] = None,
-        module_label: Optional[str] = None,
+        schema: str | None = None,
+        module_label: str | None = None,
         prefer_stable_names: bool = True,
-        base_class: Type[Any] = DefaultBase
-    ) -> Type[Any]:
+        base_class: type[Any] = DefaultBase
+    ) -> type[Any]:
         """
         Atomically reflects a table schema and scaffolds its ORM class safely.
         """
@@ -264,7 +265,7 @@ class SqlModelRegistry:
             suffix = self._short_hash(ekey, schema or "", tname)
             final_name = f"{base_name}_{suffix}"
 
-        attrs: Dict[str, Any] = {
+        attrs: dict[str, Any] = {
             "__tablename__": tbl.name,
             "__table__": tbl,
             "__module__": module_label,
@@ -293,11 +294,11 @@ class SqlModelRegistry:
         table_name: str,
         *,
         refresh: bool = False,
-        schema: Optional[str] = None,
-        module_label: Optional[str] = None,
+        schema: str | None = None,
+        module_label: str | None = None,
         prefer_stable_names: bool = True,
-        base_class: Type[Any] = DefaultBase
-    ) -> Type[Any]:
+        base_class: type[Any] = DefaultBase
+    ) -> type[Any]:
         """Atomically reflects schemas asynchronously bridging Non-Blocking asyncio event pools."""
         ensure_greenlet_available()
         s2, tname = self._split_schema_and_table(table_name)
@@ -347,7 +348,7 @@ class SqlModelRegistry:
             suffix = self._short_hash(ekey, schema or "", tname)
             final_name = f"{base_name}_{suffix}"
 
-        attrs: Dict[str, Any] = {
+        attrs: dict[str, Any] = {
             "__tablename__": tbl.name,
             "__table__": tbl,
             "__module__": module_label,

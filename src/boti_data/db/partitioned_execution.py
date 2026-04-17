@@ -2,23 +2,27 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from collections.abc import Iterator
-from typing import Any, Callable
+from collections.abc import Callable, Iterator
+from typing import Any
 
 import dask
 import dask.dataframe as dd
 import pandas as pd
 import pyarrow as pa
 
+from boti_data.db.arrow_schema_mapper import (
+    arrow_table_to_pandas,
+    build_arrow_schema_from_meta_dtypes,
+    build_empty_arrow_table,
+    coerce_arrow_table,
+    rows_to_arrow_table,
+)
 from boti_data.db.partitioned_types import SqlPartitionPlan, SqlPartitionSpec
 from boti_data.db.sql_config import WorkerSqlConfig
-from boti_data.db.sql_engine import _create_worker_async_engine, _create_worker_sync_engine, _get_worker_engine_identity
-from boti_data.db.arrow_schema_mapper import (
-    build_arrow_schema_from_meta_dtypes,
-    rows_to_arrow_table,
-    build_empty_arrow_table,
-    arrow_table_to_pandas,
-    coerce_arrow_table,
+from boti_data.db.sql_engine import (
+    _create_worker_async_engine,
+    _create_worker_sync_engine,
+    _get_worker_engine_identity,
 )
 from boti_data.schema import apply_schema_map
 
