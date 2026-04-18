@@ -8,6 +8,7 @@ import datetime as dt
 import pickle
 from pathlib import Path
 
+import fsspec
 import pandas as pd
 import pyarrow.dataset as ds
 import pyarrow.fs as pafs
@@ -71,6 +72,45 @@ def test_filesystem_config_supports_named_env_prefixes(tmp_path):
     assert config.fs_type == "file"
     assert Path(config.fs_path) == tmp_path
     assert config.fs_verify_ssl is False
+
+
+def test_parquet_filesystem_profile_uses_catalog_adapter_fs_factory(temp_project_root):
+    root = temp_project_root / "profile_data"
+    root.mkdir(parents=True)
+    pd.DataFrame({"id": [1], "name": ["Alice"]}).to_parquet(root / "users.parquet", index=False)
+
+    config = ParquetDataConfig(
+        project_root=temp_project_root,
+        parquet_filename="users",
+        filesystem_profile="warehouse",
+    )
+
+    fs = fsspec.filesystem("file")
+
+    class FakeAdapter:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def get_filesystem(self):
+            self.calls += 1
+            return fs
+
+    adapter = FakeAdapter()
+
+    class FakeCatalog:
+        def filesystem_config(self, name: str) -> FilesystemConfig:
+            assert name == "warehouse"
+            return FilesystemConfig(fs_type="file", fs_path=str(root))
+
+        def filesystem_adapter(self, name: str):
+            assert name == "warehouse"
+            return adapter
+
+    with ParquetDataResource(config, catalog=FakeCatalog()) as resource:
+        loaded = resource.load_files().compute().sort_values("id").reset_index(drop=True)
+
+    assert loaded["name"].tolist() == ["Alice"]
+    assert adapter.calls == 1
 
 
 def test_parquet_single_file_loading(temp_project_root):

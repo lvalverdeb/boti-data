@@ -1121,7 +1121,7 @@ def test_facade_loads_partitioned_sql_with_distributed_client(tmp_path):
         n_workers=2,
         threads_per_worker=1,
         processes=False,
-        dashboard_address=None,
+        dashboard_address=":0",
     ) as cluster, Client(cluster):
         with DataGateway(config) as facade:
             frame = facade.load(

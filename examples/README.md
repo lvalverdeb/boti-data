@@ -16,11 +16,19 @@ python examples/data_facade_parquet.py
 python examples/data_facade_diagnostics.py
 python examples/data_facade_distributed.py
 python examples/data_facade_distributed_parquet.py
+python examples/data_facade_datacube.py
+python examples/data_facade_datacube_contract_rejection.py
 python examples/data_helper_legacy.py
 python examples/data_helper_distributed.py
+python examples/data_helper_bootstrap.py
 ```
 
 Pure Dask runtime/resilience examples now live in the `boti-dask` repo, e.g.
 `../boti-dask/examples/data_facade_dask_resilience.py`.
 
+`data_helper_bootstrap.py` is the deterministic migration path for
+`notebooks/99_Bootstrap_legacy.ipynb` and exercises engine views
+(`helper.pandas/.polars/.dask`) plus resilient `safe_*` helpers.
+
 See [`docs/BIG_DATA_READYNESS.md`](../docs/BIG_DATA_READYNESS.md) for operating guidance.
+Datacube contract guidance: [`docs/DATACUBE_CONTRACT.md`](../docs/DATACUBE_CONTRACT.md).

@@ -151,7 +151,7 @@ def test_gateway_partitioned_sql_runs_through_scheduler_address(tmp_path):
         n_workers=2,
         threads_per_worker=1,
         processes=False,
-        dashboard_address=None,
+        dashboard_address=":0",
     ) as cluster:
         with dask_session(scheduler_address=cluster.scheduler_address):
             with DataGateway(config) as facade:
@@ -206,7 +206,7 @@ def test_gateway_parquet_and_join_run_through_scheduler_address(temp_project_roo
         n_workers=2,
         threads_per_worker=1,
         processes=False,
-        dashboard_address=None,
+        dashboard_address=":0",
     ) as cluster:
         with dask_session(scheduler_address=cluster.scheduler_address):
             with DataGateway(users_config) as users_gateway, DataGateway(profiles_config) as profiles_gateway:

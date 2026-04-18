@@ -7,6 +7,7 @@ import pandas as pd
 import pyarrow as pa
 from sqlalchemy import select, text
 
+from boti_data.datacube import DatacubeConfig, DatacubeResource
 from boti_data.db import (
     SqlDatabaseConfig,
     SqlDatabaseResource,
@@ -26,6 +27,7 @@ from .requests import (
     BackendConfig,
     BackendName,
     BackendResource,
+    DatacubeLoadRequest,
     ParquetLoadRequest,
     SqlLoadRequest,
 )
@@ -84,7 +86,23 @@ def build_backend_resource(
         return "sqlalchemy", SqlDatabaseResource(config)
     if isinstance(config, ParquetDataConfig):
         return "parquet", ParquetDataResource(config, fs=fs, fs_factory=fs_factory)
+    if isinstance(config, DatacubeConfig):
+        return "datacube", DatacubeResource(config)
     raise TypeError(f"Unsupported config type for DataGateway: {type(config)!r}")
+
+
+def load_datacube(
+    resource: DatacubeResource,
+    request: DatacubeLoadRequest,
+):
+    return resource.load(request)
+
+
+async def aload_datacube(
+    resource: DatacubeResource,
+    request: DatacubeLoadRequest,
+):
+    return await resource.aload(request)
 
 
 def should_use_partitioned_sql(options: dict[str, Any]) -> bool:

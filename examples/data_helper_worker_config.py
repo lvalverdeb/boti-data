@@ -96,7 +96,7 @@ def run_example() -> dict[str, object]:
                 n_workers=2,
                 threads_per_worker=1,
                 processes=False,  # threads share env; avoids subprocess injection
-                dashboard_address=None,
+                dashboard_address=":0",
             ) as cluster:
                 with DataHelper.session(scheduler_address=cluster.scheduler_address):
                     with DataHelper(scheduler_config, table="transactions") as helper:

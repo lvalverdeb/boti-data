@@ -246,7 +246,7 @@ def test_partitioned_loader_computes_with_distributed_client(tmp_path):
         n_workers=2,
         threads_per_worker=1,
         processes=False,
-        dashboard_address=None,
+        dashboard_address=":0",
     ) as cluster, Client(cluster):
         with SqlPartitionedLoader(config) as loader:
             frame = loader.load(statement=select(User), model=User, chunk_size=2)

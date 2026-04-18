@@ -82,3 +82,39 @@ def test_helper_distributed_example_runs_and_returns_summary(capsys):
     assert "Joined helper records:" in output
 
 
+def test_helper_bootstrap_example_runs_and_returns_summary(capsys):
+    module = _load_example_module("data_helper_bootstrap.py")
+
+    result = module.main()
+    output = capsys.readouterr().out
+
+    assert result["engine_views"]["pandas_rows"] == 4
+    assert result["engine_views"]["polars_rows"] == 4
+    assert result["engine_views"]["dask_rows"] == 4
+    assert result["dry_run_partitions"] >= 1
+    assert result["sync_row_count"] == 4
+    assert result["async_row_count"] == 4
+    assert result["sync_gather"] == [4]
+    assert result["async_gather"] == [4]
+    assert result["probably_empty"] is False
+    assert result["is_empty"] is False
+    assert set(result["unique_values"]["product_type_id"]) == {1}
+    assert set(result["unique_values"]["global_track_id"]) == {1, 2, 3, 4}
+    assert "Bootstrap engine-view rows:" in output
+    assert "Dry-run partitions:" in output
+    assert "Sync row count: 4" in output
+    assert "Async row count: 4" in output
+
+
+def test_datacube_contract_rejection_example_reports_actionable_error(capsys):
+    module = _load_example_module("data_facade_datacube_contract_rejection.py")
+
+    result = module.main()
+    output = capsys.readouterr().out
+
+    assert "Expected contract validation error:" in output
+    assert "Datacube contract request validation failed" in result["error"]
+    assert "cube='inventory'" in result["error"]
+    assert "filter_keys=['status__exact']" in result["error"]
+
+

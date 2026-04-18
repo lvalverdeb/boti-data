@@ -1,6 +1,7 @@
 """
 Tests for the SQLAlchemy connection manager and engine registry.
 """
+import asyncio
 import pickle
 
 import pytest
@@ -431,3 +432,51 @@ async def test_query_only_false_disables_async_session_guard():
 
         with pytest.raises(UnmappedInstanceError):
             session.add(object())
+
+
+@pytest.mark.asyncio
+async def test_async_resource_aclose_is_idempotent():
+    config = SqlDatabaseConfig(connection_url="mysql+asyncmy://user:pass@localhost/test_db", query_only=False)
+
+    resource = AsyncSqlDatabaseResource(config)
+    await resource.__aenter__()
+    assert resource.closed is False
+
+    await resource.aclose()
+    assert resource.closed is True
+
+    # Repeated closes should be no-ops.
+    await resource.aclose()
+    assert resource.closed is True
+
+
+@pytest.mark.asyncio
+async def test_async_resource_aclose_is_safe_under_concurrency(monkeypatch):
+    config = SqlDatabaseConfig(connection_url="mysql+asyncmy://user:pass@localhost/test_db", query_only=False)
+    resource = AsyncSqlDatabaseResource(config)
+
+    class _DummyEngine:
+        sync_engine = object()
+
+    async def fake_get_or_create_async(*_args, **_kwargs):
+        return _DummyEngine(), False
+
+    release_calls: list[tuple] = []
+
+    async def fake_release_async(key, logger=None):
+        release_calls.append((key, logger))
+
+    monkeypatch.setattr(EngineRegistry, "get_or_create_async", fake_get_or_create_async)
+    monkeypatch.setattr(EngineRegistry, "release_async", fake_release_async)
+    monkeypatch.setattr("boti_data.db.sql_resource.ensure_greenlet_available", lambda: None)
+    monkeypatch.setattr("boti_data.db.sql_resource._validate_query_only_support", lambda _parsed: None)
+
+    await resource.__aenter__()
+    await asyncio.gather(resource.aclose(), resource.aclose(), resource.aclose())
+
+    assert resource.closed is True
+    assert len(release_calls) == 1
+    assert resource._engine is None
+    assert resource._session_factory is None
+
+

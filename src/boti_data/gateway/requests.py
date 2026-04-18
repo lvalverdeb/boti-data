@@ -4,13 +4,14 @@ from typing import Any, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from boti_data.datacube import DatacubeConfig, DatacubeResource
 from boti_data.db.sql_config import SqlDatabaseConfig
 from boti_data.db.sql_resource import SqlDatabaseResource
 from boti_data.parquet.resource import ParquetDataConfig, ParquetDataResource
 
-BackendName = Literal["sqlalchemy", "parquet"]
-BackendConfig = Union[SqlDatabaseConfig, ParquetDataConfig]
-BackendResource = Union[SqlDatabaseResource, ParquetDataResource]
+BackendName = Literal["sqlalchemy", "parquet", "datacube"]
+BackendConfig = Union[SqlDatabaseConfig, ParquetDataConfig, DatacubeConfig]
+BackendResource = Union[SqlDatabaseResource, ParquetDataResource, DatacubeResource]
 ResolvedReturnType = Literal["pandas", "arrow", "dask", "polars"]
 ReturnType = Literal["pandas", "arrow", "dask", "polars", "auto"]
 ResolvedExecutionMode = Literal["eager", "lazy"]
@@ -148,3 +149,18 @@ class ParquetLoadRequest(BaseModel):
                 "Use as_pandas=True, return_type='arrow', or apply Dask head()/partitions explicitly."
             )
         return self
+
+
+class DatacubeLoadRequest(BaseModel):
+    """Validated load request for datacube-backed gateway usage."""
+
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+    cube: str | None = None
+    filters: dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
+    limit: int | None = Field(default=None, ge=0)
+    columns: list[str] | None = None
+    diagnostics: bool = False
+    return_type: ResolvedReturnType = "pandas"
+

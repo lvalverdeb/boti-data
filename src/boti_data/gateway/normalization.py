@@ -36,6 +36,7 @@ LOAD_CONTROL_KEYS = frozenset(
         "max_concurrent_fetches",
         "raw_filters",
         "columns",
+        "cube",
     }
 )
 

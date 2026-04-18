@@ -113,6 +113,7 @@ class ParquetDataResource(SecureResource):
         catalog: Any | None = None,
     ) -> None:
         self._filesystem_config: FilesystemConfig | None = None
+        self._filesystem_adapter: Any | None = None
         resolved_fs_factory = fs_factory
         if fs is None and resolved_fs_factory is None and config.filesystem_profile is not None:
             if catalog is None:
@@ -120,7 +121,10 @@ class ParquetDataResource(SecureResource):
                     "ParquetDataResource requires a catalog when filesystem_profile is configured."
                 )
             self._filesystem_config = catalog.filesystem_config(config.filesystem_profile)
-            resolved_fs_factory = functools.partial(create_filesystem, self._filesystem_config)
+            # Route profile-backed filesystem creation through the catalog adapter
+            # so adapter retry/cache behavior is shared across callers.
+            self._filesystem_adapter = catalog.filesystem_adapter(config.filesystem_profile)
+            resolved_fs_factory = self._filesystem_adapter.get_filesystem
 
         super().__init__(
             config=config,
@@ -129,10 +133,18 @@ class ParquetDataResource(SecureResource):
         )
         self.config = config
 
+    def __getstate__(self) -> dict[str, Any]:
+        state = super().__getstate__()
+        # Adapter instances can carry runtime-only locks and cache state.
+        state.pop("_filesystem_adapter", None)
+        return state
+
     def _restore_runtime_state(self) -> None:
         super()._restore_runtime_state()
         if not self._is_closed and self.fs is None and self._fs_factory is None:
-            if self._filesystem_config is not None:
+            if self._filesystem_adapter is not None:
+                self._fs_factory = self._filesystem_adapter.get_filesystem
+            elif self._filesystem_config is not None:
                 self._fs_factory = functools.partial(create_filesystem, self._filesystem_config)
             else:
                 self._fs_factory = create_local_filesystem

@@ -123,7 +123,7 @@ def test_indexed_left_join_computes_with_distributed_client():
         n_workers=2,
         threads_per_worker=1,
         processes=False,
-        dashboard_address=None,
+        dashboard_address=":0",
     ) as cluster, Client(cluster):
         joined = indexed_left_join(
             left,

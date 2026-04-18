@@ -763,7 +763,7 @@ def test_helper_session_creates_managed_dask_session():
             "n_workers": 1,
             "threads_per_worker": 1,
             "processes": False,
-            "dashboard_address": None,
+            "dashboard_address": ":0",
         }
     ) as client:
         summary = client.scheduler_info()

@@ -20,6 +20,7 @@ from pydantic import SecretStr
 from sqlalchemy.engine import url as sqlalchemy_url
 from sqlalchemy.exc import SQLAlchemyError
 
+from boti_data.datacube import DatacubeConfig, DatacubeResource
 from boti_data.db import (
     AsyncSqlDatabaseResource,
     SqlDatabaseConfig,
@@ -45,8 +46,10 @@ from boti_data.schema import apply_schema_map
 
 from .frame_strategies import FrameResult, FrameStrategy, get_frame_strategy
 from .loaders import (
+    aload_datacube,
     build_backend_resource,
     build_sql_partitioned_request,
+    load_datacube,
     load_parquet,
     load_sql,
     load_sql_partitioned,
@@ -70,6 +73,7 @@ from .requests import (
     BackendConfig,
     BackendName,
     BackendResource,
+    DatacubeLoadRequest,
     DataFrameOptions,
     DataFrameParams,
     ExecutionMode,
@@ -86,16 +90,16 @@ _AUTO_EAGER_MAX_BYTES = 32 * 1024 * 1024
 
 
 def _coerce_backend_config(config: Any) -> BackendConfig:
-    if isinstance(config, (SqlDatabaseConfig, ParquetDataConfig)):
+    if isinstance(config, (SqlDatabaseConfig, ParquetDataConfig, DatacubeConfig)):
         return config
-    if isinstance(config, (SqlDatabaseResource, AsyncSqlDatabaseResource)):
+    if isinstance(config, (SqlDatabaseResource, AsyncSqlDatabaseResource, DatacubeResource)):
         return config.config
     if isinstance(config, tuple):
-        if len(config) == 1 and isinstance(config[0], (SqlDatabaseConfig, ParquetDataConfig)):
+        if len(config) == 1 and isinstance(config[0], (SqlDatabaseConfig, ParquetDataConfig, DatacubeConfig)):
             return config[0]
         raise TypeError(
             "Unsupported config type for DataGateway: tuple. "
-            "Pass a SqlDatabaseConfig or ParquetDataConfig directly. "
+            "Pass a SqlDatabaseConfig, ParquetDataConfig, or DatacubeConfig directly. "
             "If you created the config with a trailing comma, remove it."
         )
     raise TypeError(f"Unsupported config type for DataGateway: {type(config)!r}")
@@ -649,6 +653,25 @@ class DataGateway:
             "return_type": return_type,
         }
 
+    @staticmethod
+    def _structured_datacube_request_payload(
+        options: dict[str, Any],
+        *,
+        return_type: ResolvedReturnType,
+    ) -> dict[str, Any]:
+        control, runtime_filters = split_control_and_filters(options)
+        explicit_filters = control.pop("filters", {})
+        merged_filters = {**runtime_filters, **explicit_filters}
+        return {
+            "cube": control.get("cube"),
+            "filters": merged_filters,
+            "params": control.get("params", {}),
+            "limit": control.get("limit"),
+            "columns": control.get("columns"),
+            "diagnostics": bool(control.get("diagnostics", False)),
+            "return_type": return_type,
+        }
+
     def _resolve_auto_return_type(
         self,
         options: dict[str, Any],
@@ -659,6 +682,8 @@ class DataGateway:
             return self._resolve_auto_sql_return_type(options)
         if self.backend == "parquet":
             return self._resolve_auto_parquet_return_type(options)
+        if self.backend == "datacube":
+            return "pandas"
         return "dask"
 
     async def _resolve_auto_return_type_async(
@@ -671,6 +696,8 @@ class DataGateway:
             return await self._resolve_auto_sql_return_type_async(options)
         if self.backend == "parquet":
             return self._resolve_auto_parquet_return_type(options)
+        if self.backend == "datacube":
+            return "pandas"
         return "dask"
 
     # ------------------------------------------------------------------
@@ -690,6 +717,8 @@ class DataGateway:
             return cls(SqlDatabaseConfig(**config_kwargs), fs=fs, fs_factory=fs_factory)
         if backend == "parquet":
             return cls(ParquetDataConfig(**config_kwargs), fs=fs, fs_factory=fs_factory)
+        if backend == "datacube":
+            return cls(DatacubeConfig(**config_kwargs))
         raise ValueError(f"Unsupported backend: {backend!r}")
 
     @classmethod
@@ -774,6 +803,17 @@ class DataGateway:
                 parquet_config,
                 fs=fs,
                 fs_factory=fs_factory,
+                table=table,
+                field_map=field_map,
+                sticky_filters=sticky_filters,
+                exclude=exclude,
+                df_params=df_params,
+                df_options=df_options,
+            )
+        if backend == "datacube":
+            datacube_config = DatacubeConfig(**cfg)
+            return cls(
+                datacube_config,
                 table=table,
                 field_map=field_map,
                 sticky_filters=sticky_filters,
@@ -933,6 +973,17 @@ class DataGateway:
                         )
                     ),
                 )
+            if self.backend == "datacube":
+                assert isinstance(self.resource, DatacubeResource)
+                return load_datacube(
+                    self.resource,
+                    DatacubeLoadRequest.model_validate(
+                        self._structured_datacube_request_payload(
+                            opts,
+                            return_type=loader_return_type,
+                        )
+                    ),
+                )
             raise RuntimeError(f"Unsupported backend: {self.backend}")
 
         df = self._chunked_in_load_sync(
@@ -1085,6 +1136,15 @@ class DataGateway:
                     )
                 )
                 coro = asyncio.to_thread(load_parquet, self.resource, request)
+            elif self.backend == "datacube":
+                assert isinstance(self.resource, DatacubeResource)
+                request = DatacubeLoadRequest.model_validate(
+                    self._structured_datacube_request_payload(
+                        opts,
+                        return_type=loader_return_type,
+                    )
+                )
+                coro = aload_datacube(self.resource, request)
             else:
                 raise RuntimeError(f"Unsupported backend: {self.backend}")
             if timeout is not None:
@@ -1830,6 +1890,27 @@ class DataGateway:
             return_type=return_type,
         )
 
+    @staticmethod
+    def _trusted_datacube_request(
+        *,
+        cube: str | None = None,
+        filters: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        limit: int | None = None,
+        columns: list[str] | None = None,
+        diagnostics: bool = False,
+        return_type: ResolvedReturnType = "pandas",
+    ) -> DatacubeLoadRequest:
+        return DatacubeLoadRequest.model_construct(
+            cube=cube,
+            filters=filters or {},
+            params=params or {},
+            limit=limit,
+            columns=columns,
+            diagnostics=diagnostics,
+            return_type=return_type,
+        )
+
     def _apply_field_map(
         self,
         frame: FrameResult,
@@ -1922,6 +2003,33 @@ class DataGateway:
         loader_return_type: Literal["pandas", "arrow", "dask"],
         loader_as_pandas: bool,
     ) -> FrameResult:
+        if self.backend == "datacube":
+            assert isinstance(self.resource, DatacubeResource)
+            normalized = normalize_configured_filters(
+                options,
+                sticky_filters=self._sticky_filters,
+                exclude=self._exclude,
+            )
+            df = load_datacube(
+                self.resource,
+                self._trusted_datacube_request(
+                    cube=normalized.control.get("cube") or self._table,
+                    filters=normalized.filters,
+                    params=normalized.control.get("params", {}),
+                    limit=normalized.control.get("limit"),
+                    columns=normalized.control.get("columns"),
+                    diagnostics=bool(normalized.control.get("diagnostics", False)),
+                    return_type=loader_return_type,
+                ),
+            )
+            configured_fieldnames = self._configured_fieldnames(normalized.control)
+            return self._finalize_configured_result(
+                df,
+                return_type=return_type,
+                apply_field_map=False,
+                fieldnames=configured_fieldnames,
+            )
+
         # Parquet: files already carry semantic column names — pass filters
         # through unchanged and skip field_map rename entirely.
         if self.backend == "parquet":
@@ -2007,6 +2115,33 @@ class DataGateway:
         loader_return_type: Literal["pandas", "arrow", "dask"],
         loader_as_pandas: bool,
     ) -> FrameResult:
+        if self.backend == "datacube":
+            assert isinstance(self.resource, DatacubeResource)
+            normalized = normalize_configured_filters(
+                options,
+                sticky_filters=self._sticky_filters,
+                exclude=self._exclude,
+            )
+            df = await aload_datacube(
+                self.resource,
+                self._trusted_datacube_request(
+                    cube=normalized.control.get("cube") or self._table,
+                    filters=normalized.filters,
+                    params=normalized.control.get("params", {}),
+                    limit=normalized.control.get("limit"),
+                    columns=normalized.control.get("columns"),
+                    diagnostics=bool(normalized.control.get("diagnostics", False)),
+                    return_type=loader_return_type,
+                ),
+            )
+            configured_fieldnames = self._configured_fieldnames(normalized.control)
+            return self._finalize_configured_result(
+                df,
+                return_type=return_type,
+                apply_field_map=False,
+                fieldnames=configured_fieldnames,
+            )
+
         # Parquet: no translation needed; skip field_map rename.
         if self.backend == "parquet":
             assert isinstance(self.resource, ParquetDataResource)

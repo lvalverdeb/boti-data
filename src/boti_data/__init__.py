@@ -20,6 +20,7 @@ from boti_data.db import (
     ensure_greenlet_available,
     get_global_registry,
 )
+from boti_data.datacube import DatacubeConfig, DatacubeContract, DatacubeResource
 from boti_data.field_map import FieldMap
 from boti_data.filters import (
     And,
@@ -33,6 +34,7 @@ from boti_data.filters import (
 # gateway.core → parquet.resource → parquet/__init__ → parquet.reader → gateway.core
 from boti_data.parquet import ParquetDataConfig, ParquetDataResource, ParquetReader
 from boti_data.gateway import (
+    DatacubeLoadRequest,
     DataFrameOptions,
     DataFrameParams,
     DataGateway,
@@ -57,6 +59,10 @@ __all__ = [
     "AsyncSqlDatabaseResource",
     "BuilderConfig",
     "ConnectionCatalog",
+    "DatacubeConfig",
+    "DatacubeContract",
+    "DatacubeLoadRequest",
+    "DatacubeResource",
     "DataFrameOptions",
     "DataFrameParams",
     "DataGateway",

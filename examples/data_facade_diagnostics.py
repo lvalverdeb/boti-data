@@ -107,7 +107,7 @@ def run_example() -> dict[str, object]:
                 "n_workers": settings["workers"],
                 "threads_per_worker": settings["threads_per_worker"],
                 "processes": False,
-                "dashboard_address": None,
+                "dashboard_address": ":0",
             }
         ) as client:
             client_summary = describe_client(client)

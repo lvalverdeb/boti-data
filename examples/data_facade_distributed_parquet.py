@@ -40,7 +40,7 @@ def run_example() -> dict[str, object]:
             n_workers=2,
             threads_per_worker=1,
             processes=False,
-            dashboard_address=None,
+            dashboard_address=":0",
         ) as cluster:
             with dask_session(scheduler_address=cluster.scheduler_address) as client:
                 client_summary = describe_client(client)
