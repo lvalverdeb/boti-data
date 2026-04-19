@@ -11,3 +11,4 @@ logs/
 docs/
 .env
 .env.*
+notebooks/

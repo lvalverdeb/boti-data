@@ -9,6 +9,8 @@ from boti_data.db.sql_config import SqlDatabaseConfig
 from boti_data.db.sql_resource import SqlDatabaseResource
 from boti_data.parquet.resource import ParquetDataConfig, ParquetDataResource
 
+from .sql_guard import validate_raw_sql_statement
+
 BackendName = Literal["sqlalchemy", "parquet", "datacube"]
 BackendConfig = Union[SqlDatabaseConfig, ParquetDataConfig, DatacubeConfig]
 BackendResource = Union[SqlDatabaseResource, ParquetDataResource, DatacubeResource]
@@ -95,6 +97,7 @@ class SqlLoadRequest(BaseModel):
     as_pandas: bool = False
     diagnostics: bool = False
     return_type: ResolvedReturnType = "pandas"
+    allow_raw_sql: bool = False
 
     @model_validator(mode="after")
     def validate_request(self) -> SqlLoadRequest:
@@ -102,6 +105,8 @@ class SqlLoadRequest(BaseModel):
             raise ValueError("Either sql or statement must be provided.")
         if self.sql and self.statement is not None:
             raise ValueError("Provide either sql or statement, not both.")
+        if self.sql:
+            validate_raw_sql_statement(sql=self.sql, allow_raw_sql=self.allow_raw_sql)
         if self.columns:
             if self.statement is None:
                 raise ValueError("columns require a SQLAlchemy statement input.")

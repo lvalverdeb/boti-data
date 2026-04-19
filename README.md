@@ -105,7 +105,8 @@ from boti_data import (
     DatacubeContract,
     DataGateway,
     DataHelper,
-    FieldMap,
+    FieldMap,    
+    HybridDataset,
     ParquetDataConfig,
     ParquetDataResource,
     SqlAlchemyModelBuilder,
@@ -181,6 +182,7 @@ with DataGateway(
 You can also configure this path with `DataGateway.from_config({"backend": "datacube", ...})` or `DataHelper({"backend": "datacube", ...})`.
 
 See `docs/DATACUBE_CONTRACT.md` for hook ordering, loader precedence, and validator rejection guidance.
+See `docs/SECURITY_HARDENING.md` for SQL/raw-sql policy and distributed credential hardening defaults.
 For a runnable rejection flow, see `examples/data_facade_datacube_contract_rejection.py`.
 
 ## DataHelper
@@ -230,6 +232,45 @@ Async context managers are also supported:
 async with DataHelper(config, table="orders") as helper:
     df = await helper.aload(status="confirmed")
 ```
+
+For synchronous scripts that still need to call async load paths, use the explicit sync bridge:
+
+```python
+with DataHelper(config, table="orders") as helper:
+    df = helper.aload_sync(status="confirmed")
+```
+
+If an event loop is already running (for example notebooks or ASGI handlers), use `await helper.aload(...)` directly.
+
+### Raw `sql=` safety policy (eager SQL only)
+
+`DataGateway` supports convenience `sql="..."` reads for eager SQL paths, with explicit safety controls:
+
+- raw SQL is validated as read-only single-statement `SELECT`/`WITH`
+- mutating SQL (`INSERT`, `UPDATE`, `DELETE`, `DROP`, etc.) is rejected
+- multi-statement SQL is rejected
+- lazy SQL still requires `statement` + `model` (raw `sql=` is eager-only)
+
+Use constructor policy `raw_sql_policy` to control availability:
+
+- `raw_sql_policy="readonly_opt_in"` (default): call site must pass `allow_raw_sql=True`
+- `raw_sql_policy="disabled"`: raw `sql=` is blocked even if `allow_raw_sql=True`
+
+```python
+from boti_data import DataGateway, SqlDatabaseConfig
+
+config = SqlDatabaseConfig(connection_url="sqlite:///example.db", query_only=True)
+
+with DataGateway(config, raw_sql_policy="readonly_opt_in") as gateway:
+    df = gateway.load(
+        sql="SELECT id, status FROM users WHERE status = :status",
+        params={"status": "active"},
+        as_pandas=True,
+        allow_raw_sql=True,
+    )
+```
+
+Prefer `statement` + `model` for production query paths whenever possible, especially when you need lazy/partitioned execution.
 
 ---
 
@@ -486,6 +527,38 @@ with DataHelper.session(
         ddf = helper.dask.load(year=2024)
 ```
 
+### HybridDataset distributed pattern
+
+Use this pattern when you split reads across historical and live sources but want one
+distributed execution context. `HybridDataset` composes two helpers, and
+`DataHelper.session(...)` keeps scheduler ownership explicit.
+
+```python
+import asyncio
+
+from dask.distributed import LocalCluster
+from boti_data import DataHelper, HybridDataset
+
+historical = DataHelper(backend="sqlalchemy", connection_url="sqlite:///events.db", table="events_hist")
+live = DataHelper(backend="sqlalchemy", connection_url="sqlite:///events.db", table="events_live")
+dataset = HybridDataset(historical, live, date_field="event_date", split_date="2026-04-18")
+
+with LocalCluster(n_workers=1, threads_per_worker=1, processes=False, dashboard_address=":0") as cluster:
+    with DataHelper.session(
+        scheduler_address=cluster.scheduler_address,
+        verify_connectivity=True,
+        shared=True,
+        shared_key="hybrid-dataset-distributed",
+    ):
+        ddf = dataset.dask.load(start="2026-04-14", end="2026-04-19", diagnostics=True)
+        frame = ddf.compute()
+        eager_frame = asyncio.run(
+            dataset.aload(start="2026-04-16", end="2026-04-18", return_type="pandas")
+        )
+```
+
+For a complete runnable script, see `examples/data_hybrid_dataset_distributed.py`.
+
 ### Semi-join across distributed frames
 
 ```python
@@ -610,6 +683,7 @@ Use the following as a guide:
 | Data does not fit in one machine's RAM | `helper.dask.load()` + local or remote cluster |
 | Heavy transforms over millions of rows | `helper.dask.load()` + Dask cluster |
 | Async service (FastAPI, ASGI) | `await helper.pandas.aload()` or `await helper.dask.aload()` |
+| Sync script that needs async load path | `helper.aload_sync(...)` |
 | Joining two large tables on a cluster | `helper.semi_join(series, on="key")` |
 | Scheduled overnight batch job | Dask cluster + `persist=True` for multi-pass jobs |
 
@@ -713,6 +787,26 @@ async def load_orders(status: str) -> pd.DataFrame:
 with DataHelper(config, table="transactions") as helper:
     # Inclusive date range; dt_field is the semantic field name
     df = helper.pandas.load_period("created_at", "2024-01-01", "2024-06-30")
+```
+
+### HybridDataset — historical + live composition
+
+```python
+historical = DataHelper(backend="parquet", storage_path="/data/historical", parquet_filename="orders")
+live = DataHelper(backend="sqlalchemy", connection_url="sqlite:///live.db", table="orders_live")
+
+dataset = HybridDataset(
+    historical,
+    live,
+    date_field="order_date",
+    split_date="2026-04-18",
+)
+
+# mixed window (auto -> dask for hybrid composition)
+ddf = dataset.load(start="2026-04-15", end="2026-04-20", return_type="auto")
+
+# explicit source override through engine-bound view
+pdf = dataset.pandas.load(start="2026-04-18", end="2026-04-20", source="live")
 ```
 
 ### DataHelper — parquet source

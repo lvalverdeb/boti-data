@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import asyncio
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from boti_dask import DaskSession, dask_session
@@ -58,11 +59,17 @@ class _EngineBoundHelper:
     async def aload(self, **options: Any) -> Any:
         return await self._helper.aload(**self._bind_options(options))
 
+    def aload_sync(self, **options: Any) -> Any:
+        return self._helper.aload_sync(**self._bind_options(options))
+
     def preview(self, *, n: int = 5, npartitions: int = 1, **options: Any) -> Any:
         return self._helper.preview(n=n, npartitions=npartitions, **self._bind_options(options))
 
     async def apreview(self, *, n: int = 5, npartitions: int = 1, **options: Any) -> Any:
         return await self._helper.apreview(n=n, npartitions=npartitions, **self._bind_options(options))
+
+    def apreview_sync(self, *, n: int = 5, npartitions: int = 1, **options: Any) -> Any:
+        return self._helper.apreview_sync(n=n, npartitions=npartitions, **self._bind_options(options))
 
     def load_period(self, dt_field: str, start: str, end: str, **kwargs: Any) -> Any:
         return self._helper.load_period(dt_field, start, end, **self._bind_options(kwargs))
@@ -70,11 +77,17 @@ class _EngineBoundHelper:
     async def aload_period(self, dt_field: str, start: str, end: str, **kwargs: Any) -> Any:
         return await self._helper.aload_period(dt_field, start, end, **self._bind_options(kwargs))
 
+    def aload_period_sync(self, dt_field: str, start: str, end: str, **kwargs: Any) -> Any:
+        return self._helper.aload_period_sync(dt_field, start, end, **self._bind_options(kwargs))
+
     def semi_join(self, join_series: Any, on: str, **kwargs: Any) -> Any:
         return self._helper.semi_join(join_series, on, **self._bind_options(kwargs))
 
     async def asemi_join(self, join_series: Any, on: str, **kwargs: Any) -> Any:
         return await self._helper.asemi_join(join_series, on, **self._bind_options(kwargs))
+
+    def asemi_join_sync(self, join_series: Any, on: str, **kwargs: Any) -> Any:
+        return self._helper.asemi_join_sync(join_series, on, **self._bind_options(kwargs))
 
 
 class DataHelper:
@@ -133,11 +146,34 @@ class DataHelper:
     async def aload(self, **options: Any) -> Any:
         return await self.gateway.aload(**options)
 
+    def aload_sync(self, **options: Any) -> Any:
+        """Run :meth:`aload` from synchronous code.
+
+        This helper is intentionally strict: when an event loop is already running
+        (for example in notebooks), callers must use ``await helper.aload(...)``.
+        """
+        return self._run_coro_sync(self.aload, **options)
+
     def preview(self, *, n: int = 5, npartitions: int = 1, **options: Any) -> Any:
         return self.gateway.preview(n=n, npartitions=npartitions, **options)
 
     async def apreview(self, *, n: int = 5, npartitions: int = 1, **options: Any) -> Any:
         return await self.gateway.apreview(n=n, npartitions=npartitions, **options)
+
+    def apreview_sync(self, *, n: int = 5, npartitions: int = 1, **options: Any) -> Any:
+        return self._run_coro_sync(self.apreview, n=n, npartitions=npartitions, **options)
+
+    @staticmethod
+    def _run_coro_sync(coro_factory: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro_factory(*args, **kwargs))
+        raise RuntimeError(
+            "Cannot run async DataHelper operation from synchronous bridge while an event loop "
+            "is running. Use `await helper.aload(...)` (or `await helper.<engine>.aload(...)`) "
+            "in notebooks/async runtimes."
+        )
 
     @property
     def dask(self) -> _EngineBoundHelper:
@@ -157,11 +193,17 @@ class DataHelper:
     async def aload_period(self, dt_field: str, start: str, end: str, **kwargs: Any) -> Any:
         return await self.gateway.aload_period(dt_field, start, end, **kwargs)
 
+    def aload_period_sync(self, dt_field: str, start: str, end: str, **kwargs: Any) -> Any:
+        return self._run_coro_sync(self.aload_period, dt_field, start, end, **kwargs)
+
     def semi_join(self, join_series: Any, on: str, **kwargs: Any) -> Any:
         return self.gateway.semi_join(join_series, on, **kwargs)
 
     async def asemi_join(self, join_series: Any, on: str, **kwargs: Any) -> Any:
         return await self.gateway.asemi_join(join_series, on, **kwargs)
+
+    def asemi_join_sync(self, join_series: Any, on: str, **kwargs: Any) -> Any:
+        return self._run_coro_sync(self.asemi_join, join_series, on, **kwargs)
 
     @staticmethod
     def session(**kwargs: Any) -> DaskSession:

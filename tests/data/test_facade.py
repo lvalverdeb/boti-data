@@ -1037,6 +1037,116 @@ def test_facade_auto_return_type_uses_dask_for_large_parquet(temp_project_root, 
     assert frame.compute()["id"].tolist() == [1, 3]
 
 
+def test_facade_auto_in_chunking_disables_eager_sql_for_medium_in_lists():
+    config = SqlDatabaseConfig(
+        connection_url="sqlite:///:memory:",
+        poolclass="sqlalchemy.pool.StaticPool",
+        query_only=False,
+    )
+
+    with DataGateway(config) as facade:
+        size, concurrency = facade._resolve_in_chunk_controls(
+            {"id__in": list(range(5_000))},
+            execution_mode="eager",
+            strategy="auto",
+            in_chunk_size_raw=None,
+            in_chunk_concurrency_raw=None,
+        )
+
+    assert size == 0
+    assert concurrency is None
+
+
+def test_facade_auto_in_chunking_keeps_lazy_sql_chunking_for_medium_in_lists():
+    config = SqlDatabaseConfig(
+        connection_url="sqlite:///:memory:",
+        poolclass="sqlalchemy.pool.StaticPool",
+        query_only=False,
+    )
+
+    with DataGateway(config) as facade:
+        size, concurrency = facade._resolve_in_chunk_controls(
+            {"id__in": list(range(5_000))},
+            execution_mode="lazy",
+            strategy="auto",
+            in_chunk_size_raw=None,
+            in_chunk_concurrency_raw=None,
+        )
+
+    assert size == 900
+    assert concurrency is not None and concurrency >= 1
+
+
+def test_facade_auto_in_chunking_disables_eager_sql_for_ten_thousand_sqlite_values():
+    config = SqlDatabaseConfig(
+        connection_url="sqlite:///:memory:",
+        poolclass="sqlalchemy.pool.StaticPool",
+        query_only=False,
+    )
+
+    with DataGateway(config) as facade:
+        size, concurrency = facade._resolve_in_chunk_controls(
+            {"id__in": list(range(10_000))},
+            execution_mode="eager",
+            strategy="auto",
+            in_chunk_size_raw=None,
+            in_chunk_concurrency_raw=None,
+        )
+
+    assert size == 0
+    assert concurrency is None
+
+
+def test_facade_in_chunk_diagnostics_logs_sync_fanout(tmp_path):
+    class CaptureLogger:
+        def __init__(self) -> None:
+            self.infos: list[str] = []
+
+        def info(self, message: str, *_args, **_kwargs) -> None:
+            self.infos.append(message)
+
+    class Base(DeclarativeBase):
+        pass
+
+    class Event(Base):
+        __tablename__ = "chunk_diag_events"
+
+        id: Mapped[int] = mapped_column(primary_key=True)
+        status: Mapped[str] = mapped_column(String(32))
+
+    db_path = tmp_path / "chunk_diag.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as session:
+            session.add_all([Event(id=i, status="ok") for i in range(1, 501)])
+            session.commit()
+    finally:
+        engine.dispose()
+
+    logger = CaptureLogger()
+    config = SqlDatabaseConfig(
+        connection_url=f"sqlite:///{db_path}",
+        poolclass="sqlalchemy.pool.NullPool",
+        query_only=False,
+        logger=logger,
+    )
+
+    with DataGateway(config, table="chunk_diag_events") as facade:
+        frame = facade.load(
+            id__in=list(range(1, 401)),
+            return_type="pandas",
+            execution_mode="eager",
+            diagnostics=True,
+            in_chunk_size=100,
+            in_chunk_concurrency=1,
+        )
+
+    assert isinstance(frame, pd.DataFrame)
+    assert len(frame) == 400
+    assert any("Gateway IN chunk fan-out sync" in message for message in logger.infos)
+
+
 def test_facade_sql_columns_project_lazy_statement(tmp_path):
     class Base(DeclarativeBase):
         pass
@@ -1343,7 +1453,11 @@ async def test_facade_aloads_sql_with_async_resource(monkeypatch):
     )
 
     async with DataGateway(config) as facade:
-        frame = await facade.aload(sql="SELECT id, status FROM users", as_pandas=True)
+        frame = await facade.aload(
+            sql="SELECT id, status FROM users",
+            as_pandas=True,
+            allow_raw_sql=True,
+        )
 
     assert isinstance(frame, pd.DataFrame)
     assert frame["status"].tolist() == ["active"]
@@ -1358,7 +1472,59 @@ def test_facade_rejects_lazy_raw_sql_without_statement_model():
 
     with DataGateway(config) as facade:
         with pytest.raises(ValueError, match="Lazy SQL gateway loads require a SQLAlchemy Select statement and model"):
-            facade.load(sql="SELECT 1 AS id")
+            facade.load(sql="SELECT 1 AS id", allow_raw_sql=True)
+
+
+def test_facade_rejects_raw_sql_by_default_even_for_eager_reads():
+    config = SqlDatabaseConfig(
+        connection_url="sqlite:///:memory:",
+        poolclass="sqlalchemy.pool.StaticPool",
+        query_only=False,
+    )
+
+    with DataGateway(config) as facade:
+        with pytest.raises(ValueError, match="Raw sql= execution is disabled by default"):
+            facade.load(sql="SELECT 1 AS id", as_pandas=True)
+
+
+def test_facade_rejects_mutating_raw_sql_even_when_opted_in():
+    config = SqlDatabaseConfig(
+        connection_url="sqlite:///:memory:",
+        poolclass="sqlalchemy.pool.StaticPool",
+        query_only=False,
+    )
+
+    with DataGateway(config) as facade:
+        with pytest.raises(ValueError, match="only supports single-statement read-only"):
+            facade.load(sql="DELETE FROM users", as_pandas=True, allow_raw_sql=True)
+
+
+def test_facade_rejects_multi_statement_raw_sql_even_when_opted_in():
+    config = SqlDatabaseConfig(
+        connection_url="sqlite:///:memory:",
+        poolclass="sqlalchemy.pool.StaticPool",
+        query_only=False,
+    )
+
+    with DataGateway(config) as facade:
+        with pytest.raises(ValueError, match="only supports single-statement read-only"):
+            facade.load(
+                sql="SELECT 1 AS id; DROP TABLE users",
+                as_pandas=True,
+                allow_raw_sql=True,
+            )
+
+
+def test_facade_raw_sql_policy_disabled_blocks_even_explicit_opt_in():
+    config = SqlDatabaseConfig(
+        connection_url="sqlite:///:memory:",
+        poolclass="sqlalchemy.pool.StaticPool",
+        query_only=False,
+    )
+
+    with DataGateway(config, raw_sql_policy="disabled") as facade:
+        with pytest.raises(ValueError, match="disabled by this DataGateway policy"):
+            facade.load(sql="SELECT 1 AS id", as_pandas=True, allow_raw_sql=True)
 
 
 def test_facade_loads_partitioned_sql_as_lazy_dask(tmp_path):

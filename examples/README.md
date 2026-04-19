@@ -21,6 +21,9 @@ python examples/data_facade_datacube_contract_rejection.py
 python examples/data_helper_legacy.py
 python examples/data_helper_distributed.py
 python examples/data_helper_bootstrap.py
+tpython examples/data_hybrid_dataset.py
+python examples/data_hybrid_dataset_sql_parquet.py
+python examples/data_hybrid_dataset_distributed.py
 ```
 
 Pure Dask runtime/resilience examples now live in the `boti-dask` repo, e.g.
@@ -29,6 +32,13 @@ Pure Dask runtime/resilience examples now live in the `boti-dask` repo, e.g.
 `data_helper_bootstrap.py` is the deterministic migration path for
 `notebooks/99_Bootstrap_legacy.ipynb` and exercises engine views
 (`helper.pandas/.polars/.dask`) plus resilient `safe_*` helpers.
+
+Hybrid dataset walkthroughs:
+
+- `examples/data_hybrid_dataset.py` (SQL historical+live split)
+- `examples/data_hybrid_dataset_sql_parquet.py` (Parquet historical + SQL live)
+- `examples/data_hybrid_dataset_distributed.py` (Dask session + HybridDataset)
+- `notebooks/09_hybrid_dataset.ipynb` (interactive notebook flow)
 
 See [`docs/BIG_DATA_READYNESS.md`](../docs/BIG_DATA_READYNESS.md) for operating guidance.
 Datacube contract guidance: [`docs/DATACUBE_CONTRACT.md`](../docs/DATACUBE_CONTRACT.md).

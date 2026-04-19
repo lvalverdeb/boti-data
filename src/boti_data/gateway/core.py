@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Literal
 
@@ -68,6 +69,7 @@ from .normalization import (
     normalize_configured_filters,
     prepare_period_filters,
     split_control_and_filters,
+    validate_filter_payload,
 )
 from .requests import (
     BackendConfig,
@@ -87,6 +89,23 @@ from .requests import (
 _AUTO_EAGER_MAX_ROWS = 10_000
 _AUTO_EAGER_MAX_FILES = 4
 _AUTO_EAGER_MAX_BYTES = 32 * 1024 * 1024
+RawSqlPolicy = Literal["disabled", "readonly_opt_in"]
+
+
+@dataclass(frozen=True, slots=True)
+class _InChunkPolicy:
+    eager_auto_min_values: int
+    eager_auto_concurrency: int
+
+
+_DEFAULT_IN_CHUNK_POLICY = _InChunkPolicy(
+    eager_auto_min_values=5_000,
+    eager_auto_concurrency=1,
+)
+_SQLITE_IN_CHUNK_POLICY = _InChunkPolicy(
+    eager_auto_min_values=20_000,
+    eager_auto_concurrency=1,
+)
 
 
 def _coerce_backend_config(config: Any) -> BackendConfig:
@@ -147,6 +166,13 @@ class DataGateway:
         self,
         config: BackendConfig,
         *,
+        raw_sql_policy: RawSqlPolicy = "readonly_opt_in",
+        strict_filter_validation: bool = False,
+        allowed_filter_fields: set[str] | None = None,
+        max_filter_depth: int = 8,
+        max_filter_conditions: int = 128,
+        max_in_filter_values: int = 5000,
+        require_datacube_request_validator: bool = False,
         field_map: dict[str, str] | None = None,
         table: str | None = None,
         sticky_filters: dict[str, Any] | None = None,
@@ -188,6 +214,22 @@ class DataGateway:
         self._execution_mode: ExecutionMode = self._df_params.execution_mode
         self._configured_select_cache: dict[tuple[str, ...], tuple[Any, Any]] = {}
         self._configured_async_select_cache: dict[tuple[str, ...], tuple[Any, Any]] = {}
+        self._raw_sql_policy: RawSqlPolicy = raw_sql_policy
+        self._strict_filter_validation = strict_filter_validation
+        self._allowed_filter_fields = set(allowed_filter_fields) if allowed_filter_fields else None
+        self._max_filter_depth = max_filter_depth
+        self._max_filter_conditions = max_filter_conditions
+        self._max_in_filter_values = max_in_filter_values
+        self._require_datacube_request_validator = require_datacube_request_validator
+
+        if self.backend == "datacube" and self._require_datacube_request_validator:
+            assert isinstance(self.config, DatacubeConfig)
+            contract = self.config.contract
+            if contract is None or contract.request_validator is None:
+                raise ValueError(
+                    "require_datacube_request_validator=True requires "
+                    "DatacubeContract(request_validator=...) on DatacubeConfig."
+                )
 
     @property
     def _configured(self) -> bool:
@@ -465,6 +507,11 @@ class DataGateway:
             options,
             sticky_filters=self._sticky_filters,
             exclude=self._exclude,
+            strict_filter_validation=self._strict_filter_validation,
+            allowed_filter_fields=self._allowed_filter_fields,
+            max_filter_depth=self._max_filter_depth,
+            max_filter_conditions=self._max_filter_conditions,
+            max_in_filter_values=self._max_in_filter_values,
         )
         control = normalized.control
         if control.get("partitioned") is True:
@@ -619,10 +666,23 @@ class DataGateway:
         return prepared
 
     @staticmethod
+    def _resolve_allow_raw_sql(*, options: dict[str, Any], policy: RawSqlPolicy) -> bool:
+        if options.get("sql") is None:
+            return False
+        requested_allow = bool(options.get("allow_raw_sql", False))
+        if policy == "disabled":
+            raise ValueError(
+                "Raw sql= execution is disabled by this DataGateway policy "
+                "(raw_sql_policy='disabled')."
+            )
+        return requested_allow
+
+    @staticmethod
     def _structured_sql_request_payload(
         options: dict[str, Any],
         *,
         return_type: ResolvedReturnType,
+        allow_raw_sql: bool,
     ) -> dict[str, Any]:
         return {
             "sql": options.get("sql"),
@@ -635,6 +695,7 @@ class DataGateway:
             "as_pandas": bool(options.get("as_pandas", False)),
             "diagnostics": bool(options.get("diagnostics", False)),
             "return_type": return_type,
+            "allow_raw_sql": allow_raw_sql,
         }
 
     @staticmethod
@@ -653,8 +714,8 @@ class DataGateway:
             "return_type": return_type,
         }
 
-    @staticmethod
     def _structured_datacube_request_payload(
+        self,
         options: dict[str, Any],
         *,
         return_type: ResolvedReturnType,
@@ -662,6 +723,14 @@ class DataGateway:
         control, runtime_filters = split_control_and_filters(options)
         explicit_filters = control.pop("filters", {})
         merged_filters = {**runtime_filters, **explicit_filters}
+        if self._strict_filter_validation:
+            validate_filter_payload(
+                merged_filters,
+                allowed_filter_fields=self._allowed_filter_fields,
+                max_depth=self._max_filter_depth,
+                max_conditions=self._max_filter_conditions,
+                max_in_values=self._max_in_filter_values,
+            )
         return {
             "cube": control.get("cube"),
             "filters": merged_filters,
@@ -709,16 +778,27 @@ class DataGateway:
         cls,
         backend: BackendName,
         *,
+        raw_sql_policy: RawSqlPolicy = "readonly_opt_in",
         fs: fsspec.AbstractFileSystem | None = None,
         fs_factory: Any | None = None,
         **config_kwargs: Any,
     ) -> DataGateway:
         if backend == "sqlalchemy":
-            return cls(SqlDatabaseConfig(**config_kwargs), fs=fs, fs_factory=fs_factory)
+            return cls(
+                SqlDatabaseConfig(**config_kwargs),
+                raw_sql_policy=raw_sql_policy,
+                fs=fs,
+                fs_factory=fs_factory,
+            )
         if backend == "parquet":
-            return cls(ParquetDataConfig(**config_kwargs), fs=fs, fs_factory=fs_factory)
+            return cls(
+                ParquetDataConfig(**config_kwargs),
+                raw_sql_policy=raw_sql_policy,
+                fs=fs,
+                fs_factory=fs_factory,
+            )
         if backend == "datacube":
-            return cls(DatacubeConfig(**config_kwargs))
+            return cls(DatacubeConfig(**config_kwargs), raw_sql_policy=raw_sql_policy)
         raise ValueError(f"Unsupported backend: {backend!r}")
 
     @classmethod
@@ -769,6 +849,16 @@ class DataGateway:
         df_params = DataFrameParams(**df_params_raw) if df_params_raw else None
         df_options_raw: dict[str, Any] | None = cfg.pop("df_options", None)
         df_options = DataFrameOptions(**df_options_raw) if df_options_raw else None
+        raw_sql_policy: RawSqlPolicy = cfg.pop("raw_sql_policy", "readonly_opt_in")
+        strict_filter_validation: bool = bool(cfg.pop("strict_filter_validation", False))
+        allowed_filter_fields_raw = cfg.pop("allowed_filter_fields", None)
+        allowed_filter_fields = set(allowed_filter_fields_raw) if allowed_filter_fields_raw else None
+        max_filter_depth: int = int(cfg.pop("max_filter_depth", 8))
+        max_filter_conditions: int = int(cfg.pop("max_filter_conditions", 128))
+        max_in_filter_values: int = int(cfg.pop("max_in_filter_values", 5000))
+        require_datacube_request_validator: bool = bool(
+            cfg.pop("require_datacube_request_validator", False)
+        )
 
         if backend == "sqlalchemy":
             if raw_url is None:
@@ -779,6 +869,7 @@ class DataGateway:
             db_config = SqlDatabaseConfig(connection_url=connection_url, **cfg)
             return cls(
                 db_config,
+                raw_sql_policy=raw_sql_policy,
                 fs=fs,
                 fs_factory=fs_factory,
                 table=table,
@@ -787,6 +878,12 @@ class DataGateway:
                 exclude=exclude,
                 df_params=df_params,
                 df_options=df_options,
+                strict_filter_validation=strict_filter_validation,
+                allowed_filter_fields=allowed_filter_fields,
+                max_filter_depth=max_filter_depth,
+                max_filter_conditions=max_filter_conditions,
+                max_in_filter_values=max_in_filter_values,
+                require_datacube_request_validator=require_datacube_request_validator,
             )
         if backend == "parquet":
             storage_path = cfg.pop("storage_path", None)
@@ -801,6 +898,7 @@ class DataGateway:
             parquet_config = ParquetDataConfig(**cfg)
             return cls(
                 parquet_config,
+                raw_sql_policy=raw_sql_policy,
                 fs=fs,
                 fs_factory=fs_factory,
                 table=table,
@@ -809,17 +907,30 @@ class DataGateway:
                 exclude=exclude,
                 df_params=df_params,
                 df_options=df_options,
+                strict_filter_validation=strict_filter_validation,
+                allowed_filter_fields=allowed_filter_fields,
+                max_filter_depth=max_filter_depth,
+                max_filter_conditions=max_filter_conditions,
+                max_in_filter_values=max_in_filter_values,
+                require_datacube_request_validator=require_datacube_request_validator,
             )
         if backend == "datacube":
             datacube_config = DatacubeConfig(**cfg)
             return cls(
                 datacube_config,
+                raw_sql_policy=raw_sql_policy,
                 table=table,
                 field_map=field_map,
                 sticky_filters=sticky_filters,
                 exclude=exclude,
                 df_params=df_params,
                 df_options=df_options,
+                strict_filter_validation=strict_filter_validation,
+                allowed_filter_fields=allowed_filter_fields,
+                max_filter_depth=max_filter_depth,
+                max_filter_conditions=max_filter_conditions,
+                max_in_filter_values=max_in_filter_values,
+                require_datacube_request_validator=require_datacube_request_validator,
             )
         raise ValueError(f"Unsupported backend: {backend!r}")
 
@@ -920,6 +1031,7 @@ class DataGateway:
         loader_options = self._resolve_series_filters(loader_options)
         in_chunk_size, in_chunk_concurrency = self._resolve_in_chunk_controls(
             loader_options,
+            execution_mode=resolved_execution_mode,
             strategy=in_chunk_strategy,
             in_chunk_size_raw=in_chunk_size_raw,
             in_chunk_concurrency_raw=in_chunk_concurrency_raw,
@@ -954,6 +1066,10 @@ class DataGateway:
                         self._structured_sql_request_payload(
                             opts,
                             return_type=loader_return_type,
+                            allow_raw_sql=self._resolve_allow_raw_sql(
+                                options=opts,
+                                policy=self._raw_sql_policy,
+                            ),
                         )
                     ),
                 )
@@ -1074,6 +1190,7 @@ class DataGateway:
             loader_options["diagnostics"] = True
         in_chunk_size, in_chunk_concurrency = self._resolve_in_chunk_controls(
             loader_options,
+            execution_mode=resolved_execution_mode,
             strategy=in_chunk_strategy,
             in_chunk_size_raw=in_chunk_size_raw,
             in_chunk_concurrency_raw=in_chunk_concurrency_raw,
@@ -1115,6 +1232,10 @@ class DataGateway:
                         self._structured_sql_request_payload(
                             opts,
                             return_type=loader_return_type,
+                            allow_raw_sql=self._resolve_allow_raw_sql(
+                                options=opts,
+                                policy=self._raw_sql_policy,
+                            ),
                         )
                     )
                     coro = self._aload_sql(request)
@@ -1264,17 +1385,32 @@ class DataGateway:
         if max_concurrency is not None and max_concurrency > 0:
             semaphore = asyncio.Semaphore(max_concurrency)
 
+        diagnostics_enabled = bool(options.get("diagnostics", False))
+        chunk_elapsed_ms: list[float] = []
+
         async def _run_chunk(chunk_opts: dict[str, Any]) -> FrameResult:
+            started = perf_counter()
             if semaphore is None:
-                return await execute_fn(**chunk_opts)
-            async with semaphore:
-                return await execute_fn(**chunk_opts)
+                result = await execute_fn(**chunk_opts)
+            else:
+                async with semaphore:
+                    result = await execute_fn(**chunk_opts)
+            chunk_elapsed_ms.append((perf_counter() - started) * 1000.0)
+            return result
 
         for chunk_opts in self._iter_chunk_option_sets(options, chunk_target, chunk_size):
             tasks.append(_run_chunk(chunk_opts))
 
+        fanout_started = perf_counter()
         strategy = self._frame_strategy(return_type)
         results: list[FrameResult] = await asyncio.gather(*tasks)
+        fanout_elapsed_ms = (perf_counter() - fanout_started) * 1000.0
+        if diagnostics_enabled and self._logger is not None:
+            per_chunk_ms = [round(value, 2) for value in chunk_elapsed_ms]
+            self._logger.info(
+                "Gateway IN chunk fan-out async "
+                f"chunks={len(tasks)} total_ms={fanout_elapsed_ms:.2f} per_chunk_ms={per_chunk_ms}"
+            )
         non_empty = [r for r in results if self._has_any_rows(r)]
         if not non_empty:
             return results[0]
@@ -1307,13 +1443,30 @@ class DataGateway:
             return execute_fn(**options)
 
         chunk_opts_list = list(self._iter_chunk_option_sets(options, chunk_target, chunk_size))
+        diagnostics_enabled = bool(options.get("diagnostics", False))
+        chunk_elapsed_ms: list[float] = []
 
+        def _execute_chunk(chunk_opts: dict[str, Any]) -> FrameResult:
+            started = perf_counter()
+            result = execute_fn(**chunk_opts)
+            chunk_elapsed_ms.append((perf_counter() - started) * 1000.0)
+            return result
+
+        fanout_started = perf_counter()
         if max_concurrency is not None and max_concurrency > 1:
             with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-                futures = [executor.submit(execute_fn, **chunk_opts) for chunk_opts in chunk_opts_list]
+                futures = [executor.submit(_execute_chunk, chunk_opts) for chunk_opts in chunk_opts_list]
                 results = [future.result() for future in futures]
         else:
-            results = [execute_fn(**chunk_opts) for chunk_opts in chunk_opts_list]
+            results = [_execute_chunk(chunk_opts) for chunk_opts in chunk_opts_list]
+
+        fanout_elapsed_ms = (perf_counter() - fanout_started) * 1000.0
+        if diagnostics_enabled and self._logger is not None:
+            per_chunk_ms = [round(value, 2) for value in chunk_elapsed_ms]
+            self._logger.info(
+                "Gateway IN chunk fan-out sync "
+                f"chunks={len(chunk_opts_list)} total_ms={fanout_elapsed_ms:.2f} per_chunk_ms={per_chunk_ms}"
+            )
 
         strategy = self._frame_strategy(return_type)
         non_empty = [r for r in results if self._has_any_rows(r)]
@@ -1375,6 +1528,7 @@ class DataGateway:
         self,
         options: dict[str, Any],
         *,
+        execution_mode: ResolvedExecutionMode,
         strategy: str,
         in_chunk_size_raw: Any,
         in_chunk_concurrency_raw: Any,
@@ -1393,7 +1547,14 @@ class DataGateway:
         if self.backend == "sqlalchemy" and filters:
             hint = self._filter_chunking_hint(filters)
             if hint is not None:
+                if execution_mode == "eager" and not self._should_auto_chunk_eager(hint):
+                    return 0, None
+                if execution_mode == "eager":
+                    policy = self._in_chunk_policy()
+                    return int(hint["in_chunk_size"]), policy.eager_auto_concurrency
                 return int(hint["in_chunk_size"]), int(hint["in_chunk_concurrency"])
+            if execution_mode == "eager":
+                return 0, None
 
         return _DEFAULT_IN_CHUNK_SIZE, None
 
@@ -1407,6 +1568,24 @@ class DataGateway:
     @staticmethod
     def _filter_chunking_hint(filters: dict[str, Any]) -> dict[str, Any] | None:
         return FilterHandler("sqlalchemy").suggest_sql_in_chunking(filters)
+
+    def _in_chunk_policy(self) -> _InChunkPolicy:
+        if self.backend != "sqlalchemy":
+            return _DEFAULT_IN_CHUNK_POLICY
+        try:
+            assert isinstance(self.config, SqlDatabaseConfig)
+            backend_name = sqlalchemy_url.make_url(
+                self.config.connection_url.get_secret_value()
+            ).get_backend_name()
+        except Exception:
+            return _DEFAULT_IN_CHUNK_POLICY
+        if backend_name == "sqlite":
+            return _SQLITE_IN_CHUNK_POLICY
+        return _DEFAULT_IN_CHUNK_POLICY
+
+    def _should_auto_chunk_eager(self, hint: dict[str, Any]) -> bool:
+        value_count = int(hint.get("value_count", 0))
+        return value_count >= self._in_chunk_policy().eager_auto_min_values
 
     def _supports_lazy_series_semi_join(
         self,
@@ -1704,6 +1883,11 @@ class DataGateway:
             options,
             sticky_filters=self._sticky_filters,
             exclude=self._exclude,
+            strict_filter_validation=self._strict_filter_validation,
+            allowed_filter_fields=self._allowed_filter_fields,
+            max_filter_depth=self._max_filter_depth,
+            max_filter_conditions=self._max_filter_conditions,
+            max_in_filter_values=self._max_in_filter_values,
         )
         control = normalized.control
         combined_filters = normalized.filters
@@ -1855,6 +2039,7 @@ class DataGateway:
         as_pandas: bool = False,
         diagnostics: bool = False,
         return_type: ResolvedReturnType = "pandas",
+        allow_raw_sql: bool = False,
     ) -> SqlLoadRequest:
         return SqlLoadRequest.model_construct(
             sql=sql,
@@ -1867,6 +2052,7 @@ class DataGateway:
             as_pandas=as_pandas,
             diagnostics=diagnostics,
             return_type=return_type,
+            allow_raw_sql=allow_raw_sql,
         )
 
     @staticmethod
@@ -2009,6 +2195,11 @@ class DataGateway:
                 options,
                 sticky_filters=self._sticky_filters,
                 exclude=self._exclude,
+                strict_filter_validation=self._strict_filter_validation,
+                allowed_filter_fields=self._allowed_filter_fields,
+                max_filter_depth=self._max_filter_depth,
+                max_filter_conditions=self._max_filter_conditions,
+                max_in_filter_values=self._max_in_filter_values,
             )
             df = load_datacube(
                 self.resource,
@@ -2038,6 +2229,11 @@ class DataGateway:
                 options,
                 sticky_filters=self._sticky_filters,
                 exclude=self._exclude,
+                strict_filter_validation=self._strict_filter_validation,
+                allowed_filter_fields=self._allowed_filter_fields,
+                max_filter_depth=self._max_filter_depth,
+                max_filter_conditions=self._max_filter_conditions,
+                max_in_filter_values=self._max_in_filter_values,
             )
             configured_fieldnames = self._configured_fieldnames(normalized.control)
             df = load_parquet(
@@ -2121,6 +2317,11 @@ class DataGateway:
                 options,
                 sticky_filters=self._sticky_filters,
                 exclude=self._exclude,
+                strict_filter_validation=self._strict_filter_validation,
+                allowed_filter_fields=self._allowed_filter_fields,
+                max_filter_depth=self._max_filter_depth,
+                max_filter_conditions=self._max_filter_conditions,
+                max_in_filter_values=self._max_in_filter_values,
             )
             df = await aload_datacube(
                 self.resource,
@@ -2149,6 +2350,11 @@ class DataGateway:
                 options,
                 sticky_filters=self._sticky_filters,
                 exclude=self._exclude,
+                strict_filter_validation=self._strict_filter_validation,
+                allowed_filter_fields=self._allowed_filter_fields,
+                max_filter_depth=self._max_filter_depth,
+                max_filter_conditions=self._max_filter_conditions,
+                max_in_filter_values=self._max_in_filter_values,
             )
             configured_fieldnames = self._configured_fieldnames(normalized.control)
             request = self._trusted_parquet_request(
@@ -2176,6 +2382,11 @@ class DataGateway:
                 options,
                 sticky_filters=self._sticky_filters,
                 exclude=self._exclude,
+                strict_filter_validation=self._strict_filter_validation,
+                allowed_filter_fields=self._allowed_filter_fields,
+                max_filter_depth=self._max_filter_depth,
+                max_filter_conditions=self._max_filter_conditions,
+                max_in_filter_values=self._max_in_filter_values,
             )
             control = normalized.control
             combined_filters = normalized.filters

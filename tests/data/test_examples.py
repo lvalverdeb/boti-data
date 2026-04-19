@@ -113,11 +113,50 @@ def test_hybrid_dataset_example_runs_and_returns_summary(capsys):
     output = capsys.readouterr().out
 
     assert result["sync_type"] == "DataFrame"
-    assert result["sync_rows"] == 2
+    assert result["sync_rows"] == 5
+    assert result["historical_type"] == "DataFrame"
+    assert result["historical_rows"] == 2
+    assert result["live_type"] == "DataFrame"
+    assert result["live_rows"] == 3
     assert result["async_type"] == "DataFrame"
     assert result["async_rows"] == 2
-    assert "Hybrid sync type=DataFrame rows=2" in output
+    assert "Hybrid sync type=DataFrame rows=5" in output
+    assert "Hybrid historical view type=DataFrame rows=2" in output
+    assert "Hybrid live view type=DataFrame rows=3" in output
     assert "Hybrid async type=DataFrame rows=2" in output
+
+
+def test_hybrid_dataset_sql_parquet_example_runs_and_returns_summary(capsys):
+    module = _load_example_module("data_hybrid_dataset_sql_parquet.py")
+
+    result = module.main()
+    output = capsys.readouterr().out
+
+    assert result["mixed_type"] == "DataFrame"
+    assert result["mixed_rows"] == 4
+    assert result["eager_type"] == "DataFrame"
+    assert result["eager_rows"] == 4
+    assert result["total_amount"] == 700
+    assert "Hybrid parquet+sql mixed type=DataFrame rows=4" in output
+    assert "Hybrid parquet+sql eager type=DataFrame rows=4" in output
+    assert "Hybrid parquet+sql total amount=700" in output
+
+
+def test_hybrid_dataset_distributed_example_runs_and_returns_summary(capsys):
+    module = _load_example_module("data_hybrid_dataset_distributed.py")
+
+    result = module.main()
+    output = capsys.readouterr().out
+
+    assert result["workers"] == 1
+    assert result["sync_type"] == "DataFrame"
+    assert result["sync_rows"] == 4
+    assert result["async_rows"] == 2
+    assert result["ids"] == [1, 2, 10, 11]
+    assert result["statuses"] == ["hist", "hist", "live", "live"]
+    assert "Hybrid distributed workers: 1" in output
+    assert "Hybrid distributed sync type=DataFrame rows=4" in output
+    assert "Hybrid distributed async rows=2" in output
 
 
 def test_datacube_contract_rejection_example_reports_actionable_error(capsys):

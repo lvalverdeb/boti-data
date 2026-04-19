@@ -31,6 +31,7 @@ from .requests import (
     ParquetLoadRequest,
     SqlLoadRequest,
 )
+from .sql_guard import validate_raw_sql_statement
 
 
 def _prepare_sql_statement(request: SqlLoadRequest, *, logger: Any, debug: bool) -> tuple[Any, dict[str, Any] | None]:
@@ -43,6 +44,7 @@ def _prepare_sql_statement(request: SqlLoadRequest, *, logger: Any, debug: bool)
             statement = statement.params(**request.params)
         execute_params = None
     else:
+        validate_raw_sql_statement(sql=request.sql or "", allow_raw_sql=request.allow_raw_sql)
         statement = text(request.sql or "")
         execute_params = request.params or None
 
