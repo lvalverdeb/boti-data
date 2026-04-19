@@ -106,6 +106,20 @@ def test_helper_bootstrap_example_runs_and_returns_summary(capsys):
     assert "Async row count: 4" in output
 
 
+def test_hybrid_dataset_example_runs_and_returns_summary(capsys):
+    module = _load_example_module("data_hybrid_dataset.py")
+
+    result = module.main()
+    output = capsys.readouterr().out
+
+    assert result["sync_type"] == "DataFrame"
+    assert result["sync_rows"] == 2
+    assert result["async_type"] == "DataFrame"
+    assert result["async_rows"] == 2
+    assert "Hybrid sync type=DataFrame rows=2" in output
+    assert "Hybrid async type=DataFrame rows=2" in output
+
+
 def test_datacube_contract_rejection_example_reports_actionable_error(capsys):
     module = _load_example_module("data_facade_datacube_contract_rejection.py")
 

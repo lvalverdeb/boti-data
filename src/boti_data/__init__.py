@@ -42,6 +42,7 @@ from boti_data.gateway import (
     SqlLoadRequest,
 )
 from boti_data.helper import DataHelper
+from boti_data.dataset import HybridDataset
 from boti_data.joins import indexed_left_join, left_join_frames
 from boti_data.schema import (
     SchemaValidationError,
@@ -67,6 +68,7 @@ __all__ = [
     "DataFrameParams",
     "DataGateway",
     "DataHelper",
+    "HybridDataset",
     "DefaultBase",
     "EngineRegistry",
     "Expr",
