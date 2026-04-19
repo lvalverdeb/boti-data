@@ -13,3 +13,4 @@ docs/
 .env.*
 notebooks/
 benchmarks/
+*.ipynb
