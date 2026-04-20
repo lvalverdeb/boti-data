@@ -43,6 +43,22 @@ from boti_data.gateway import (
 )
 from boti_data.helper import DataHelper
 from boti_data.dataset import HybridDataset
+from boti_data.enrichment import AsyncFrameEnricher, AttachmentSpec, FrameEnricher
+from boti_data.pipelines import (
+    SinkRegistry,
+    available_sinks,
+    create_sink,
+    CsvSink,
+    CsvSinkConfig,
+    JsonlSink,
+    JsonlSinkConfig,
+    ParquetMaterializationResult,
+    ParquetPipeline,
+    ParquetSink,
+    SinkPipeline,
+    SinkWriteResult,
+    register_sink,
+)
 from boti_data.joins import indexed_left_join, left_join_frames
 from boti_data.schema import (
     SchemaValidationError,
@@ -57,7 +73,9 @@ from boti_data.schema import (
 
 __all__ = [
     "And",
+    "AsyncFrameEnricher",
     "AsyncSqlDatabaseResource",
+    "AttachmentSpec",
     "BuilderConfig",
     "ConnectionCatalog",
     "DatacubeConfig",
@@ -68,10 +86,15 @@ __all__ = [
     "DataFrameParams",
     "DataGateway",
     "DataHelper",
+    "CsvSink",
+    "CsvSinkConfig",
+    "JsonlSink",
+    "JsonlSinkConfig",
     "HybridDataset",
     "DefaultBase",
     "EngineRegistry",
     "Expr",
+    "FrameEnricher",
     "FieldMap",
     "FilterHandler",
     "indexed_left_join",
@@ -79,10 +102,14 @@ __all__ = [
     "Or",
     "ParquetDataConfig",
     "ParquetLoadRequest",
+    "ParquetMaterializationResult",
+    "ParquetPipeline",
+    "ParquetSink",
     "ParquetDataResource",
     "ParquetReader",
     "RegistryConfig",
     "SchemaValidationError",
+    "SinkRegistry",
     "SqlLoadRequest",
     "SqlAlchemyModelBuilder",
     "SqlDatabaseConfig",
@@ -92,14 +119,19 @@ __all__ = [
     "SqlPartitionedLoadRequest",
     "SqlPartitionedLoader",
     "SqlModelRegistry",
+    "SinkPipeline",
+    "SinkWriteResult",
     "TrueExpr",
     "align_frames_for_join",
     "apply_schema_map",
+    "available_sinks",
+    "create_sink",
     "ensure_greenlet_available",
     "get_global_registry",
     "infer_schema_map",
     "left_join_frames",
     "normalize_dtype_alias",
     "normalize_schema_map",
+    "register_sink",
     "validate_schema",
 ]

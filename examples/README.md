@@ -18,10 +18,14 @@ python examples/data_facade_distributed.py
 python examples/data_facade_distributed_parquet.py
 python examples/data_facade_datacube.py
 python examples/data_facade_datacube_contract_rejection.py
+python examples/data_csv_sink_pipeline.py
+python examples/data_jsonl_sink_pipeline.py
+python examples/data_enrichment_v1.py
+python examples/data_parquet_pipeline.py
 python examples/data_helper_legacy.py
 python examples/data_helper_distributed.py
 python examples/data_helper_bootstrap.py
-tpython examples/data_hybrid_dataset.py
+python examples/data_hybrid_dataset.py
 python examples/data_hybrid_dataset_sql_parquet.py
 python examples/data_hybrid_dataset_distributed.py
 ```
@@ -39,6 +43,19 @@ Hybrid dataset walkthroughs:
 - `examples/data_hybrid_dataset_sql_parquet.py` (Parquet historical + SQL live)
 - `examples/data_hybrid_dataset_distributed.py` (Dask session + HybridDataset)
 - `notebooks/09_hybrid_dataset.ipynb` (interactive notebook flow)
+
+Parquet materialization walkthrough:
+
+- `examples/data_parquet_pipeline.py` (`ParquetPipeline.materialize()` / reload flow)
+
+Sink/plugin walkthroughs:
+
+- `examples/data_csv_sink_pipeline.py` (`SinkPipeline` + `CsvSink` write-only flow)
+- `examples/data_jsonl_sink_pipeline.py` (`SinkPipeline` + named `jsonl` sink via registry)
+
+Enrichment walkthrough:
+
+- `examples/data_enrichment_v1.py` (`AsyncFrameEnricher` + `AttachmentSpec`)
 
 See [`docs/BIG_DATA_READYNESS.md`](../docs/BIG_DATA_READYNESS.md) for operating guidance.
 Datacube contract guidance: [`docs/DATACUBE_CONTRACT.md`](../docs/DATACUBE_CONTRACT.md).

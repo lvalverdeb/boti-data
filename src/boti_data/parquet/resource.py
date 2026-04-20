@@ -132,6 +132,18 @@ class ParquetDataResource(SecureResource):
             fs_factory=resolved_fs_factory or (None if fs is not None else create_local_filesystem),
         )
         self.config = config
+        # Eagerly validate the storage path at construction time for local paths
+        # so path-traversal attempts are caught before any data access.
+        if config.parquet_storage_path is not None:
+            storage = config.parquet_storage_path
+            parsed = __import__("urllib.parse", fromlist=["urlparse"]).urlparse(storage)
+            if not parsed.scheme or parsed.scheme == "file":
+                local = parsed.path if parsed.scheme == "file" else storage
+                if "\x00" in local:
+                    raise ValueError(
+                        "parquet_storage_path contains a null byte and has been rejected."
+                    )
+                self.get_secure_path(local)
 
     def __getstate__(self) -> dict[str, Any]:
         state = super().__getstate__()
@@ -556,6 +568,11 @@ class ParquetDataResource(SecureResource):
     def _secure_local_path(self, path: str) -> Path:
         parsed = urlparse(path)
         local_path = parsed.path if parsed.scheme == "file" else path
+        # Guard against null-byte injection which can truncate paths on some systems.
+        if "\x00" in local_path:
+            raise ValueError(
+                "Path contains a null byte and has been rejected for security reasons."
+            )
         return self.get_secure_path(local_path)
 
     @staticmethod

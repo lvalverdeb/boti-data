@@ -3,8 +3,57 @@ from __future__ import annotations
 import datetime
 import functools
 import math
+import re
 from collections.abc import Iterable, Mapping
 from typing import Any
+
+# ---------------------------------------------------------------------------
+# ReDoS guard
+# ---------------------------------------------------------------------------
+
+# Maximum pattern length accepted for regex/iregex filters.
+_MAX_REGEX_PATTERN_LENGTH: int = 500
+
+# Detects structurally dangerous patterns:
+#   • Nested quantifiers on a group:  (X+)+  (X*)+ etc.
+#   • Quantified alternation group: (a|b)+ or similar with embedded quantifiers
+_DANGEROUS_NESTED_QUANTIFIER_RE = re.compile(
+    r"\([^()]*[+*][^()]*\)[+*{]"
+    r"|"
+    r"\([^()]+\)\{"
+)
+
+
+def validate_regex_pattern(pattern: str, *, max_length: int = _MAX_REGEX_PATTERN_LENGTH) -> None:
+    """Validate a user-supplied regex pattern for safety before passing to any engine.
+
+    Raises:
+        ValueError: If the pattern exceeds *max_length*, is syntactically invalid,
+            or contains constructs known to cause catastrophic backtracking.
+    """
+    if len(pattern) > max_length:
+        raise ValueError(
+            f"Regex pattern is too long ({len(pattern)} chars); "
+            f"maximum allowed is {max_length}."
+        )
+    try:
+        re.compile(pattern)
+    except re.error as exc:
+        raise ValueError(f"Invalid regex pattern: {exc}") from exc
+
+    if _DANGEROUS_NESTED_QUANTIFIER_RE.search(pattern):
+        raise ValueError(
+            "Regex pattern contains nested quantifiers that may cause "
+            "catastrophic backtracking and has been rejected for safety. "
+            "Simplify the pattern to avoid constructs like (X+)+ or (X*)* ."
+        )
+
+
+def _validated_regex(value: Any) -> str:
+    """Validate and return the regex pattern string; raises ValueError on unsafe input."""
+    pattern = str(value)
+    validate_regex_pattern(pattern)
+    return pattern
 
 import dask.dataframe as dd
 import pandas as pd
@@ -213,6 +262,7 @@ def escape_like_pattern(value: Any) -> str:
 
 def regex_sqlalchemy(column: Any, value: Any, *, case_insensitive: bool = False) -> Any:
     pattern = str(value)
+    validate_regex_pattern(pattern)
     if case_insensitive:
         return func.lower(cast(column, String)).regexp_match(pattern.lower())
     return column.regexp_match(pattern)
@@ -258,12 +308,12 @@ def operation_map_dask() -> dict[str, Any]:
         "startswith": lambda col, val: as_str(col).str.startswith(val, na=False),
         "endswith": lambda col, val: as_str(col).str.endswith(val, na=False),
         "not_contains": lambda col, val: ~as_str(col).str.contains(val, regex=True, na=False),
-        "regex": lambda col, val: as_str(col).str.contains(val, regex=True, na=False),
+        "regex": lambda col, val: as_str(col).str.contains(_validated_regex(val), regex=True, na=False),
         "icontains": lambda col, val: as_str(col).str.contains(val, case=False, regex=True, na=False),
         "istartswith": lambda col, val: as_str(col).str.lower().str.startswith(str(val).lower(), na=False),
         "iendswith": lambda col, val: as_str(col).str.lower().str.endswith(str(val).lower(), na=False),
         "iexact": lambda col, val: as_str(col).str.lower() == str(val).lower(),
-        "iregex": lambda col, val: as_str(col).str.contains(val, case=False, regex=True, na=False),
+        "iregex": lambda col, val: as_str(col).str.contains(_validated_regex(val), case=False, regex=True, na=False),
         "isnull": lambda col, val: col.isnull() if val else col.notnull(),
         "not_exact": lambda col, val: col != val,
     }
