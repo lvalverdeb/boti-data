@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol, TypeAlias, Union, cast
+from typing import Any, Protocol, TypeAlias, Union, cast
 
 from boti_data.dataset import HybridDataset
 from boti_data.helper import DataHelper
@@ -21,7 +21,9 @@ PipelineDestination: TypeAlias = ParquetDestination
 
 
 class FrameEnricher(Protocol):
-    def enrich(self, base_frame: FrameResult, *, cols: Sequence[str] | None = None) -> FrameResult: ...
+    def enrich(
+        self, base_frame: FrameResult, *, cols: Sequence[str] | None = None
+    ) -> FrameResult: ...
 
     async def aenrich(
         self,
@@ -41,11 +43,12 @@ class ParquetMaterializationResult:
     """
 
     path: str
-    frame: Optional[Any] = None
+    frame: Any | None = None
 
     @property
     def reloaded(self) -> bool:
         return self.frame is not None
+
 
 class SinkPipeline:
     """Generic orchestration layer that loads from a source and writes into a sink.
@@ -308,7 +311,7 @@ class ParquetPipeline(SinkPipeline):
         return result.path
 
     @staticmethod
-    def _reload_options(reload_options: Optional[Mapping[str, Any]]) -> dict[str, Any]:
+    def _reload_options(reload_options: Mapping[str, Any] | None) -> dict[str, Any]:
         return dict(reload_options or {})
 
 

@@ -6,16 +6,16 @@ from __future__ import annotations
 
 import asyncio
 import os
-from time import perf_counter
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import perf_counter
 
+from boti_dask import dask_session
 from dask.distributed import LocalCluster
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from boti_data.db import SqlDatabaseConfig
-from boti_dask import dask_session
 from boti_data.gateway import DataGateway
 from boti_data.joins import indexed_left_join
 

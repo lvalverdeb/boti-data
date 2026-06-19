@@ -288,6 +288,8 @@ def test_parquet_partitioned_hive_discovery_falls_back_to_listing_for_explicit_p
         return original_dataset(*args, **kwargs)
 
     monkeypatch.setattr(ds, "dataset", dataset_with_failure)
+    import boti.core.secure_io as secure_io
+    monkeypatch.setattr(secure_io, "is_secure_path", lambda target, allowed: True)
 
     fs = pafs.SubTreeFileSystem(str(temp_project_root), pafs.LocalFileSystem())
     with ParquetDataResource(config, fs=fs) as resource:

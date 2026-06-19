@@ -18,10 +18,13 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.fs as pafs
-from boti.core.filesystem import FilesystemConfig, create_filesystem
-from boti.core.models import ResourceConfig
-from boti.core.secure_io import SecureResource
-from boti.core.security import is_valid_identifier
+from boti.core import (
+    FilesystemConfig,
+    ResourceConfig,
+    SecureResource,
+    create_filesystem,
+    is_valid_identifier,
+)
 from fsspec.implementations.local import LocalFileSystem
 from pydantic import Field, field_validator, model_validator
 
@@ -243,7 +246,7 @@ class ParquetDataResource(SecureResource):
             format="parquet",
         )
         expression = self._raw_filters_to_expression(filters)
-        return dataset.to_table(filter=expression, columns=columns)
+        return dataset.to_table(Expression_filter=expression, columns=columns)
 
     def load_filtered(
         self,
@@ -253,7 +256,9 @@ class ParquetDataResource(SecureResource):
     ) -> dd.DataFrame:
         """Load Parquet data from a high-level filter spec with pushdown + residual masking."""
         filter_handler = FilterHandler(backend="dask", logger=self.logger, debug=self.debug)
-        pushdown_filters, residual_filters = filter_handler.split_pushdown_and_residual(filters or {})
+        pushdown_filters, residual_filters = filter_handler.split_pushdown_and_residual(
+            filters or {}
+        )
         dataframe = self.load_files(filters=pushdown_filters or None, columns=columns)
         if residual_filters:
             dataframe = filter_handler.apply_filters(dataframe, filters=residual_filters)
@@ -267,7 +272,9 @@ class ParquetDataResource(SecureResource):
     ) -> pa.Table:
         """Load Parquet data as Arrow with pushdown and Arrow residual filters."""
         filter_handler = FilterHandler(backend="arrow", logger=self.logger, debug=self.debug)
-        pushdown_filters, residual_filters = filter_handler.split_pushdown_and_residual(filters or {})
+        pushdown_filters, residual_filters = filter_handler.split_pushdown_and_residual(
+            filters or {}
+        )
         table = self.load_arrow(filters=pushdown_filters or None, columns=columns)
         if residual_filters:
             table = filter_handler.apply_filters(table, filters=residual_filters)
@@ -314,9 +321,7 @@ class ParquetDataResource(SecureResource):
             partition_key = self.config.partition_on[0]
         else:
             partitioning = ds.partitioning(
-                schema=pa.schema(
-                    [("year", pa.int32()), ("month", pa.int32()), ("day", pa.int32())]
-                )
+                schema=pa.schema([("year", pa.int32()), ("month", pa.int32()), ("day", pa.int32())])
             )
             partition_key = "year"
 
@@ -342,9 +347,7 @@ class ParquetDataResource(SecureResource):
                 ds.field(partition_key) <= str(end_date)
             )
         else:
-            expression = (ds.field("year") >= start_date.year) & (
-                ds.field("year") <= end_date.year
-            )
+            expression = (ds.field("year") >= start_date.year) & (ds.field("year") <= end_date.year)
 
         fragments = dataset.get_fragments(expression)
         found_files = [self._restore_protocol(fragment.path) for fragment in fragments]
@@ -409,7 +412,9 @@ class ParquetDataResource(SecureResource):
                 return list(fs.find(base_path))
             if hasattr(fs, "glob"):
                 return [
-                    path for path in fs.glob(f"{base_path.rstrip('/')}/**") if not path.endswith("/")
+                    path
+                    for path in fs.glob(f"{base_path.rstrip('/')}/**")
+                    if not path.endswith("/")
                 ]
         except (FileNotFoundError, OSError, pa.ArrowInvalid, pa.ArrowException) as exc:
             if self._is_missing_path_error(exc):
@@ -429,7 +434,7 @@ class ParquetDataResource(SecureResource):
         for segment in path.split("/"):
             if not segment.startswith(marker):
                 continue
-            partition_value = segment[len(marker):]
+            partition_value = segment[len(marker) :]
             try:
                 partition_date = dt.date.fromisoformat(partition_value)
             except ValueError:
@@ -483,7 +488,9 @@ class ParquetDataResource(SecureResource):
             except Exception as exc:
                 if self._is_missing_path_error(exc):
                     return None
-                raise self._filesystem_runtime_error("read parquet file metadata", path, exc) from exc
+                raise self._filesystem_runtime_error(
+                    "read parquet file metadata", path, exc
+                ) from exc
             if getattr(info, "type", None) == pafs.FileType.NotFound:
                 return None
             payload: dict[str, Any] = {}

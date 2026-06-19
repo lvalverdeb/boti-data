@@ -17,17 +17,12 @@ classifiers = [
 ]
 dependencies = [
     "asyncmy>=0.2.11",
-    "boti>=0.1.0,<2.0.0",
-    "boti-dask>=0.1.0",
+    "boti>=1.0.2,<2.0.0",
+    "boti-dask>=1.0.0,<2.0.0",
     "dask[dataframe,distributed]>=2026.3.0",
-    "fsspec>=2026.3.0",
-    "ipykernel>=7.2.0",
     "pandas>=3.0.2",
     "polars>=1.29.0",
-    "pyarrow>=23.0.1",
-    "pydantic>=2.12.5",
     "pymysql>=1.1.2",
-    "s3fs>=2026.3.0",
     "sqlalchemy[asyncio]>=2.0.49",
 ]
 
@@ -43,8 +38,10 @@ build-backend = "setuptools.build_meta"
 
 [dependency-groups]
 dev = [
+    "mypy>=1.14.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
+    "pytest-cov>=6.0.0",
     "ruff>=0.11.0",
 ]
 
@@ -63,6 +60,8 @@ ignore = ["E501"]
 "src/boti_data/__init__.py" = ["I001"]
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 markers = [
     "security_regression: focused regression coverage for security fixes and audit findings",
 ]
@@ -72,10 +71,11 @@ filterwarnings = [
 ]
 
 [tool.uv.sources]
-boti-dask = { path = "../boti-dask", editable = true }
+boti = { workspace = true }
+boti-dask = { workspace = true }
 
 [tool.setuptools]
-include-package-data = false
+include-package-data = true
 
 [tool.setuptools.package-dir]
 "" = "src"

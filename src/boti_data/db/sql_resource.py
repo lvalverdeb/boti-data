@@ -4,8 +4,7 @@ import asyncio
 import threading
 from typing import Any
 
-from boti.core.logger import Logger
-from boti.core.managed_resource import ManagedResource
+from boti.core import Logger, ManagedResource
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker

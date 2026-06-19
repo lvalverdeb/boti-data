@@ -1037,12 +1037,18 @@ def test_aload_chunked_in_auto_uses_filter_hints(legacy_dsn, monkeypatch):
         staticmethod(
             lambda filters: {
                 "filter_key": "global_track_id__in",
-                "value_count": 3,
+                "value_count": 10000,
                 "in_chunk_size": 1,
-                "chunk_count": 3,
+                "chunk_count": 10000,
                 "in_chunk_concurrency": 2,
             }
         ),
+    )
+
+    monkeypatch.setattr(
+        gateway_core.DataGateway,
+        "_in_chunk_policy",
+        lambda self: gateway_core._InChunkPolicy(eager_auto_min_values=1, eager_auto_concurrency=2),
     )
 
     try:
@@ -1084,9 +1090,9 @@ def test_aload_chunked_in_off_disables_auto_hint(legacy_dsn, monkeypatch):
         staticmethod(
             lambda filters: {
                 "filter_key": "global_track_id__in",
-                "value_count": 3,
+                "value_count": 10000,
                 "in_chunk_size": 1,
-                "chunk_count": 3,
+                "chunk_count": 10000,
                 "in_chunk_concurrency": 2,
             }
         ),
@@ -1145,12 +1151,18 @@ def test_load_chunked_in_auto_uses_filter_hints(legacy_dsn, monkeypatch):
         staticmethod(
             lambda filters: {
                 "filter_key": "global_track_id__in",
-                "value_count": 3,
+                "value_count": 10000,
                 "in_chunk_size": 1,
-                "chunk_count": 3,
+                "chunk_count": 10000,
                 "in_chunk_concurrency": 2,
             }
         ),
+    )
+
+    monkeypatch.setattr(
+        gateway_core.DataGateway,
+        "_in_chunk_policy",
+        lambda self: gateway_core._InChunkPolicy(eager_auto_min_values=1, eager_auto_concurrency=2),
     )
 
     try:
@@ -1185,9 +1197,9 @@ def test_load_chunked_in_explicit_values_override_auto_hint(legacy_dsn, monkeypa
         staticmethod(
             lambda filters: {
                 "filter_key": "global_track_id__in",
-                "value_count": 3,
+                "value_count": 10000,
                 "in_chunk_size": 1,
-                "chunk_count": 3,
+                "chunk_count": 10000,
                 "in_chunk_concurrency": 2,
             }
         ),

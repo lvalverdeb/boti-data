@@ -30,9 +30,7 @@ from boti_data.filters import (
     Or,
     TrueExpr,
 )
-# parquet must be imported before gateway to avoid a circular import:
-# gateway.core → parquet.resource → parquet/__init__ → parquet.reader → gateway.core
-from boti_data.parquet import ParquetDataConfig, ParquetDataResource, ParquetReader
+from boti_data.parquet import ParquetDataConfig, ParquetDataResource
 from boti_data.gateway import (
     DatacubeLoadRequest,
     DataFrameOptions,
@@ -42,6 +40,7 @@ from boti_data.gateway import (
     SqlLoadRequest,
 )
 from boti_data.helper import DataHelper
+from boti_data.parquet_reader import ParquetReader
 from boti_data.dataset import HybridDataset
 from boti_data.enrichment import AsyncFrameEnricher, AttachmentSpec, FrameEnricher
 from boti_data.pipelines import (

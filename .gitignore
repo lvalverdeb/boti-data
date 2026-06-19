@@ -11,6 +11,4 @@ logs/
 docs/
 .env
 .env.*
-notebooks/
 benchmarks/
-*.ipynb

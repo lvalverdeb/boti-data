@@ -9,10 +9,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
-
-from boti_data import DataHelper
 from boti_dask import (
     UniqueValuesExtractor,
     async_safe_compute,
@@ -28,6 +24,10 @@ from boti_dask import (
     safe_persist,
     safe_wait,
 )
+from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+
+from boti_data import DataHelper
 
 
 class Base(DeclarativeBase):

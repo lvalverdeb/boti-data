@@ -8,9 +8,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pandas as pd
+from boti_dask import dask_session, describe_client
 from dask.distributed import LocalCluster
 
-from boti_dask import dask_session, describe_client
 from boti_data.gateway import DataGateway
 from boti_data.joins import indexed_left_join
 

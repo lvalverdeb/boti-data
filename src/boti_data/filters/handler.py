@@ -5,7 +5,7 @@ from typing import Any, ClassVar
 
 import dask.dataframe as dd
 import pyarrow as pa
-from boti.core.logger import Logger
+from boti.core import Logger
 
 from . import arrow_kernels
 from .expressions import (

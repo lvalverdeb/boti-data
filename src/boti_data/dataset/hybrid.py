@@ -10,8 +10,8 @@ import dask.dataframe as dd
 import pandas as pd
 import polars as pl
 import pyarrow as pa
-
 from boti_dask import safe_persist
+
 from boti_data.datacube import DatacubeConfig
 from boti_data.db import SqlDatabaseConfig
 from boti_data.helper import DataHelper

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+
 import pandas as pd
 
 from boti_data import AsyncFrameEnricher, AttachmentSpec

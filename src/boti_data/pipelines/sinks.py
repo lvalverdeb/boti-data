@@ -11,12 +11,12 @@ import fsspec
 import pandas as pd
 import polars as pl
 import pyarrow as pa
-from boti.core.models import ResourceConfig
-from boti.core.secure_io import SecureResource
+from boti.core import ResourceConfig, SecureResource
 from boti_dask import safe_persist
 from pydantic import Field, field_validator
 
-from boti_data.parquet import ParquetDataConfig, ParquetReader
+from boti_data.parquet import ParquetDataConfig
+from boti_data.parquet_reader import ParquetReader
 
 FrameResult: TypeAlias = Union[pd.DataFrame, dd.DataFrame, pa.Table, pl.DataFrame]
 ParquetDestination: TypeAlias = Union[ParquetReader, ParquetDataConfig, Mapping[str, Any]]
@@ -133,7 +133,9 @@ class CsvSink(SecureResource):
         *,
         fs: fsspec.AbstractFileSystem | None = None,
     ) -> None:
-        resolved_config = config if isinstance(config, CsvSinkConfig) else CsvSinkConfig(**dict(config))
+        resolved_config = (
+            config if isinstance(config, CsvSinkConfig) else CsvSinkConfig(**dict(config))
+        )
         super().__init__(config=resolved_config, fs=fs)
         self.config = resolved_config
 
@@ -296,7 +298,9 @@ class JsonlSink(SecureResource):
         *,
         fs: fsspec.AbstractFileSystem | None = None,
     ) -> None:
-        resolved_config = config if isinstance(config, JsonlSinkConfig) else JsonlSinkConfig(**dict(config))
+        resolved_config = (
+            config if isinstance(config, JsonlSinkConfig) else JsonlSinkConfig(**dict(config))
+        )
         super().__init__(config=resolved_config, fs=fs)
         self.config = resolved_config
 
@@ -536,7 +540,9 @@ class ParquetSink:
             params["partition_on"] = list(self.partition_on)
         ddf.to_parquet(**params)
 
-        files = sorted(self._restore_protocol(path) for path in fs.glob(f"{target_path.rstrip('/')}/*"))
+        files = sorted(
+            self._restore_protocol(path) for path in fs.glob(f"{target_path.rstrip('/')}/*")
+        )
         return SinkWriteResult(path=target_path, files=tuple(files))
 
     @staticmethod

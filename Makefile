@@ -31,7 +31,7 @@ upload-test: build
 	@$(LOAD_ENV); $(REQUIRE_PUBLISH_TOKEN); uv publish --publish-url https://test.pypi.org/legacy/ --token "$$UV_PUBLISH_TOKEN" dist/*
 
 install-dev:
-	uv pip install -e ".[dev]"
+	uv sync --group dev
 
 test:
 	uv run pytest tests/ -m "not security_regression" --tb=short -q

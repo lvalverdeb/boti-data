@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 import dask.dataframe as dd
 import pandas as pd
 import polars as pl
 import pyarrow as pa
-from boti.core.models import ResourceConfig
+from boti.core import ResourceConfig
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 DatacubeFrame = pd.DataFrame | dd.DataFrame | pa.Table | pl.DataFrame

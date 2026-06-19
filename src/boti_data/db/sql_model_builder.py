@@ -7,7 +7,7 @@ import keyword
 import re
 from typing import Any
 
-from boti.core.security import is_valid_dotted_identifier
+from boti.core import is_valid_dotted_identifier
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine

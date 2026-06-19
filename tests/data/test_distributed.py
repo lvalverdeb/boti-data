@@ -3,11 +3,11 @@ from __future__ import annotations
 import dask.dataframe as dd
 import pandas as pd
 import pytest
+from boti_dask import dask_session
 from sqlalchemy import String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from boti_data.db import SqlDatabaseConfig
-from boti_dask import dask_session
 from boti_data.gateway import DataGateway
 from boti_data.joins import indexed_left_join, left_join_frames
 from boti_data.parquet import ParquetDataConfig

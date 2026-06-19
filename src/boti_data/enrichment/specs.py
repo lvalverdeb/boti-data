@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Union
+from typing import Union
 
 import dask.dataframe as dd
 import pandas as pd

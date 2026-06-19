@@ -16,7 +16,15 @@ import fsspec
 import pandas as pd
 import polars as pl
 import pyarrow as pa
-from boti.core.logger import Logger
+from boti.core import Logger
+from boti_dask import (
+    async_safe_head,
+    current_client_summary,
+    describe_frame,
+    inspect_graph,
+    safe_head,
+    safe_persist,
+)
 from pydantic import SecretStr
 from sqlalchemy.engine import url as sqlalchemy_url
 from sqlalchemy.exc import SQLAlchemyError
@@ -32,14 +40,6 @@ from boti_data.db.partitioned_execution import SqlPartitionExecutor
 from boti_data.db.partitioned_planner import SqlPartitionPlanner
 from boti_data.db.sql_config import WorkerSqlConfig
 from boti_data.db.sql_engine import _get_worker_engine_identity
-from boti_dask import (
-    async_safe_head,
-    current_client_summary,
-    describe_frame,
-    inspect_graph,
-    safe_head,
-    safe_persist,
-)
 from boti_data.field_map import FieldMap
 from boti_data.filters import FilterHandler
 from boti_data.parquet.resource import ParquetDataConfig, ParquetDataResource

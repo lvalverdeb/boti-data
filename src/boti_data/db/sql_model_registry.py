@@ -15,8 +15,7 @@ import threading
 import types
 from typing import Any
 
-from boti.core.logger import Logger
-from boti.core.security import is_valid_dotted_identifier
+from boti.core import Logger, is_valid_dotted_identifier
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import MetaData, Table
 from sqlalchemy.engine import Engine

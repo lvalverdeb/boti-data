@@ -11,7 +11,7 @@ from pathlib import Path
 
 import fsspec
 import pyarrow.fs as pafs
-from boti.core.filesystem import FilesystemAdapter, FilesystemConfig, create_filesystem
+from boti.core import FilesystemAdapter, FilesystemConfig, create_filesystem
 
 from boti_data.db.sql_config import SqlDatabaseConfig
 from boti_data.db.sql_resource import AsyncSqlDatabaseResource, SqlDatabaseResource

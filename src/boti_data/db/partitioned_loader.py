@@ -6,7 +6,7 @@ from typing import Any
 
 import dask.dataframe as dd
 import pandas as pd
-from boti.core.logger import Logger
+from boti.core import Logger
 from sqlalchemy.engine import url as sqlalchemy_url
 
 from boti_data.db.partitioned_execution import SqlPartitionExecutor

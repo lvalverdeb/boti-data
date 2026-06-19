@@ -7,7 +7,7 @@ import dask.dataframe as dd
 import pandas as pd
 import polars as pl
 import pyarrow as pa
-from boti.core.logger import Logger
+from boti.core import Logger
 
 from .contract import DatacubeConfig, DatacubeFrame
 

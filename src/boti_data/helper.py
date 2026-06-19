@@ -5,6 +5,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from boti_dask import DaskSession, dask_session
+
 from boti_data.gateway import DataGateway
 from boti_data.gateway.requests import BackendConfig
 from boti_data.joins import indexed_left_join, left_join_frames

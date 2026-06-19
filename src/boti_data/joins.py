@@ -5,7 +5,6 @@ from time import perf_counter
 from typing import Any
 
 import dask.dataframe as dd
-
 from boti_dask import (
     current_client_summary,
     describe_frame,
@@ -13,6 +12,7 @@ from boti_dask import (
     inspect_graph,
     safe_persist,
 )
+
 from boti_data.schema import (
     DataFrameLike,
     apply_schema_map,
