@@ -6,12 +6,7 @@ import math
 from decimal import Decimal
 from typing import Any
 
-try:
-    import boti_rs as _boti_rs
-    _HAS_RUST = True
-except ImportError:
-    _boti_rs = None  # type: ignore[assignment]
-    _HAS_RUST = False
+
 
 import pandas as pd
 from sqlalchemy import func, select
@@ -385,12 +380,7 @@ class SqlPartitionPlanner:
         upper_bound: Any,
         target_partitions: int,
     ) -> list[tuple[Any, Any]]:
-        if _HAS_RUST:
-            if isinstance(lower_bound, int) and isinstance(upper_bound, int):
-                return _boti_rs.build_int_range_bounds(lower_bound, upper_bound, target_partitions)
-            return _boti_rs.build_float_range_bounds(
-                float(lower_bound), float(upper_bound), target_partitions
-            )
+
         span = upper_bound - lower_bound
         step = max(1, math.ceil((span + 1) / target_partitions))
         partitions: list[tuple[Any, Any]] = [None] * (target_partitions + 1)  # type: ignore[list-item]
@@ -410,25 +400,7 @@ class SqlPartitionPlanner:
         upper_bound: Any,
         target_partitions: int,
     ) -> list[tuple[Any, Any]]:
-        if _HAS_RUST:
-            lower_ts = pd.Timestamp(lower_bound)
-            upper_ts = pd.Timestamp(upper_bound)
-            is_date_only = isinstance(lower_bound, dt.date) and not isinstance(lower_bound, dt.datetime)
-            min_step_ns = 86_400_000_000_000 if is_date_only else 0
-            pairs = _boti_rs.build_temporal_range_bounds_ns(
-                lower_ts.value, upper_ts.value, target_partitions, min_step_ns
-            )
-            def _to_ts(ns: int) -> pd.Timestamp:
-                # Round to microsecond precision: Python datetime can't represent nanoseconds.
-                ts = pd.Timestamp(ns)
-                return ts if is_date_only else ts.floor("us")
-            return [
-                (
-                    SqlPartitionPlanner.restore_temporal_bound(_to_ts(lo), lower_bound),
-                    SqlPartitionPlanner.restore_temporal_bound(_to_ts(hi), lower_bound),
-                )
-                for lo, hi in pairs
-            ]
+
         lower_ts = pd.Timestamp(lower_bound)
         upper_ts = pd.Timestamp(upper_bound)
         span_ns = max(1, upper_ts.value - lower_ts.value + 1)

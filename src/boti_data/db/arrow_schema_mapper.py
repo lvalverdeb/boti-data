@@ -13,12 +13,7 @@ from typing import Any
 
 import pyarrow as pa
 
-try:
-    import boti_rs as _boti_rs
-    _HAS_RUST = True
-except ImportError:
-    _boti_rs = None  # type: ignore[assignment]
-    _HAS_RUST = False
+
 from sqlalchemy.sql.sqltypes import (
     BigInteger,
     Boolean,
@@ -116,8 +111,7 @@ def build_arrow_schema_from_meta_dtypes(
     meta_dtypes: dict[str, str],
 ) -> pa.Schema:
     """Build a PyArrow Schema from a pandas-style meta_dtypes dict."""
-    if _HAS_RUST:
-        return _boti_rs.build_arrow_schema_from_meta_dtypes(meta_dtypes)
+
     fields = [
         (col, pandas_dtype_to_arrow(dtype))
         for col, dtype in meta_dtypes.items()
@@ -260,16 +254,14 @@ def rows_to_arrow_table(
     schema coercion.
     Uses the Rust-accelerated implementation when available.
     """
-    if _HAS_RUST:
-        return _boti_rs.rows_to_arrow_table(rows, columns, schema)
+
     arrays = _coerce_row_to_arrays(rows, columns, schema)
     return pa.Table.from_arrays(arrays, schema=schema)
 
 
 def build_empty_arrow_table(schema: pa.Schema) -> pa.Table:
     """Build an empty Arrow Table with the given schema (zero rows)."""
-    if _HAS_RUST:
-        return _boti_rs.build_empty_arrow_table(schema)
+
     arrays = [pa.array([], type=field.type) for field in schema]
     return pa.Table.from_arrays(arrays, schema=schema)
 

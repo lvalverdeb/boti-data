@@ -14,12 +14,7 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.compute as pc
 
-try:
-    import boti_rs as _boti_rs
-    _HAS_RUST = True
-except ImportError:
-    _boti_rs = None  # type: ignore[assignment]
-    _HAS_RUST = False
+
 
 # ---------------------------------------------------------------------------
 # Type coercion helpers
@@ -340,8 +335,7 @@ def apply_arrow_filters(
     This is the high-level entry point for Arrow-backed filtering.
     Uses the Rust-accelerated implementation when available.
     """
-    if _HAS_RUST:
-        return _boti_rs.apply_arrow_filters(table, filters)
+
     return table.filter(compile_arrow_filter(filters)(table))
 
 
@@ -354,8 +348,7 @@ _REGEX_META = frozenset('.^$*+?{}[]\\|()')
 
 def _escape_like_pattern(value: str) -> str:
     """Convert a SQL LIKE pattern to a regex pattern."""
-    if _HAS_RUST:
-        return _boti_rs.escape_like_pattern(value)
+
     out = []
     for ch in value:
         if ch == '%':

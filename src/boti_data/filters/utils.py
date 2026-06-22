@@ -31,12 +31,8 @@ def validate_regex_pattern(pattern: str, *, max_length: int = _MAX_REGEX_PATTERN
         ValueError: If the pattern exceeds *max_length*, is syntactically invalid,
             or contains constructs known to cause catastrophic backtracking.
     """
-    try:
-        from boti_rs import validate_regex_pattern as _rust_validate
-        _rust_validate(pattern, max_length)
-        return
-    except ImportError:
-        pass
+    # Rust regex validator is deprecated; always fall back to Python validation.
+    pass
 
     if len(pattern) > max_length:
         raise ValueError(
