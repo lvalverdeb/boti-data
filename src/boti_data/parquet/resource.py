@@ -246,7 +246,7 @@ class ParquetDataResource(SecureResource):
             format="parquet",
         )
         expression = self._raw_filters_to_expression(filters)
-        return dataset.to_table(Expression_filter=expression, columns=columns)
+        return dataset.to_table(filter=expression, columns=columns)
 
     def load_filtered(
         self,

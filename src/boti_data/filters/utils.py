@@ -31,6 +31,13 @@ def validate_regex_pattern(pattern: str, *, max_length: int = _MAX_REGEX_PATTERN
         ValueError: If the pattern exceeds *max_length*, is syntactically invalid,
             or contains constructs known to cause catastrophic backtracking.
     """
+    try:
+        from boti_rs import validate_regex_pattern as _rust_validate
+        _rust_validate(pattern, max_length)
+        return
+    except ImportError:
+        pass
+
     if len(pattern) > max_length:
         raise ValueError(
             f"Regex pattern is too long ({len(pattern)} chars); "
@@ -320,7 +327,10 @@ def operation_map_dask() -> dict[str, Any]:
 
 
 def as_str(column: Any) -> Any:
-    return column.astype("string").fillna("")
+    # Do NOT fill NA: downstream string ops use na=False, and keeping NA ensures
+    # NULL rows never match non-NULL filter values (filling "" caused iexact("") to
+    # match NULL rows and NULL join keys to silently match empty-string keys).
+    return column.astype("string")
 
 
 def strip_tz(column: Any) -> Any:
@@ -489,12 +499,21 @@ def align_in_types(column: Any, value: Any) -> tuple[Any, list[Any]]:
     kind = getattr(getattr(column, "dtype", None), "kind", None)
     if kind in ("i", "u"):
         try:
-            return column.astype("Int64"), [int(item) for item in values]
-        except Exception:
-            pass
+            # Preserve None/NA as-is; Dask isin handles nulls natively.
+            coerced = [None if _is_null_scalar(v) else int(v) for v in values]
+            return column.astype("Int64"), coerced
+        except (ValueError, TypeError) as exc:
+            raise TypeError(
+                f"IN filter values {values!r} cannot be coerced to integer "
+                f"for an integer column: {exc}"
+            ) from exc
     if kind in ("f",):
         try:
-            return column.astype("float64"), [float(item) for item in values]
-        except Exception:
-            pass
+            coerced = [None if _is_null_scalar(v) else float(v) for v in values]
+            return column.astype("float64"), coerced
+        except (ValueError, TypeError) as exc:
+            raise TypeError(
+                f"IN filter values {values!r} cannot be coerced to float "
+                f"for a float column: {exc}"
+            ) from exc
     return as_str(column), [str(item) for item in values]

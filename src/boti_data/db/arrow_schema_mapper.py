@@ -12,6 +12,13 @@ from decimal import Decimal
 from typing import Any
 
 import pyarrow as pa
+
+try:
+    import boti_rs as _boti_rs
+    _HAS_RUST = True
+except ImportError:
+    _boti_rs = None  # type: ignore[assignment]
+    _HAS_RUST = False
 from sqlalchemy.sql.sqltypes import (
     BigInteger,
     Boolean,
@@ -109,6 +116,8 @@ def build_arrow_schema_from_meta_dtypes(
     meta_dtypes: dict[str, str],
 ) -> pa.Schema:
     """Build a PyArrow Schema from a pandas-style meta_dtypes dict."""
+    if _HAS_RUST:
+        return _boti_rs.build_arrow_schema_from_meta_dtypes(meta_dtypes)
     fields = [
         (col, pandas_dtype_to_arrow(dtype))
         for col, dtype in meta_dtypes.items()
@@ -170,7 +179,21 @@ def _coerce_value(value: Any, arrow_type: pa.DataType) -> Any:
             return value.date()
         return value
     if pa.types.is_integer(arrow_type):
-        if isinstance(value, (int, float, Decimal)):
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        if isinstance(value, float):
+            if not value.is_integer():
+                raise ValueError(
+                    f"Cannot coerce fractional float {value!r} to integer type "
+                    f"{arrow_type} without data loss"
+                )
+            return int(value)
+        if isinstance(value, Decimal):
+            if value != value.to_integral_value():
+                raise ValueError(
+                    f"Cannot coerce fractional Decimal {value!r} to integer type "
+                    f"{arrow_type} without data loss"
+                )
             return int(value)
         return value
     if pa.types.is_floating(arrow_type):
@@ -235,13 +258,18 @@ def rows_to_arrow_table(
     This replaces the slow ``pd.DataFrame(rows, columns=columns)`` path with
     a columnar Arrow construction that enables zero-copy ``table.cast()`` for
     schema coercion.
+    Uses the Rust-accelerated implementation when available.
     """
+    if _HAS_RUST:
+        return _boti_rs.rows_to_arrow_table(rows, columns, schema)
     arrays = _coerce_row_to_arrays(rows, columns, schema)
     return pa.Table.from_arrays(arrays, schema=schema)
 
 
 def build_empty_arrow_table(schema: pa.Schema) -> pa.Table:
     """Build an empty Arrow Table with the given schema (zero rows)."""
+    if _HAS_RUST:
+        return _boti_rs.build_empty_arrow_table(schema)
     arrays = [pa.array([], type=field.type) for field in schema]
     return pa.Table.from_arrays(arrays, schema=schema)
 
@@ -324,7 +352,10 @@ def coerce_arrow_table(
 
         try:
             arrays.append(source_col.cast(target_field.type, safe=True))
-        except (pa.ArrowInvalid, pa.ArrowTypeError, ValueError):
-            arrays.append(source_col.cast(target_field.type, safe=False))
+        except (pa.ArrowInvalid, pa.ArrowTypeError, ValueError) as exc:
+            raise pa.ArrowInvalid(
+                f"Cannot safely cast column '{target_field.name}' from "
+                f"{source_col.type!r} to {target_field.type!r}: {exc}"
+            ) from exc
 
     return pa.Table.from_arrays(arrays, schema=target_schema)

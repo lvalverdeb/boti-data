@@ -88,13 +88,10 @@ class FilterHandler:
             field, casting, op = self._parse_filter_key(key)
 
             if casting == "date" and op in {"gt", "gte", "lt", "lte", "range"}:
-                try:
-                    rewritten = self._rewrite_date_logic(op, value)
-                    for new_op, new_value in rewritten.items():
-                        pushdown_candidates[f"{field}__{new_op}"] = new_value
-                    continue
-                except (ValueError, TypeError):
-                    pass
+                rewritten = self._rewrite_date_logic(op, value)
+                for new_op, new_value in rewritten.items():
+                    pushdown_candidates[f"{field}__{new_op}"] = new_value
+                continue
 
             if casting is not None:
                 residual_filters[key] = value
