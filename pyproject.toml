@@ -41,6 +41,7 @@ dev = [
     "mypy>=1.14.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
+    "pytest-benchmark>=5.1.0",
     "pytest-cov>=6.0.0",
     "ruff>=0.11.0",
 ]
@@ -63,6 +64,7 @@ ignore = ["E501"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
+    "perf: performance benchmark (not run in default test suite)",
     "security_regression: focused regression coverage for security fixes and audit findings",
 ]
 filterwarnings = [

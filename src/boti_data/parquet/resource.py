@@ -18,6 +18,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.fs as pafs
+import pyarrow.parquet as pq
 from boti.core import (
     FilesystemConfig,
     ResourceConfig,
@@ -619,8 +620,26 @@ class ParquetDataResource(SecureResource):
             expression = clause if expression is None else expression & clause
         return expression
 
-    @staticmethod
-    def _empty_ddf() -> dd.DataFrame:
+    def _empty_ddf(self) -> dd.DataFrame:
+        try:
+            fs = self.require_fs()
+            storage_path = self.parquet_storage_path
+            for meta_file in ("_common_metadata", "_metadata"):
+                meta_path = posixpath.join(storage_path, meta_file)
+                try:
+                    if isinstance(fs, pafs.FileSystem):
+                        if fs.get_file_info(meta_path).type != pafs.FileType.File:
+                            continue
+                    elif not fs.exists(meta_path):
+                        continue
+                    schema = pq.read_schema(meta_path, filesystem=fs)
+                    return dd.from_pandas(
+                        pd.DataFrame(columns=schema.names), npartitions=1
+                    )
+                except Exception:
+                    continue
+        except Exception:
+            pass
         return dd.from_pandas(pd.DataFrame(), npartitions=1)
 
     @staticmethod

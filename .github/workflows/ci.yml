@@ -37,3 +37,6 @@ jobs:
       - name: Security regression tests
         run: uv run pytest tests/ -m security_regression --tb=short -q
 
+      - name: Validate spec test counts
+        run: uv run python scripts/validate_spec_counts.py
+

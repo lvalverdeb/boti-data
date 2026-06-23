@@ -59,6 +59,13 @@ from boti_data.pipelines import (
     register_sink,
 )
 from boti_data.joins import indexed_left_join, left_join_frames
+from boti_data.watermark import (
+    FileWatermarkStore,
+    IncrementalResult,
+    WatermarkStore,
+    advance_watermark,
+    build_incremental_filters,
+)
 from boti_data.schema import (
     SchemaValidationError,
     align_frames_for_join,
@@ -72,9 +79,11 @@ from boti_data.schema import (
 
 __all__ = [
     "And",
+    "advance_watermark",
     "AsyncFrameEnricher",
     "AsyncSqlDatabaseResource",
     "AttachmentSpec",
+    "build_incremental_filters",
     "BuilderConfig",
     "ConnectionCatalog",
     "DatacubeConfig",
@@ -93,9 +102,11 @@ __all__ = [
     "DefaultBase",
     "EngineRegistry",
     "Expr",
-    "FrameEnricher",
     "FieldMap",
+    "FileWatermarkStore",
+    "FrameEnricher",
     "FilterHandler",
+    "IncrementalResult",
     "indexed_left_join",
     "Not",
     "Or",
@@ -121,6 +132,7 @@ __all__ = [
     "SinkPipeline",
     "SinkWriteResult",
     "TrueExpr",
+    "WatermarkStore",
     "align_frames_for_join",
     "apply_schema_map",
     "available_sinks",

@@ -42,3 +42,6 @@ test-security:
 lint:
 	uv run ruff check src/ tests/
 
+validate-spec:
+	uv run python scripts/validate_spec_counts.py
+

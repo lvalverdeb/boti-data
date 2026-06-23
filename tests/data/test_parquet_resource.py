@@ -260,6 +260,34 @@ def test_parquet_partitioned_hive_discovery(temp_project_root):
     assert discovered[0].endswith("part1.parquet")
 
 
+def test_parquet_partitioned_hive_negative_pruning(temp_project_root):
+    root = temp_project_root / "hive_negative"
+    for day in (1, 2, 3):
+        (root / f"event_date=2024-01-0{day}").mkdir(parents=True)
+        pd.DataFrame({"id": [day]}).to_parquet(
+            root / f"event_date=2024-01-0{day}" / f"part{day}.parquet",
+            index=False,
+        )
+
+    config = ParquetDataConfig(
+        project_root=temp_project_root,
+        logger=StubLogger(),
+        parquet_storage_path=str(root),
+        parquet_start_date=dt.date(2024, 1, 1),
+        parquet_end_date=dt.date(2024, 1, 2),
+        partition_on=["event_date"],
+    )
+
+    with ParquetDataResource(config) as resource:
+        discovered = resource._discover_partitioned_files()
+
+    assert len(discovered) == 2
+    assert all(f.endswith("parquet") for f in discovered)
+    assert any(f.endswith("part1.parquet") for f in discovered)
+    assert any(f.endswith("part2.parquet") for f in discovered)
+    assert not any(f.endswith("part3.parquet") for f in discovered)
+
+
 def test_parquet_partitioned_hive_discovery_falls_back_to_listing_for_explicit_pyarrow_fs(
     temp_project_root,
     monkeypatch,

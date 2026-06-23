@@ -45,3 +45,21 @@ def test_pipelines_notebook_mentions_distributed_pipeline_apis():
     assert "ParquetPipeline" in source_text
 
 
+def test_incremental_loading_notebook_mentions_incremental_apis():
+    source_text = _notebook_source_text("21_incremental_loading.ipynb")
+    assert "DataHelper.load_incremental" in source_text or "load_incremental" in source_text
+    assert "FileWatermarkStore" in source_text
+    assert "IncrementalResult" in source_text
+    assert "watermark_field" in source_text
+    assert "watermark_store" in source_text
+
+
+def test_incremental_pipeline_notebook_mentions_incremental_apis():
+    source_text = _notebook_source_text("22_incremental_pipeline.ipynb")
+    assert "ParquetPipeline.incremental" in source_text or "incremental" in source_text
+    assert "ParquetPipeline" in source_text
+    assert "watermark_field" in source_text
+    assert "materialize" in source_text
+    assert "FileWatermarkStore" in source_text
+
+

@@ -10,6 +10,13 @@ from boti_data.gateway import DataGateway
 from boti_data.gateway.requests import BackendConfig
 from boti_data.joins import indexed_left_join, left_join_frames
 from boti_data.schema import DataFrameLike
+from boti_data.watermark import (
+    FileWatermarkStore,
+    IncrementalResult,
+    WatermarkStore,
+    advance_watermark,
+    build_incremental_filters,
+)
 
 
 class _EngineBoundHelper:
@@ -89,6 +96,69 @@ class _EngineBoundHelper:
 
     def asemi_join_sync(self, join_series: Any, on: str, **kwargs: Any) -> Any:
         return self._helper.asemi_join_sync(join_series, on, **self._bind_options(kwargs))
+
+    def load_incremental(
+        self,
+        *,
+        watermark_field: str,
+        watermark_source: str | None = None,
+        watermark_store: WatermarkStore | None = None,
+        initial_value: Any = None,
+        operator: str = "gt",
+        commit_on_success: bool = True,
+        **load_options: Any,
+    ) -> IncrementalResult:
+        return self._helper.load_incremental(
+            watermark_field=watermark_field,
+            watermark_source=watermark_source,
+            watermark_store=watermark_store,
+            initial_value=initial_value,
+            operator=operator,
+            commit_on_success=commit_on_success,
+            **self._bind_options(load_options),
+        )
+
+    async def aload_incremental(
+        self,
+        *,
+        watermark_field: str,
+        watermark_source: str | None = None,
+        watermark_store: WatermarkStore | None = None,
+        initial_value: Any = None,
+        operator: str = "gt",
+        commit_on_success: bool = True,
+        **load_options: Any,
+    ) -> IncrementalResult:
+        return await self._helper.aload_incremental(
+            watermark_field=watermark_field,
+            watermark_source=watermark_source,
+            watermark_store=watermark_store,
+            initial_value=initial_value,
+            operator=operator,
+            commit_on_success=commit_on_success,
+            **self._bind_options(load_options),
+        )
+
+    def aload_incremental_sync(
+        self,
+        *,
+        watermark_field: str,
+        watermark_source: str | None = None,
+        watermark_store: WatermarkStore | None = None,
+        initial_value: Any = None,
+        operator: str = "gt",
+        commit_on_success: bool = True,
+        **load_options: Any,
+    ) -> IncrementalResult:
+        return self._helper.aload_incremental_sync(
+            watermark_field=watermark_field,
+            watermark_source=watermark_source,
+            watermark_store=watermark_store,
+            initial_value=initial_value,
+            operator=operator,
+            commit_on_success=commit_on_success,
+            **self._bind_options(load_options),
+        )
 
 
 class DataHelper:
@@ -206,6 +276,120 @@ class DataHelper:
     def asemi_join_sync(self, join_series: Any, on: str, **kwargs: Any) -> Any:
         return self._run_coro_sync(self.asemi_join, join_series, on, **kwargs)
 
+    def load_incremental(
+        self,
+        *,
+        watermark_field: str,
+        watermark_source: str | None = None,
+        watermark_store: WatermarkStore | None = None,
+        initial_value: Any = None,
+        operator: str = "gt",
+        commit_on_success: bool = True,
+        **load_options: Any,
+    ) -> IncrementalResult:
+        resolved_source = watermark_source or getattr(self.gateway, "_table", None) or "default"
+        resolved_store = watermark_store or FileWatermarkStore()
+        previous = resolved_store.read(source=resolved_source)
+        filters = {}
+        if previous is not None:
+            filters = build_incremental_filters(
+                watermark_field=watermark_field,
+                watermark_value=previous,
+                operator=operator,
+            )
+        elif initial_value is not None:
+            filters = build_incremental_filters(
+                watermark_field=watermark_field,
+                watermark_value=initial_value,
+                operator=operator,
+            )
+        merged = {**load_options.pop("filters", {}), **filters}
+        if merged:
+            load_options["filters"] = merged
+        frame = self.load(**load_options)
+        records_loaded = len(frame) if hasattr(frame, "__len__") else 0
+        current = advance_watermark(frame, watermark_field=watermark_field)
+        committed = False
+        if commit_on_success and current is not None:
+            resolved_store.write(source=resolved_source, value=current)
+            committed = True
+        return IncrementalResult(
+            frame=frame,
+            watermark_field=watermark_field,
+            previous_watermark=previous,
+            current_watermark=current,
+            records_loaded=records_loaded,
+            watermark_committed=committed,
+        )
+
+    async def aload_incremental(
+        self,
+        *,
+        watermark_field: str,
+        watermark_source: str | None = None,
+        watermark_store: WatermarkStore | None = None,
+        initial_value: Any = None,
+        operator: str = "gt",
+        commit_on_success: bool = True,
+        **load_options: Any,
+    ) -> IncrementalResult:
+        resolved_source = watermark_source or getattr(self.gateway, "_table", None) or "default"
+        resolved_store = watermark_store or FileWatermarkStore()
+        previous = resolved_store.read(source=resolved_source)
+        filters = {}
+        if previous is not None:
+            filters = build_incremental_filters(
+                watermark_field=watermark_field,
+                watermark_value=previous,
+                operator=operator,
+            )
+        elif initial_value is not None:
+            filters = build_incremental_filters(
+                watermark_field=watermark_field,
+                watermark_value=initial_value,
+                operator=operator,
+            )
+        merged = {**load_options.pop("filters", {}), **filters}
+        if merged:
+            load_options["filters"] = merged
+        frame = await self.aload(**load_options)
+        records_loaded = len(frame) if hasattr(frame, "__len__") else 0
+        current = advance_watermark(frame, watermark_field=watermark_field)
+        committed = False
+        if commit_on_success and current is not None:
+            resolved_store.write(source=resolved_source, value=current)
+            committed = True
+        return IncrementalResult(
+            frame=frame,
+            watermark_field=watermark_field,
+            previous_watermark=previous,
+            current_watermark=current,
+            records_loaded=records_loaded,
+            watermark_committed=committed,
+        )
+
+    def aload_incremental_sync(
+        self,
+        *,
+        watermark_field: str,
+        watermark_source: str | None = None,
+        watermark_store: WatermarkStore | None = None,
+        initial_value: Any = None,
+        operator: str = "gt",
+        commit_on_success: bool = True,
+        **load_options: Any,
+    ) -> IncrementalResult:
+        return self._run_coro_sync(
+            self.aload_incremental,
+            watermark_field=watermark_field,
+            watermark_source=watermark_source,
+            watermark_store=watermark_store,
+            initial_value=initial_value,
+            operator=operator,
+            commit_on_success=commit_on_success,
+            **load_options,
+        )
+
     @staticmethod
     def session(**kwargs: Any) -> DaskSession:
         return dask_session(**kwargs)
@@ -256,4 +440,4 @@ class DataHelper:
         )
 
 
-__all__ = ["DataHelper"]
+__all__ = ["DataHelper", "_EngineBoundHelper"]
