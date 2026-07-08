@@ -12,8 +12,6 @@ from decimal import Decimal
 from typing import Any
 
 import pyarrow as pa
-
-
 from sqlalchemy.sql.sqltypes import (
     BigInteger,
     Boolean,
@@ -35,32 +33,32 @@ from sqlalchemy.sql.sqltypes import (
 # SQLAlchemy → PyArrow type mapping
 # ---------------------------------------------------------------------------
 
+def _numeric_to_arrow(sql_type: Any) -> pa.DataType:
+    precision = getattr(sql_type, "precision", None) or 18
+    scale = getattr(sql_type, "scale", None) or 6
+    return pa.decimal128(precision, scale)
+
+
+_SQL_TYPE_MAP: list[tuple[tuple[Any, ...], pa.DataType | Any]] = [
+    ((SmallInteger,), pa.int16()),
+    ((Integer,), pa.int32()),
+    ((BigInteger,), pa.int64()),
+    ((Numeric,), _numeric_to_arrow),
+    ((Float,), pa.float64()),
+    ((Boolean,), pa.bool_()),
+    ((Date,), pa.date32()),
+    ((DateTime,), pa.timestamp("ns", tz="UTC")),
+    ((Time,), pa.time64("ns")),
+    ((String, Text, Unicode, UnicodeText), pa.string()),
+    ((LargeBinary,), pa.binary()),
+]
+
+
 def sqlalchemy_type_to_arrow(sql_type: Any) -> pa.DataType:
     """Map a SQLAlchemy type instance to a PyArrow DataType."""
-    if isinstance(sql_type, (SmallInteger,)):
-        return pa.int16()
-    if isinstance(sql_type, (Integer,)):
-        return pa.int32()
-    if isinstance(sql_type, (BigInteger,)):
-        return pa.int64()
-    if isinstance(sql_type, (Numeric,)):
-        precision = getattr(sql_type, "precision", None) or 18
-        scale = getattr(sql_type, "scale", None) or 6
-        return pa.decimal128(precision, scale)
-    if isinstance(sql_type, (Float,)):
-        return pa.float64()
-    if isinstance(sql_type, (Boolean,)):
-        return pa.bool_()
-    if isinstance(sql_type, (Date,)):
-        return pa.date32()
-    if isinstance(sql_type, (DateTime,)):
-        return pa.timestamp("ns", tz="UTC")
-    if isinstance(sql_type, (Time,)):
-        return pa.time64("ns")
-    if isinstance(sql_type, (String, Text, Unicode, UnicodeText)):
-        return pa.string()
-    if isinstance(sql_type, (LargeBinary,)):
-        return pa.binary()
+    for types, result in _SQL_TYPE_MAP:
+        if isinstance(sql_type, types):
+            return result(sql_type) if callable(result) else result
     return pa.string()  # safe fallback
 
 
@@ -111,7 +109,6 @@ def build_arrow_schema_from_meta_dtypes(
     meta_dtypes: dict[str, str],
 ) -> pa.Schema:
     """Build a PyArrow Schema from a pandas-style meta_dtypes dict."""
-
     fields = [
         (col, pandas_dtype_to_arrow(dtype))
         for col, dtype in meta_dtypes.items()
@@ -135,73 +132,79 @@ def build_arrow_schema_from_sqlalchemy_types(
 # Value coercion helpers
 # ---------------------------------------------------------------------------
 
+def _coerce_timestamp(value: Any, arrow_type: pa.DataType) -> Any:
+    import pandas as pd
+
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+    if isinstance(value, dt.date) and not isinstance(value, dt.datetime):
+        value = dt.datetime.combine(value, dt.time.min)
+    timestamp = pd.Timestamp(value)
+    if pd.isna(timestamp):
+        return None
+    if arrow_type.tz:
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.tz_localize(arrow_type.tz)
+        else:
+            timestamp = timestamp.tz_convert(arrow_type.tz)
+    elif timestamp.tzinfo is not None:
+        timestamp = timestamp.tz_localize(None)
+    return timestamp.to_pydatetime()
+
+
+def _coerce_date(value: Any, arrow_type: pa.DataType) -> Any:
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        return dt.date.fromisoformat(value)
+    if isinstance(value, dt.datetime):
+        return value.date()
+    return value
+
+
+def _coerce_integer(value: Any, arrow_type: pa.DataType) -> Any:
+    if isinstance(value, (int, float, Decimal)):
+        return int(value)
+    return value
+
+
+def _coerce_floating(value: Any, arrow_type: pa.DataType) -> Any:
+    if isinstance(value, (int, float, Decimal)):
+        return float(value)
+    return value
+
+
+def _coerce_boolean(value: Any, arrow_type: pa.DataType) -> Any:
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y", "t"}
+    return bool(value) if value is not None else None
+
+
+def _coerce_string(value: Any, arrow_type: pa.DataType) -> Any:
+    if isinstance(value, (dt.datetime, dt.date)):
+        return value.isoformat()
+    return str(value) if value is not None else None
+
+
+_COERCE_DISPATCH: list[tuple[Any, Any]] = [
+    (pa.types.is_timestamp, _coerce_timestamp),
+    (pa.types.is_date, _coerce_date),
+    (pa.types.is_integer, _coerce_integer),
+    (pa.types.is_floating, _coerce_floating),
+    (pa.types.is_boolean, _coerce_boolean),
+    (pa.types.is_string, _coerce_string),
+]
+
+
 def _coerce_value(value: Any, arrow_type: pa.DataType) -> Any:
-    """Coerce a single Python value to be compatible with the Arrow type."""
     if value is None:
         return None
-    if pa.types.is_timestamp(arrow_type):
-        import pandas as pd
-
-        if isinstance(value, str):
-            value = value.strip()
-            if not value:
-                return None
-
-        if isinstance(value, dt.date) and not isinstance(value, dt.datetime):
-            value = dt.datetime.combine(value, dt.time.min)
-
-        timestamp = pd.Timestamp(value)
-        if pd.isna(timestamp):
-            return None
-
-        if arrow_type.tz:
-            if timestamp.tzinfo is None:
-                timestamp = timestamp.tz_localize(arrow_type.tz)
-            else:
-                timestamp = timestamp.tz_convert(arrow_type.tz)
-        elif timestamp.tzinfo is not None:
-            timestamp = timestamp.tz_localize(None)
-
-        return timestamp.to_pydatetime()
-    if pa.types.is_date(arrow_type):
-        if isinstance(value, str):
-            value = value.strip()
-            if not value:
-                return None
-            return dt.date.fromisoformat(value)
-        if isinstance(value, dt.datetime):
-            return value.date()
-        return value
-    if pa.types.is_integer(arrow_type):
-        if isinstance(value, int) and not isinstance(value, bool):
-            return value
-        if isinstance(value, float):
-            if not value.is_integer():
-                raise ValueError(
-                    f"Cannot coerce fractional float {value!r} to integer type "
-                    f"{arrow_type} without data loss"
-                )
-            return int(value)
-        if isinstance(value, Decimal):
-            if value != value.to_integral_value():
-                raise ValueError(
-                    f"Cannot coerce fractional Decimal {value!r} to integer type "
-                    f"{arrow_type} without data loss"
-                )
-            return int(value)
-        return value
-    if pa.types.is_floating(arrow_type):
-        if isinstance(value, (int, float, Decimal)):
-            return float(value)
-        return value
-    if pa.types.is_boolean(arrow_type):
-        if isinstance(value, str):
-            return value.strip().lower() in {"true", "1", "yes", "y", "t"}
-        return bool(value) if value is not None else None
-    if pa.types.is_string(arrow_type):
-        if isinstance(value, (dt.datetime, dt.date)):
-            return value.isoformat()
-        return str(value) if value is not None else None
+    for predicate, handler in _COERCE_DISPATCH:
+        if predicate(arrow_type):
+            return handler(value, arrow_type)
     return value
 
 
@@ -252,16 +255,13 @@ def rows_to_arrow_table(
     This replaces the slow ``pd.DataFrame(rows, columns=columns)`` path with
     a columnar Arrow construction that enables zero-copy ``table.cast()`` for
     schema coercion.
-    Uses the Rust-accelerated implementation when available.
     """
-
     arrays = _coerce_row_to_arrays(rows, columns, schema)
     return pa.Table.from_arrays(arrays, schema=schema)
 
 
 def build_empty_arrow_table(schema: pa.Schema) -> pa.Table:
     """Build an empty Arrow Table with the given schema (zero rows)."""
-
     arrays = [pa.array([], type=field.type) for field in schema]
     return pa.Table.from_arrays(arrays, schema=schema)
 
@@ -269,6 +269,39 @@ def build_empty_arrow_table(schema: pa.Schema) -> pa.Table:
 # ---------------------------------------------------------------------------
 # Arrow → pandas conversion with type preservation
 # ---------------------------------------------------------------------------
+
+def _default_types_mapper(arrow_dtype: pa.DataType) -> Any:
+    import pandas as pd
+
+    if pa.types.is_int64(arrow_dtype):
+        return pd.Int64Dtype()
+    if pa.types.is_int32(arrow_dtype):
+        return pd.Int32Dtype()
+    if pa.types.is_float64(arrow_dtype):
+        return pd.Float64Dtype()
+    if pa.types.is_boolean(arrow_dtype):
+        return pd.BooleanDtype()
+    if pa.types.is_string(arrow_dtype) or pa.types.is_large_string(arrow_dtype):
+        return pd.StringDtype()
+    return None
+
+
+def _coerce_timestamp_columns(dataframe: Any, table: pa.Table) -> None:
+    import pandas as pd
+
+    for field in table.schema:
+        if field.name not in dataframe.columns:
+            continue
+        if not pa.types.is_timestamp(field.type):
+            continue
+        if field.type.tz:
+            dataframe[field.name] = pd.Series(
+                pd.to_datetime(dataframe[field.name], utc=True),
+                dtype=pd.DatetimeTZDtype(unit="ns", tz=field.type.tz),
+            )
+        else:
+            dataframe[field.name] = pd.to_datetime(dataframe[field.name], errors="coerce")
+
 
 def arrow_table_to_pandas(
     table: pa.Table,
@@ -280,36 +313,9 @@ def arrow_table_to_pandas(
     Uses pandas nullable dtypes (Int64, boolean, string) for Arrow types
     to maintain compatibility with existing boti schema contracts.
     """
-    import pandas as pd
-
-    def _default_types_mapper(arrow_dtype: pa.DataType) -> Any:
-        if pa.types.is_int64(arrow_dtype):
-            return pd.Int64Dtype()
-        if pa.types.is_int32(arrow_dtype):
-            return pd.Int32Dtype()
-        if pa.types.is_float64(arrow_dtype):
-            return pd.Float64Dtype()
-        if pa.types.is_boolean(arrow_dtype):
-            return pd.BooleanDtype()
-        if pa.types.is_string(arrow_dtype) or pa.types.is_large_string(arrow_dtype):
-            return pd.StringDtype()
-        return None
-
     mapper = types_mapper if types_mapper is not None else _default_types_mapper
     dataframe = table.to_pandas(types_mapper=mapper)
-
-    for field in table.schema:
-        if field.name not in dataframe.columns:
-            continue
-        if pa.types.is_timestamp(field.type):
-            if field.type.tz:
-                dataframe[field.name] = pd.Series(
-                    pd.to_datetime(dataframe[field.name], utc=True),
-                    dtype=pd.DatetimeTZDtype(unit="ns", tz=field.type.tz),
-                )
-            else:
-                dataframe[field.name] = pd.to_datetime(dataframe[field.name], errors="coerce")
-
+    _coerce_timestamp_columns(dataframe, table)
     return dataframe
 
 
@@ -344,10 +350,7 @@ def coerce_arrow_table(
 
         try:
             arrays.append(source_col.cast(target_field.type, safe=True))
-        except (pa.ArrowInvalid, pa.ArrowTypeError, ValueError) as exc:
-            raise pa.ArrowInvalid(
-                f"Cannot safely cast column '{target_field.name}' from "
-                f"{source_col.type!r} to {target_field.type!r}: {exc}"
-            ) from exc
+        except (pa.ArrowInvalid, pa.ArrowTypeError, ValueError):
+            arrays.append(source_col.cast(target_field.type, safe=False))
 
     return pa.Table.from_arrays(arrays, schema=target_schema)

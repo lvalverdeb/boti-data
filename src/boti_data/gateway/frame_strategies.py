@@ -162,7 +162,8 @@ class DaskFrameStrategy(FrameStrategy):
         if len(dataframe.columns) == 0:
             return False
         try:
-            return not dataframe.head(1, npartitions=1, compute=True).empty
+            head = dataframe.head(1, npartitions=1, compute=True)
+            return len(head.index) > 0
         except Exception:
             return False
 
@@ -221,7 +222,7 @@ class PandasFrameStrategy(FrameStrategy):
 
     def has_any_rows(self, frame: FrameResult) -> bool:
         dataframe = self.normalize(frame)
-        return len(dataframe.columns) > 0 and not dataframe.empty
+        return len(dataframe.columns) > 0 and len(dataframe.index) > 0
 
     def rename_columns(self, frame: FrameResult, rename_map: dict[str, str]) -> pd.DataFrame:
         dataframe = self.normalize(frame)

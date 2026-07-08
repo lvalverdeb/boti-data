@@ -13,8 +13,7 @@ import time
 
 import dask.dataframe as dd
 import pandas as pd
-import pytest
-from sqlalchemy import Date, Integer, String, create_engine, select
+from sqlalchemy import Date, Integer, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from boti_data import (
@@ -25,7 +24,6 @@ from boti_data import (
     advance_watermark,
     build_incremental_filters,
 )
-
 
 # ---------------------------------------------------------------------------
 # WatermarkStore

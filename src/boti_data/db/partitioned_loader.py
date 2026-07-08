@@ -6,7 +6,7 @@ from typing import Any
 
 import dask.dataframe as dd
 import pandas as pd
-from boti.core import Logger
+from boti.core.logger import Logger
 from sqlalchemy.engine import url as sqlalchemy_url
 
 from boti_data.db.partitioned_execution import SqlPartitionExecutor
@@ -122,6 +122,36 @@ class SqlPartitionedLoader:
 
     def load_request(self, request: SqlPartitionedLoadRequest) -> pd.DataFrame | dd.DataFrame:
         started = perf_counter()
+
+        # Fast path: bypass planner entirely for small queries
+        if not request.use_arrow and not request.as_pandas:
+            t_prepare = perf_counter()
+            prepared_stmt = self._planner.prepare_statement(request)
+            if request.limit is not None:
+                prepared_stmt = prepared_stmt.limit(request.limit)
+            t_fetch = perf_counter()
+            with self.resource.engine.connect() as conn:
+                df = pd.read_sql(prepared_stmt, conn)
+            t_coerce = perf_counter()
+            if len(df) <= request.chunk_size:
+                df = SqlPartitionExecutor.align_and_coerce_partition(
+                    df, self._planner.infer_meta_dtypes(prepared_stmt),
+                )
+                t_dask = perf_counter()
+                result: pd.DataFrame | dd.DataFrame = dd.from_pandas(df, npartitions=1)
+                t_end = perf_counter()
+                if request.diagnostics:
+                    self.logger.info(
+                        "Partitioned SQL fast path: single partition "
+                        f"rows={len(df)} chunk_size={request.chunk_size} "
+                        f"total={t_end - started:.3f}s "
+                        f"prepare_stmt={t_fetch - t_prepare:.3f}s "
+                        f"db_fetch={t_coerce - t_fetch:.3f}s "
+                        f"coerce={t_dask - t_coerce:.3f}s "
+                        f"from_pandas={t_end - t_dask:.3f}s"
+                    )
+                return result
+
         plan = self.plan_request(request)
         # Use the request's use_arrow flag; if the executor was created with a different
         # value, we need to create a new executor with the correct flag.
@@ -132,20 +162,26 @@ class SqlPartitionedLoader:
             )
 
         fetch_fn = self._fetch_partition_static
+        t_plan_fetch = perf_counter()
+        prepared_stmt = self._planner.prepare_statement(request)
+        t_load = perf_counter()
         result = executor.load_plan(
             plan,
             as_pandas=request.as_pandas,
             max_concurrent_fetches=request.max_concurrent_fetches,
             fetch_partition=fetch_fn,
+            statement=prepared_stmt,
         )
+        t_end = perf_counter()
         if request.diagnostics:
-            elapsed = perf_counter() - started
             result_partitions = result.npartitions if isinstance(result, dd.DataFrame) else 1
             self.logger.info(
                 "Partitioned SQL load completed "
                 f"strategy={plan.strategy} partitions={len(plan.partitions)} "
                 f"rows={plan.total_rows} result_partitions={result_partitions} "
-                f"elapsed={elapsed:.2f}s"
+                f"elapsed={t_end - started:.2f}s "
+                f"prepare_stmt={t_load - t_plan_fetch:.3f}s "
+                f"load_plan={t_end - t_load:.3f}s"
             )
         return result
 

@@ -8,6 +8,11 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+__all__ = [
+    "FieldMap",
+    "InputKeyMode",
+]
+
 InputKeyMode = Literal["db", "semantic"]
 
 
@@ -20,9 +25,9 @@ class FieldMap:
     Django-style field_map / DfHelper convention).
     """
 
-    def __init__(self, mapping: dict[str, str], *, strict: bool = False) -> None:
+    def __init__(self, mapping: dict[str, str], strict: bool = False) -> None:
+        self._strict = strict
         self._db_to_semantic: dict[str, str] = dict(mapping)
-        self._strict: bool = strict
         # Build reverse lookup once; duplicate semantic values are an error
         seen: dict[str, str] = {}
         for db_col, sem in mapping.items():
@@ -51,21 +56,13 @@ class FieldMap:
     def to_db(self, key: str) -> str:
         """Translate a semantic name to the DB column name.
 
-        When ``strict=True`` (set at construction), raises ``KeyError`` for
-        unknown keys instead of passing them through unchanged.  This prevents
-        attacker-controlled keys from leaking into downstream SQL resolution.
-
-        Returns *key* unchanged (when ``strict=False``) for unknown keys so that
-        already-DB keys pass through safely in non-strict contexts.
+        Returns *key* unchanged when it is not a known semantic name,
+        so unknown keys (or already-DB keys) pass through safely.
+        When *strict* mode is enabled, raises ``KeyError`` for unknown keys.
         """
-        if key in self._semantic_to_db:
-            return self._semantic_to_db[key]
-        if self._strict:
-            raise KeyError(
-                f"Unknown semantic field '{key}': not found in FieldMap. "
-                "Pass strict=False or add the field to the mapping."
-            )
-        return key
+        if self._strict and key not in self._semantic_to_db:
+            raise KeyError(key)
+        return self._semantic_to_db.get(key, key)
 
     def to_semantic(self, key: str) -> str:
         """Translate a DB column name to its semantic name.

@@ -15,6 +15,8 @@ from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, 
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 import boti_data.gateway.core as gateway_core
+import boti_data.gateway.post_process as gateway_post_process
+import boti_data.gateway.return_type as gateway_return_type
 from boti_data.db import SqlDatabaseConfig, SqlDatabaseResource
 from boti_data.gateway import DataGateway
 from boti_data.parquet import ParquetDataConfig, ParquetDataResource
@@ -307,8 +309,9 @@ def test_facade_arrow_sql_uses_eager_fetch_by_default(tmp_path, monkeypatch):
     )
     eager_calls: list[str] = []
     lazy_calls: list[bool] = []
-    real_load_sql = gateway_core.load_sql
-    real_load_sql_partitioned = gateway_core.load_sql_partitioned
+    from boti_data.gateway.loaders import load_sql as _real_load_sql, load_sql_partitioned as _real_load_sql_partitioned
+    real_load_sql = _real_load_sql
+    real_load_sql_partitioned = _real_load_sql_partitioned
 
     def tracking_load_sql(resource, request):
         eager_calls.append(request.return_type)
@@ -318,8 +321,8 @@ def test_facade_arrow_sql_uses_eager_fetch_by_default(tmp_path, monkeypatch):
         lazy_calls.append(True)
         return real_load_sql_partitioned(config, resource, request)
 
-    monkeypatch.setattr(gateway_core, "load_sql", tracking_load_sql)
-    monkeypatch.setattr(gateway_core, "load_sql_partitioned", tracking_load_sql_partitioned)
+    monkeypatch.setattr("boti_data.gateway._backend_strategies.load_sql", tracking_load_sql)
+    monkeypatch.setattr("boti_data.gateway._backend_strategies.load_sql_partitioned", tracking_load_sql_partitioned)
 
     with DataGateway(config) as facade:
         frame = facade.load(
@@ -419,13 +422,14 @@ def test_facade_polars_sql_uses_arrow_fetch(tmp_path, monkeypatch):
         query_only=False,
     )
     eager_calls: list[str] = []
-    real_load_sql = gateway_core.load_sql
+    from boti_data.gateway.loaders import load_sql as _real_load_sql
+    real_load_sql = _real_load_sql
 
     def tracking_load_sql(resource, request):
         eager_calls.append(request.return_type)
         return real_load_sql(resource, request)
 
-    monkeypatch.setattr(gateway_core, "load_sql", tracking_load_sql)
+    monkeypatch.setattr("boti_data.gateway._backend_strategies.load_sql", tracking_load_sql)
 
     with DataGateway(config) as facade:
         frame = facade.load(
@@ -465,8 +469,9 @@ def test_facade_can_force_lazy_fetch_for_pandas_sql(tmp_path, monkeypatch):
     )
     eager_calls: list[bool] = []
     lazy_calls: list[bool] = []
-    real_load_sql = gateway_core.load_sql
-    real_load_sql_partitioned = gateway_core.load_sql_partitioned
+    from boti_data.gateway.loaders import load_sql as _real_load_sql, load_sql_partitioned as _real_load_sql_partitioned
+    real_load_sql = _real_load_sql
+    real_load_sql_partitioned = _real_load_sql_partitioned
 
     def tracking_load_sql(resource, request):
         eager_calls.append(True)
@@ -476,8 +481,8 @@ def test_facade_can_force_lazy_fetch_for_pandas_sql(tmp_path, monkeypatch):
         lazy_calls.append(True)
         return real_load_sql_partitioned(config, resource, request)
 
-    monkeypatch.setattr(gateway_core, "load_sql", tracking_load_sql)
-    monkeypatch.setattr(gateway_core, "load_sql_partitioned", tracking_load_sql_partitioned)
+    monkeypatch.setattr("boti_data.gateway._backend_strategies.load_sql", tracking_load_sql)
+    monkeypatch.setattr("boti_data.gateway._backend_strategies.load_sql_partitioned", tracking_load_sql_partitioned)
 
     with DataGateway(config) as facade:
         frame = facade.load(
@@ -524,7 +529,7 @@ def test_facade_resilient_persist_uses_safe_persist_for_lazy_sql(tmp_path, monke
         calls.append(frame.npartitions)
         return frame.persist()
 
-    monkeypatch.setattr(gateway_core, "safe_persist", tracking_safe_persist)
+    monkeypatch.setattr(gateway_post_process, "safe_persist", tracking_safe_persist)
 
     with DataGateway(config) as facade:
         frame = facade.load(
@@ -568,7 +573,7 @@ def test_facade_dry_run_returns_lazy_dask_graph_without_persist(tmp_path, monkey
     def fail_safe_persist(*_args, **_kwargs):
         raise AssertionError("safe_persist should not be called during dry run")
 
-    monkeypatch.setattr(gateway_core, "safe_persist", fail_safe_persist)
+    monkeypatch.setattr(gateway_post_process, "safe_persist", fail_safe_persist)
 
     with DataGateway(config) as facade:
         frame = facade.load(
@@ -697,7 +702,7 @@ async def test_facade_aload_resilient_persist_uses_safe_persist_for_lazy_sql(tmp
         calls.append(frame.npartitions)
         return frame.persist()
 
-    monkeypatch.setattr(gateway_core, "safe_persist", tracking_safe_persist)
+    monkeypatch.setattr(gateway_post_process, "safe_persist", tracking_safe_persist)
 
     async with DataGateway(config) as facade:
         frame = await facade.aload(
@@ -924,7 +929,8 @@ def test_facade_auto_small_sql_avoids_full_plan(tmp_path, monkeypatch):
     def fail_plan_request(self, request):
         raise AssertionError("full plan_request should not be used for auto SQL sizing")
 
-    monkeypatch.setattr(gateway_core.SqlPartitionPlanner, "plan_request", fail_plan_request)
+    from boti_data.db.partitioned_planner import SqlPartitionPlanner
+    monkeypatch.setattr(SqlPartitionPlanner, "plan_request", fail_plan_request)
 
     with DataGateway(config) as facade:
         frame = facade.load(statement=select(User), model=User, return_type="auto")
@@ -957,7 +963,7 @@ def test_facade_auto_return_type_uses_dask_for_large_sql(tmp_path, monkeypatch):
         poolclass="sqlalchemy.pool.NullPool",
         query_only=False,
     )
-    monkeypatch.setattr(gateway_core, "_AUTO_EAGER_MAX_ROWS", 1)
+    monkeypatch.setattr(gateway_return_type, "_AUTO_EAGER_MAX_ROWS", 1)
 
     with DataGateway(config) as facade:
         frame = facade.load(statement=select(User), model=User, return_type="auto")
@@ -1006,13 +1012,13 @@ def test_facade_auto_parquet_resolves_files_once(temp_project_root, monkeypatch)
         calls.append(True)
         return real_resolve_files(self)
 
-    monkeypatch.setattr(ParquetDataResource, "_resolve_files_to_load", tracking_resolve_files)
+        monkeypatch.setattr(ParquetDataResource, "_resolve_files_to_load", tracking_resolve_files)
 
-    with DataGateway(config) as facade:
-        resolved = facade._resolve_auto_parquet_return_type({})
+        with DataGateway(config) as facade:
+            resolved = facade._resolve_auto_return_type({"backend": "parquet"})
 
-    assert resolved == "pandas"
-    assert calls == [True]
+        assert resolved == "pandas"
+        assert len(calls) == 1
 
 
 def test_facade_auto_return_type_uses_dask_for_large_parquet(temp_project_root, monkeypatch):
@@ -1028,7 +1034,9 @@ def test_facade_auto_return_type_uses_dask_for_large_parquet(temp_project_root, 
         parquet_storage_path=str(file_path.parent),
         parquet_filename="auto_large_events",
     )
-    monkeypatch.setattr(gateway_core, "_AUTO_EAGER_MAX_BYTES", 1)
+    monkeypatch.setattr(gateway_return_type, "_AUTO_EAGER_MAX_BYTES", 1)
+    import boti_data.gateway._backend_strategies as _gw_strategies
+    monkeypatch.setattr(_gw_strategies, "_AUTO_EAGER_MAX_BYTES", 1)
 
     with DataGateway(config) as facade:
         frame = facade.load(filters={"status__exact": "active"}, return_type="auto")
@@ -1444,7 +1452,7 @@ async def test_facade_aloads_sql_with_async_resource(monkeypatch):
         async def __aexit__(self, exc_type, exc_val, exc_tb):
             return None
 
-    monkeypatch.setattr("boti_data.gateway.core.AsyncSqlDatabaseResource", FakeAsyncSqlDatabaseResource)
+    monkeypatch.setattr("boti_data.gateway._backend_strategies.AsyncSqlDatabaseResource", FakeAsyncSqlDatabaseResource)
 
     config = SqlDatabaseConfig(
         connection_url="sqlite:///:memory:",

@@ -69,7 +69,11 @@ def test_gateway_partitioned_sql_diagnostics_log_plan_and_completion(tmp_path):
         )
 
     assert frame.npartitions == 1
-    assert any("Partitioned SQL plan" in message for message in logger.infos)
+    assert any(
+        "Partitioned SQL fast path: single partition" in message
+        or "Partitioned SQL plan" in message
+        for message in logger.infos
+    ), f"Expected fast path or plan message, got: {logger.infos}"
     assert any("Gateway load graph metrics=" in message for message in logger.infos)
     assert any("Gateway load completed" in message for message in logger.infos)
 
@@ -287,7 +291,11 @@ async def test_gateway_aload_partitioned_sql_diagnostics_log_plan_and_completion
         )
 
     assert frame.npartitions == 1
-    assert any("Partitioned SQL plan" in message for message in logger.infos)
+    assert any(
+        "Partitioned SQL fast path: single partition" in message
+        or "Partitioned SQL plan" in message
+        for message in logger.infos
+    ), f"Expected fast path or plan message, got: {logger.infos}"
     assert any("Gateway load graph metrics=" in message for message in logger.infos)
     assert any("Gateway load completed" in message for message in logger.infos)
 

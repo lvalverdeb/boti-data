@@ -9,6 +9,7 @@ import dask
 import dask.dataframe as dd
 import pandas as pd
 import pyarrow as pa
+from sqlalchemy.sql import Select
 
 from boti_data.db.arrow_schema_mapper import (
     arrow_table_to_pandas,
@@ -28,7 +29,7 @@ from boti_data.schema import apply_schema_map
 
 _FETCH_GATES: dict[tuple[str, int], threading.BoundedSemaphore] = {}
 _FETCH_GATES_LOCK = threading.Lock()
-_ROW_FETCH_BATCH_SIZE = 10_000
+_ROW_FETCH_BATCH_SIZE = 100_000
 
 # Thread-local caches: avoid recreating engine objects and event loops on every partition fetch.
 # The engine itself is cheap state (dialect, URL, event listeners); caching it per worker
@@ -107,6 +108,7 @@ class SqlPartitionExecutor:
         as_pandas: bool,
         max_concurrent_fetches: int,
         fetch_partition: Callable[..., pd.DataFrame],
+        statement: Select | None = None,
     ) -> pd.DataFrame | dd.DataFrame:
         meta_df = self.build_meta_dataframe(plan.meta_dtypes, use_arrow=self.use_arrow)
 
@@ -114,6 +116,32 @@ class SqlPartitionExecutor:
             if as_pandas:
                 return meta_df
             return dd.from_pandas(meta_df, npartitions=1)
+
+        if (
+            len(plan.partitions) == 1
+            and not self.use_arrow
+            and fetch_partition is SqlPartitionExecutor.fetch_partition
+        ):
+            if statement is not None:
+                engine = _get_cached_worker_sync_engine(self.config)
+                with engine.connect() as conn:
+                    df = pd.read_sql(statement, conn)
+                df = SqlPartitionExecutor.align_and_coerce_partition(
+                    df, plan.meta_dtypes,
+                )
+            else:
+                partition = plan.partitions[0]
+                df = fetch_partition(
+                    config=self.config,
+                    gate_key=self.gate_key,
+                    max_concurrent_fetches=max_concurrent_fetches,
+                    partition=partition,
+                    meta_dtypes=plan.meta_dtypes,
+                    use_arrow=False,
+                )
+            if as_pandas:
+                return df
+            return dd.from_pandas(df, npartitions=1)
 
         delayed_partitions = [
             dask.delayed(fetch_partition)(
@@ -137,7 +165,9 @@ class SqlPartitionExecutor:
         return dataframe
 
     @staticmethod
-    def build_meta_dataframe(meta_dtypes: dict[str, str], *, use_arrow: bool = True) -> pd.DataFrame:
+    def build_meta_dataframe(
+        meta_dtypes: dict[str, str], *, use_arrow: bool = True
+    ) -> pd.DataFrame:
         if use_arrow:
             arrow_schema = build_arrow_schema_from_meta_dtypes(meta_dtypes)
             empty_table = build_empty_arrow_table(arrow_schema)
@@ -160,6 +190,12 @@ class SqlPartitionExecutor:
         with gate:
             engine = _get_cached_worker_sync_engine(config)
             with engine.connect() as conn:
+                if not use_arrow:
+                    result = conn.exec_driver_sql(partition.sql, partition.params)
+                    columns = list(result.keys())
+                    rows = result.fetchall()
+                    df = pd.DataFrame(rows, columns=columns)
+                    return SqlPartitionExecutor.align_and_coerce_partition(df, meta_dtypes)
                 if partition.params is None:
                     result = conn.exec_driver_sql(partition.sql)
                 else:
@@ -239,9 +275,18 @@ class SqlPartitionExecutor:
         """
         gate = _get_fetch_gate(gate_key, max_concurrent_fetches)
         with gate:
+
             async def _fetch() -> pd.DataFrame:
                 engine = _get_cached_worker_async_engine(config)
                 async with engine.connect() as conn:
+                    if not use_arrow:
+                        result = await conn.exec_driver_sql(partition.sql, partition.params)
+                        columns = list(result.keys())
+                        rows = result.fetchall()
+                        df = pd.DataFrame(rows, columns=columns)
+                        return SqlPartitionExecutor.align_and_coerce_partition(
+                            df, meta_dtypes,
+                        )
                     if partition.params is None:
                         result = await conn.exec_driver_sql(partition.sql)
                     else:
@@ -292,9 +337,7 @@ class SqlPartitionExecutor:
         try:
             table = coerce_arrow_table(table, arrow_schema)
         except Exception as exc:
-            raise ValueError(
-                "Failed to align Arrow partition to the expected schema."
-            ) from exc
+            raise ValueError("Failed to align Arrow partition to the expected schema.") from exc
         return table
 
     @staticmethod

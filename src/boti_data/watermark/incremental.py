@@ -61,6 +61,52 @@ def build_incremental_filters(
     return {f"{watermark_field}{suffix}": watermark_value}
 
 
+def _advance_dask(frame: dd.DataFrame, watermark_field: str) -> Any | None:
+    if frame.npartitions == 0 or len(frame) == 0:
+        return None
+    result = frame[watermark_field].max()
+    if hasattr(result, "compute"):
+        result = result.compute()
+    if _is_null(result):
+        return None
+    if hasattr(result, "item"):
+        result = result.item()
+    return result
+
+
+def _advance_pandas(frame: pd.DataFrame, watermark_field: str) -> Any | None:
+    if len(frame.index) == 0:
+        return None
+    result = frame[watermark_field].max()
+    if _is_null(result):
+        return None
+    if hasattr(result, "item"):
+        result = result.item()
+    return result
+
+
+def _advance_polars(frame: pl.DataFrame, watermark_field: str) -> Any | None:
+    if frame.is_empty():
+        return None
+    result = frame.select(pl.max(watermark_field)).item()
+    if _is_null(result):
+        return None
+    return result
+
+
+def _advance_pyarrow(frame: pa.Table, watermark_field: str) -> Any | None:
+    if frame.num_rows == 0:
+        return None
+    column_index = frame.schema.get_field_index(watermark_field)
+    if column_index < 0:
+        return None
+    result = frame.column(column_index).to_pylist()
+    non_null = [v for v in result if v is not None]
+    if not non_null:
+        return None
+    return max(non_null)
+
+
 def advance_watermark(
     frame: FrameLike,
     *,
@@ -74,43 +120,13 @@ def advance_watermark(
     Supports pandas, Dask, Polars, and PyArrow frames.
     """
     if isinstance(frame, dd.DataFrame):
-        if frame.npartitions == 0 or len(frame) == 0:
-            return None
-        result = frame[watermark_field].max()
-        if hasattr(result, "compute"):
-            result = result.compute()
-        if _is_null(result):
-            return None
-        if hasattr(result, "item"):
-            result = result.item()
-        return result
+        return _advance_dask(frame, watermark_field)
     if isinstance(frame, pd.DataFrame):
-        if frame.empty:
-            return None
-        result = frame[watermark_field].max()
-        if _is_null(result):
-            return None
-        if hasattr(result, "item"):
-            result = result.item()
-        return result
+        return _advance_pandas(frame, watermark_field)
     if isinstance(frame, pl.DataFrame):
-        if frame.is_empty():
-            return None
-        result = frame.select(pl.max(watermark_field)).item()
-        if _is_null(result):
-            return None
-        return result
+        return _advance_polars(frame, watermark_field)
     if isinstance(frame, pa.Table):
-        if frame.num_rows == 0:
-            return None
-        column_index = frame.schema.get_field_index(watermark_field)
-        if column_index < 0:
-            return None
-        result = frame.column(column_index).to_pylist()
-        non_null = [v for v in result if v is not None]
-        if not non_null:
-            return None
-        return max(non_null)
+        return _advance_pyarrow(frame, watermark_field)
     return None
 
 

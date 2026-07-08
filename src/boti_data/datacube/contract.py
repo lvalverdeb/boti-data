@@ -9,7 +9,7 @@ import pandas as pd
 import polars as pl
 import pyarrow as pa
 from boti.core import ResourceConfig
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 DatacubeFrame = pd.DataFrame | dd.DataFrame | pa.Table | pl.DataFrame
 DatacubeSyncLoader = Callable[[Any], DatacubeFrame]
@@ -35,6 +35,20 @@ class DatacubeContract:
     request_validator: DatacubeRequestValidator | None = None
     request_transformer: DatacubeRequestTransformer | None = None
     frame_transformer: DatacubeFrameTransformer | None = None
+
+
+class DatacubeRequest(BaseModel):
+    """Request model for datacube loaders.
+
+    Passed through DatacubeResource._prepare_request for default injection,
+    transformation, and validation before reaching the user's loader callable.
+    """
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
+    filters: dict[str, Any] = Field(default_factory=dict)
+    cube: str | None = Field(default=None)
+    limit: int | None = Field(default=None)
+    return_type: str | None = Field(default=None)
 
 
 class DatacubeConfig(ResourceConfig):

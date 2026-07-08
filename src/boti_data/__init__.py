@@ -2,7 +2,6 @@
 Data modules and interfaces for the Boti pipeline context.
 """
 
-from boti_data.connection_catalog import ConnectionCatalog
 from boti_data.db import (
     AsyncSqlDatabaseResource,
     BuilderConfig,
@@ -12,60 +11,30 @@ from boti_data.db import (
     SqlAlchemyModelBuilder,
     SqlDatabaseConfig,
     SqlDatabaseResource,
-    SqlModelRegistry,
-    SqlPartitionedLoader,
-    SqlPartitionedLoadRequest,
     SqlPartitionPlan,
     SqlPartitionSpec,
+    SqlPartitionedLoadRequest,
+    SqlPartitionedLoader,
+    SqlModelRegistry,
     ensure_greenlet_available,
     get_global_registry,
 )
-from boti_data.datacube import DatacubeConfig, DatacubeContract, DatacubeResource
-from boti_data.field_map import FieldMap
+from boti_data.connection_catalog import ConnectionCatalog
+from boti_data.parquet import ParquetDataConfig, ParquetDataResource, ParquetReader
 from boti_data.filters import (
-    And,
-    Expr,
     FilterHandler,
-    Not,
-    Or,
+    Expr,
     TrueExpr,
+    And,
+    Or,
+    Not,
 )
-from boti_data.parquet import ParquetDataConfig, ParquetDataResource
-from boti_data.gateway import (
-    DatacubeLoadRequest,
-    DataFrameOptions,
-    DataFrameParams,
-    DataGateway,
-    ParquetLoadRequest,
-    SqlLoadRequest,
-)
+from boti_data.gateway import DataGateway, ParquetLoadRequest, SqlLoadRequest
 from boti_data.helper import DataHelper
-from boti_data.parquet_reader import ParquetReader
-from boti_data.dataset import HybridDataset
-from boti_data.enrichment import AsyncFrameEnricher, AttachmentSpec, FrameEnricher
-from boti_data.pipelines import (
-    SinkRegistry,
-    available_sinks,
-    create_sink,
-    CsvSink,
-    CsvSinkConfig,
-    JsonlSink,
-    JsonlSinkConfig,
-    ParquetMaterializationResult,
-    ParquetPipeline,
-    ParquetSink,
-    SinkPipeline,
-    SinkWriteResult,
-    register_sink,
-)
+from boti_data.field_map import FieldMap
+from boti_data.distributed import DaskSession, dask_session
+from boti_data.gateway import DataFrameOptions, DataFrameParams
 from boti_data.joins import indexed_left_join, left_join_frames
-from boti_data.watermark import (
-    FileWatermarkStore,
-    IncrementalResult,
-    WatermarkStore,
-    advance_watermark,
-    build_incremental_filters,
-)
 from boti_data.schema import (
     SchemaValidationError,
     align_frames_for_join,
@@ -75,51 +44,75 @@ from boti_data.schema import (
     normalize_schema_map,
     validate_schema,
 )
-
+from boti_data.datacube import DatacubeConfig, DatacubeContract
+from boti_data.dataset import HybridDataset
+from boti_data.enrichment import AsyncFrameEnricher, AttachmentSpec, FrameEnricher
+from boti_data.pipelines import (
+    CsvSink,
+    CsvSinkConfig,
+    JsonlSink,
+    JsonlSinkConfig,
+    ParquetMaterializationResult,
+    ParquetPipeline,
+    ParquetSink,
+    SinkPipeline,
+    SinkRegistry,
+    SinkWriteResult,
+    available_sinks,
+    create_sink,
+    register_sink,
+)
+from boti_data.watermark import (
+    FileWatermarkStore,
+    FsspecWatermarkStore,
+    IncrementalResult,
+    WatermarkStore,
+    advance_watermark,
+    build_incremental_filters,
+)
 
 __all__ = [
     "And",
-    "advance_watermark",
     "AsyncFrameEnricher",
     "AsyncSqlDatabaseResource",
     "AttachmentSpec",
-    "build_incremental_filters",
     "BuilderConfig",
     "ConnectionCatalog",
-    "DatacubeConfig",
-    "DatacubeContract",
-    "DatacubeLoadRequest",
-    "DatacubeResource",
+    "CsvSink",
+    "CsvSinkConfig",
     "DataFrameOptions",
     "DataFrameParams",
     "DataGateway",
     "DataHelper",
-    "CsvSink",
-    "CsvSinkConfig",
-    "JsonlSink",
-    "JsonlSinkConfig",
-    "HybridDataset",
+    "DaskSession",
+    "DatacubeConfig",
+    "DatacubeContract",
     "DefaultBase",
     "EngineRegistry",
     "Expr",
     "FieldMap",
     "FileWatermarkStore",
-    "FrameEnricher",
+    "FsspecWatermarkStore",
     "FilterHandler",
+    "FrameEnricher",
+    "HybridDataset",
     "IncrementalResult",
-    "indexed_left_join",
+    "JsonlSink",
+    "JsonlSinkConfig",
     "Not",
     "Or",
     "ParquetDataConfig",
     "ParquetLoadRequest",
+    "ParquetDataResource",
     "ParquetMaterializationResult",
     "ParquetPipeline",
-    "ParquetSink",
-    "ParquetDataResource",
     "ParquetReader",
+    "ParquetSink",
     "RegistryConfig",
     "SchemaValidationError",
+    "SinkPipeline",
     "SinkRegistry",
+    "SinkWriteResult",
     "SqlLoadRequest",
     "SqlAlchemyModelBuilder",
     "SqlDatabaseConfig",
@@ -129,16 +122,18 @@ __all__ = [
     "SqlPartitionedLoadRequest",
     "SqlPartitionedLoader",
     "SqlModelRegistry",
-    "SinkPipeline",
-    "SinkWriteResult",
     "TrueExpr",
     "WatermarkStore",
+    "advance_watermark",
     "align_frames_for_join",
     "apply_schema_map",
     "available_sinks",
+    "build_incremental_filters",
     "create_sink",
+    "dask_session",
     "ensure_greenlet_available",
     "get_global_registry",
+    "indexed_left_join",
     "infer_schema_map",
     "left_join_frames",
     "normalize_dtype_alias",

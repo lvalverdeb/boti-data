@@ -1,24 +1,22 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any, Final
+from typing import Any
 
 from boti_data.gateway.core import DataGateway
 from boti_data.gateway.normalization import LOAD_CONTROL_KEYS
 from boti_data.gateway.requests import BackendConfig, ExecutionMode, ReturnType
 from boti_data.helper import DataHelper
+from boti_data.parquet.reader_config import (
+    UNSET,
+    ParquetReaderConfigBuilder,
+    ParquetReaderSettings,
+)
 from boti_data.parquet.resource import ParquetDataConfig, ParquetDataResource
-
-_UNSET = object()
 
 
 class ParquetReader(DataHelper):
     """Parquet-specialized helper that preserves the gateway load/aload API."""
-
-    DEFAULT_CONFIG: Final[dict[str, Any]] = {
-        "backend": "parquet",
-        "partition_on": ["partition_date"],
-    }
 
     def __init__(
         self,
@@ -29,7 +27,7 @@ class ParquetReader(DataHelper):
         parquet_filename: str | None = None,
         parquet_start_date: str | None = None,
         parquet_end_date: str | None = None,
-        partition_on: Sequence[str] | str | None | object = _UNSET,
+        partition_on: Sequence[str] | str | None | object = UNSET,
         filesystem_profile: str | None = None,
         parquet_max_age_minutes: int | None = None,
         return_type: ReturnType | None = None,
@@ -38,75 +36,27 @@ class ParquetReader(DataHelper):
         fs_factory: Any | None = None,
         **overrides: Any,
     ) -> None:
+        settings = ParquetReaderSettings(
+            parquet_storage_path=parquet_storage_path,
+            storage_path=storage_path,
+            parquet_filename=parquet_filename,
+            parquet_start_date=parquet_start_date,
+            parquet_end_date=parquet_end_date,
+            partition_on=partition_on,
+            filesystem_profile=filesystem_profile,
+            parquet_max_age_minutes=parquet_max_age_minutes,
+            return_type=return_type,
+            execution_mode=execution_mode,
+        )
         if config is not None:
-            if any(
-                value is not None
-                for value in (
-                    parquet_storage_path,
-                    storage_path,
-                    parquet_filename,
-                    parquet_start_date,
-                    parquet_end_date,
-                    filesystem_profile,
-                    parquet_max_age_minutes,
-                    return_type,
-                    execution_mode,
-                )
-            ) or partition_on is not _UNSET:
-                raise TypeError(
-                    "ParquetReader does not accept explicit parquet settings when config is provided."
-                )
+            ParquetReaderConfigBuilder.validate_no_explicit_settings(settings)
+            if isinstance(config, Mapping) and "backend" not in config:
+                config = ParquetReaderConfigBuilder.ensure_parquet_backend(config)
             super().__init__(config, fs=fs, fs_factory=fs_factory, **overrides)
-            self._default_return_type = getattr(self.gateway, "_return_type", "dask")
-            self._default_execution_mode = getattr(self.gateway, "_execution_mode", "auto")
-            return
-
-        if parquet_storage_path is not None and storage_path is not None:
-            raise ValueError("Provide either parquet_storage_path or storage_path, not both.")
-
-        payload: dict[str, Any] = dict(self.DEFAULT_CONFIG)
-        resolved_path = parquet_storage_path or storage_path
-        if resolved_path is not None:
-            payload["parquet_storage_path"] = resolved_path
-        if parquet_filename is not None:
-            payload["parquet_filename"] = parquet_filename
-        if parquet_start_date is not None:
-            payload["parquet_start_date"] = parquet_start_date
-        if parquet_end_date is not None:
-            payload["parquet_end_date"] = parquet_end_date
-        if filesystem_profile is not None:
-            payload["filesystem_profile"] = filesystem_profile
-        if parquet_max_age_minutes is not None:
-            payload["parquet_max_age_minutes"] = parquet_max_age_minutes
-
-        if partition_on is _UNSET:
-            payload["partition_on"] = list(self.DEFAULT_CONFIG["partition_on"])
-        elif partition_on is None:
-            payload.pop("partition_on", None)
-        elif isinstance(partition_on, str):
-            payload["partition_on"] = [partition_on]
         else:
-            payload["partition_on"] = list(partition_on)
+            payload = ParquetReaderConfigBuilder.build_payload(settings, overrides)
+            super().__init__(payload, fs=fs, fs_factory=fs_factory, **overrides)
 
-        df_params_raw = overrides.pop("df_params", None)
-        if df_params_raw is not None:
-            if hasattr(df_params_raw, "model_dump"):
-                df_params: dict[str, Any] = dict(df_params_raw.model_dump(exclude_none=True))
-            elif isinstance(df_params_raw, Mapping):
-                df_params = dict(df_params_raw)
-            else:
-                raise TypeError("df_params must be a mapping or DataFrameParams instance.")
-        else:
-            df_params = {}
-
-        if return_type is not None:
-            df_params["return_type"] = return_type
-        if execution_mode is not None:
-            df_params["execution_mode"] = execution_mode
-        if df_params:
-            payload["df_params"] = df_params
-
-        super().__init__(payload, fs=fs, fs_factory=fs_factory, **overrides)
         self._default_return_type = getattr(self.gateway, "_return_type", "dask")
         self._default_execution_mode = getattr(self.gateway, "_execution_mode", "auto")
 

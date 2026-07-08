@@ -28,10 +28,15 @@ from pydantic import SecretStr
 from sqlalchemy import String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
+import boti_data.gateway._series_filters as gateway_series_filters
 import boti_data.gateway.core as gateway_core
+import boti_data.gateway.return_type as gateway_return_type
 from boti_data.db.sql_config import SqlDatabaseConfig
 from boti_data.field_map import FieldMap
-from boti_data.gateway import DataFrameParams, DataGateway
+from boti_data.gateway import DataFrameParams, DataGateway, GatewayPolicies
+from boti_data.gateway.loaders import load_sql, load_sql_partitioned
+from boti_data.gateway.planning import InChunkPolicy
+from boti_data.gateway.requests import SqlLoadRequest
 
 # ---------------------------------------------------------------------------
 # Shared field map (DB legacy name → semantic name)
@@ -668,25 +673,27 @@ def test_filter_to_fieldnames_sql_selects_subset(legacy_dsn):
         gw.close()
 
 
-def test_filter_to_fieldnames_missing_col_warns(legacy_dsn):
+def test_filter_to_fieldnames_missing_col_warns():
     """Requesting a fieldname absent from the loaded DataFrame emits a UserWarning."""
     import warnings
-    gw = _legacy_gw(legacy_dsn)
-    try:
-        # Build a DataFrame that already has semantic column names, simulating
-        # a parquet/post-rename result with a partial schema.
-        df = pd.DataFrame({"global_track_id": [10, 20], "barcode": ["A", "B"]})
-        gw._df_params = DataFrameParams(fieldnames=("global_track_id", "nonexistent_col"))
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            result = gw._filter_to_fieldnames(df)
+    from boti_data.gateway import DataFrameOptions
+    from boti_data.gateway.post_process import PostProcessor
 
-        assert any("nonexistent_col" in str(warning.message) for warning in w)
-        assert "global_track_id" in result.columns
-        assert "nonexistent_col" not in result.columns
-    finally:
-        gw.close()
+    pp = PostProcessor(
+        FieldMap({}),
+        DataFrameParams(fieldnames=("global_track_id", "nonexistent_col")),
+        DataFrameOptions(),
+    )
+    df = pd.DataFrame({"global_track_id": [10, 20], "barcode": ["A", "B"]})
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        result = pp.filter_to_fieldnames(df)
+
+    assert any("nonexistent_col" in str(warning.message) for warning in w)
+    assert "global_track_id" in result.columns
+    assert "nonexistent_col" not in result.columns
 
 
 # ===========================================================================
@@ -749,13 +756,16 @@ def test_aload_timeout_not_exceeded(legacy_dsn):
 def test_aload_timeout_raises_when_exceeded(legacy_dsn, monkeypatch):
     """When timeout is hit asyncio.TimeoutError propagates."""
     import asyncio
-    original_load = DataGateway._aload_configured
 
-    async def _slow(*args, **kwargs):
+    from boti_data.gateway.configured_load import ConfiguredLoadService
+
+    original = ConfiguredLoadService.aload
+
+    async def _slow(self, *args, **kwargs):
         await asyncio.sleep(10)
-        return await original_load(*args, **kwargs)
+        return await original(self, *args, **kwargs)
 
-    monkeypatch.setattr(DataGateway, "_aload_configured", _slow)
+    monkeypatch.setattr(ConfiguredLoadService, "aload", _slow)
     gw = _legacy_gw(legacy_dsn)
     try:
         with pytest.raises(asyncio.TimeoutError):
@@ -1014,7 +1024,12 @@ def test_aload_chunked_in_accepts_public_concurrency_option(legacy_dsn):
 def test_aload_chunked_in_auto_uses_filter_hints(legacy_dsn, monkeypatch):
     import asyncio
 
-    gw = _legacy_gw(legacy_dsn)
+    gw = _legacy_gw(
+        legacy_dsn,
+        policies=GatewayPolicies(
+            in_chunk_policy=InChunkPolicy(eager_auto_min_values=1, eager_auto_concurrency=2),
+        ),
+    )
     captured: dict[str, Any] = {}
 
     original = gw._chunked_in_load
@@ -1031,25 +1046,6 @@ def test_aload_chunked_in_auto_uses_filter_hints(legacy_dsn, monkeypatch):
         )
 
     monkeypatch.setattr(gw, "_chunked_in_load", wrapped)
-    monkeypatch.setattr(
-        gateway_core.DataGateway,
-        "_filter_chunking_hint",
-        staticmethod(
-            lambda filters: {
-                "filter_key": "global_track_id__in",
-                "value_count": 10000,
-                "in_chunk_size": 1,
-                "chunk_count": 10000,
-                "in_chunk_concurrency": 2,
-            }
-        ),
-    )
-
-    monkeypatch.setattr(
-        gateway_core.DataGateway,
-        "_in_chunk_policy",
-        lambda self: gateway_core._InChunkPolicy(eager_auto_min_values=1, eager_auto_concurrency=2),
-    )
 
     try:
         df = asyncio.run(
@@ -1084,19 +1080,6 @@ def test_aload_chunked_in_off_disables_auto_hint(legacy_dsn, monkeypatch):
         )
 
     monkeypatch.setattr(gw, "_chunked_in_load", wrapped)
-    monkeypatch.setattr(
-        gateway_core.DataGateway,
-        "_filter_chunking_hint",
-        staticmethod(
-            lambda filters: {
-                "filter_key": "global_track_id__in",
-                "value_count": 10000,
-                "in_chunk_size": 1,
-                "chunk_count": 10000,
-                "in_chunk_concurrency": 2,
-            }
-        ),
-    )
 
     try:
         df = asyncio.run(
@@ -1128,7 +1111,12 @@ def test_load_chunked_in_accepts_public_concurrency_option(legacy_dsn):
 
 
 def test_load_chunked_in_auto_uses_filter_hints(legacy_dsn, monkeypatch):
-    gw = _legacy_gw(legacy_dsn)
+    gw = _legacy_gw(
+        legacy_dsn,
+        policies=GatewayPolicies(
+            in_chunk_policy=InChunkPolicy(eager_auto_min_values=1, eager_auto_concurrency=2),
+        ),
+    )
     captured: dict[str, Any] = {}
 
     original = gw._chunked_in_load_sync
@@ -1145,25 +1133,6 @@ def test_load_chunked_in_auto_uses_filter_hints(legacy_dsn, monkeypatch):
         )
 
     monkeypatch.setattr(gw, "_chunked_in_load_sync", wrapped)
-    monkeypatch.setattr(
-        gateway_core.DataGateway,
-        "_filter_chunking_hint",
-        staticmethod(
-            lambda filters: {
-                "filter_key": "global_track_id__in",
-                "value_count": 10000,
-                "in_chunk_size": 1,
-                "chunk_count": 10000,
-                "in_chunk_concurrency": 2,
-            }
-        ),
-    )
-
-    monkeypatch.setattr(
-        gateway_core.DataGateway,
-        "_in_chunk_policy",
-        lambda self: gateway_core._InChunkPolicy(eager_auto_min_values=1, eager_auto_concurrency=2),
-    )
 
     try:
         df = gw.load(global_track_id__in=[10, 20, 30], as_pandas=True)
@@ -1191,19 +1160,6 @@ def test_load_chunked_in_explicit_values_override_auto_hint(legacy_dsn, monkeypa
         )
 
     monkeypatch.setattr(gw, "_chunked_in_load_sync", wrapped)
-    monkeypatch.setattr(
-        gateway_core.DataGateway,
-        "_filter_chunking_hint",
-        staticmethod(
-            lambda filters: {
-                "filter_key": "global_track_id__in",
-                "value_count": 10000,
-                "in_chunk_size": 1,
-                "chunk_count": 10000,
-                "in_chunk_concurrency": 2,
-            }
-        ),
-    )
 
     try:
         df = gw.load(
@@ -1412,9 +1368,9 @@ def test_semi_join_with_field_map_translates_column(legacy_dsn):
 
 
 def test_resolve_series_filters_is_noop_without_series():
-    """_resolve_series_filters returns the same dict when no Series are present."""
+    """resolve_series_filters returns the same dict when no Series are present."""
     opts = {"field__in": [1, 2, 3], "limit": 10}
-    result = DataGateway._resolve_series_filters(opts)
+    result = gateway_series_filters.resolve_series_filters(opts)
     assert result is opts  # same object, no copy made
 
 
@@ -1459,8 +1415,8 @@ def test_configured_gateway_auto_return_type_prefers_pandas_for_small_sql(legacy
 def test_configured_gateway_auto_uses_eager_fetch_for_small_sql(legacy_dsn, monkeypatch):
     eager_calls: list[bool] = []
     lazy_calls: list[bool] = []
-    real_load_sql = gateway_core.load_sql
-    real_load_sql_partitioned = gateway_core.load_sql_partitioned
+    real_load_sql = load_sql
+    real_load_sql_partitioned = load_sql_partitioned
 
     def tracking_load_sql(resource, request):
         eager_calls.append(True)
@@ -1470,8 +1426,8 @@ def test_configured_gateway_auto_uses_eager_fetch_for_small_sql(legacy_dsn, monk
         lazy_calls.append(True)
         return real_load_sql_partitioned(config, resource, request)
 
-    monkeypatch.setattr(gateway_core, "load_sql", tracking_load_sql)
-    monkeypatch.setattr(gateway_core, "load_sql_partitioned", tracking_load_sql_partitioned)
+    monkeypatch.setattr("boti_data.gateway._backend_strategies.load_sql", tracking_load_sql)
+    monkeypatch.setattr("boti_data.gateway._backend_strategies.load_sql_partitioned", tracking_load_sql_partitioned)
     gw = _legacy_gw(legacy_dsn, df_params=DataFrameParams(return_type="auto"))
     try:
         result = gw.load()
@@ -1508,7 +1464,7 @@ def test_configured_gateway_eager_sql_bypasses_internal_request_revalidation(leg
         df_params=DataFrameParams(return_type="pandas", execution_mode="eager"),
     )
     monkeypatch.setattr(
-        gateway_core.SqlLoadRequest,
+        SqlLoadRequest,
         "model_validate",
         classmethod(
             lambda cls, *_args, **_kwargs: (_ for _ in ()).throw(
@@ -1525,7 +1481,7 @@ def test_configured_gateway_eager_sql_bypasses_internal_request_revalidation(leg
 
 
 def test_configured_gateway_auto_return_type_uses_dask_for_large_sql(legacy_dsn, monkeypatch):
-    monkeypatch.setattr(gateway_core, "_AUTO_EAGER_MAX_ROWS", 1)
+    monkeypatch.setattr(gateway_return_type, "_AUTO_EAGER_MAX_ROWS", 1)
     gw = _legacy_gw(legacy_dsn, df_params=DataFrameParams(return_type="auto"))
     try:
         result = gw.load()
@@ -1539,15 +1495,15 @@ async def test_async_series_filter_resolution_batches_dask_compute(monkeypatch):
     left = dd.from_pandas(pd.DataFrame({"id": [1, 2, 3]}), npartitions=2)["id"]
     right = dd.from_pandas(pd.DataFrame({"id": [10, 20, 30]}), npartitions=2)["id"]
     calls: list[int] = []
-    real_compute = gateway_core.dask.compute
+    real_compute = gateway_series_filters.dask.compute
 
     def tracking_compute(*args, **kwargs):
         calls.append(len(args))
         return real_compute(*args, **kwargs)
 
-    monkeypatch.setattr(gateway_core.dask, "compute", tracking_compute)
+    monkeypatch.setattr(gateway_series_filters.dask, "compute", tracking_compute)
 
-    resolved = await gateway_core.DataGateway._resolve_series_filters_async(
+    resolved = await gateway_series_filters.resolve_series_filters_async(
         {"left__in": left, "right__in": right}
     )
 
@@ -1656,7 +1612,7 @@ def test_lazy_semi_join_avoids_series_list_resolution(legacy_dsn, monkeypatch):
             raise AssertionError("series should not reach generic filter resolution in lazy semi_join")
         return options
 
-    monkeypatch.setattr(gateway_core.DataGateway, "_resolve_series_filters", staticmethod(forbid_series_resolution))
+    monkeypatch.setattr(gateway_series_filters, "resolve_series_filters", forbid_series_resolution)
     try:
         result = gw.semi_join(pd.Series([10, 30]), on="global_track_id")
         assert isinstance(result, dd.DataFrame)

@@ -16,7 +16,7 @@ import pytest
 from boti.core.filesystem import FilesystemConfig
 from pydantic import ValidationError
 
-from boti_data import ConnectionCatalog, ParquetDataConfig, ParquetDataResource
+from boti_data import ConnectionCatalog, DataHelper, ParquetDataConfig, ParquetDataResource
 
 
 class StubLogger:
@@ -175,6 +175,115 @@ def test_parquet_load_files_raw_filters_still_work(temp_project_root):
         loaded = resource.load_files(filters=[("status", "=", "inactive")]).compute()
 
     assert loaded["id"].tolist() == [2]
+
+
+def test_datahelper_parquet_applies_bare_kwarg_filters(temp_project_root):
+    """Regression: ``DataHelper(backend='parquet')`` must apply bare-kwarg filters.
+
+    The parquet strategy previously built its request from the typed
+    ``GatewayLoadRequest`` (which forbids extra fields), so bare runtime filter
+    kwargs never reached ``request.filters`` and the full dataset was returned
+    unfiltered. Only ``ParquetReader`` worked, because it pre-folds bare kwargs
+    into an explicit ``filters=`` mapping.
+    """
+    file_path = temp_project_root / "data" / "gps.parquet"
+    file_path.parent.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "id": [1, 2, 3, 4],
+            "associate_id": [27, 2285, 2285, 4499],
+        }
+    ).to_parquet(file_path, index=False)
+
+    helper = DataHelper(
+        backend="parquet",
+        storage_path=str(file_path.parent),
+        parquet_filename="gps",
+    )
+    try:
+        # dask structured path (load_filtered)
+        exact = helper.load(associate_id=2285, return_type="dask").compute()
+        assert sorted(exact["id"].tolist()) == [2, 3]
+
+        # arrow/pandas structured path (load_filtered_arrow)
+        subset = helper.load(associate_id__in=[27, 4499], return_type="pandas")
+        assert sorted(subset["id"].tolist()) == [1, 4]
+
+        gte = helper.load(associate_id__gte=2285, return_type="pandas")
+        assert sorted(gte["id"].tolist()) == [2, 3, 4]
+    finally:
+        helper.close()
+
+
+def test_parquet_coerces_temporal_filter_on_string_column(temp_project_root):
+    """Regression: date/datetime filter values are coerced to ISO strings for
+    string-typed columns instead of raising ``ArrowNotImplementedError``.
+
+    A ``date`` value compared against a text column (an ISO date stored as a
+    string) has no PyArrow comparison kernel on either the pushdown or residual
+    path; coercing it to its ISO string turns the comparison into a correct
+    lexicographic one.
+    """
+    file_path = temp_project_root / "data" / "orders.parquet"
+    file_path.parent.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "order_date": ["2026-04-15", "2026-04-17", "2026-04-25"],
+        }
+    ).to_parquet(file_path, index=False)
+
+    config = ParquetDataConfig(
+        project_root=temp_project_root,
+        logger=StubLogger(),
+        parquet_storage_path=str(file_path.parent),
+        parquet_filename="orders",
+    )
+
+    with ParquetDataResource(config) as resource:
+        # dask pushdown + residual path
+        loaded = (
+            resource.load_filtered({"order_date__gte": dt.date(2026, 4, 17)})
+            .compute()
+            .sort_values("id")
+        )
+        assert loaded["id"].tolist() == [2, 3]
+
+        # arrow/pandas path
+        table = resource.load_filtered_arrow({"order_date__lt": dt.date(2026, 4, 17)})
+        assert table.column("id").to_pylist() == [1]
+
+
+def test_datahelper_parquet_load_period_on_string_date_column(temp_project_root):
+    """Regression: ``load_period`` over a string date column filters correctly.
+
+    Exercises both fixes together through the public API — the same path the
+    ``HybridDataset`` parquet branch uses. ``load_period`` emits ``date`` bounds
+    as bare ``__gte``/``__lte`` kwargs, which must both reach the parquet filter
+    and coerce against the string ``order_date`` column.
+    """
+    file_path = temp_project_root / "data" / "orders.parquet"
+    file_path.parent.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "order_date": ["2026-04-15", "2026-04-17", "2026-04-25"],
+        }
+    ).to_parquet(file_path, index=False)
+
+    helper = DataHelper(
+        backend="parquet",
+        storage_path=str(file_path.parent),
+        parquet_filename="orders",
+    )
+    try:
+        window = helper.load_period(
+            "order_date", "2026-04-15", "2026-04-19", return_type="pandas"
+        )
+    finally:
+        helper.close()
+
+    assert sorted(window["id"].tolist()) == [1, 2]
 
 
 def test_parquet_discover_all_files(temp_project_root):

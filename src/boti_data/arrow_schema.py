@@ -12,6 +12,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+__all__ = [
+    "ArrowSchema",
+    "apply_arrow_schema_map",
+    "validate_arrow_schema",
+]
+
 import pandas as pd
 import pyarrow as pa
 

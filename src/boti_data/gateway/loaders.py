@@ -2,12 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-import fsspec
 import pandas as pd
 import pyarrow as pa
 from sqlalchemy import select, text
 
-from boti_data.datacube import DatacubeConfig, DatacubeResource
 from boti_data.db import (
     SqlDatabaseConfig,
     SqlDatabaseResource,
@@ -21,17 +19,12 @@ from boti_data.db.arrow_schema_mapper import (
 )
 from boti_data.db.sql_model_builder import SqlAlchemyModelBuilder
 from boti_data.filters import FilterHandler
-from boti_data.parquet.resource import ParquetDataConfig, ParquetDataResource
+from boti_data.parquet.resource import ParquetDataResource
 
 from .requests import (
-    BackendConfig,
-    BackendName,
-    BackendResource,
-    DatacubeLoadRequest,
     ParquetLoadRequest,
     SqlLoadRequest,
 )
-from .sql_guard import validate_raw_sql_statement
 
 
 def _prepare_sql_statement(request: SqlLoadRequest, *, logger: Any, debug: bool) -> tuple[Any, dict[str, Any] | None]:
@@ -44,7 +37,6 @@ def _prepare_sql_statement(request: SqlLoadRequest, *, logger: Any, debug: bool)
             statement = statement.params(**request.params)
         execute_params = None
     else:
-        validate_raw_sql_statement(sql=request.sql or "", allow_raw_sql=request.allow_raw_sql)
         statement = text(request.sql or "")
         execute_params = request.params or None
 
@@ -78,35 +70,6 @@ def _arrow_table_from_sql_result(
     return rows_to_arrow_table(rows, columns, schema)
 
 
-def build_backend_resource(
-    config: BackendConfig,
-    *,
-    fs: fsspec.AbstractFileSystem | None = None,
-    fs_factory: Any = None,
-) -> tuple[BackendName, BackendResource]:
-    if isinstance(config, SqlDatabaseConfig):
-        return "sqlalchemy", SqlDatabaseResource(config)
-    if isinstance(config, ParquetDataConfig):
-        return "parquet", ParquetDataResource(config, fs=fs, fs_factory=fs_factory)
-    if isinstance(config, DatacubeConfig):
-        return "datacube", DatacubeResource(config)
-    raise TypeError(f"Unsupported config type for DataGateway: {type(config)!r}")
-
-
-def load_datacube(
-    resource: DatacubeResource,
-    request: DatacubeLoadRequest,
-):
-    return resource.load(request)
-
-
-async def aload_datacube(
-    resource: DatacubeResource,
-    request: DatacubeLoadRequest,
-):
-    return await resource.aload(request)
-
-
 def should_use_partitioned_sql(options: dict[str, Any]) -> bool:
     partitioned = options.get("partitioned")
     as_pandas = bool(options.get("as_pandas", False))
@@ -124,8 +87,6 @@ def should_use_partitioned_sql(options: dict[str, Any]) -> bool:
 
 def build_sql_partitioned_request(options: dict[str, Any]) -> SqlPartitionedLoadRequest:
     partitioned_options = dict(options)
-    partitioned_options["partitioned"] = True
-    partitioned_options.setdefault("as_pandas", False)
 
     if partitioned_options.get("sql") is not None:
         raise ValueError(
@@ -141,6 +102,16 @@ def build_sql_partitioned_request(options: dict[str, Any]) -> SqlPartitionedLoad
         raise ValueError(
             "Lazy SQL gateway loads require model for partition planning and SQL column resolution."
         )
+
+    # Discard any extra fields that SqlPartitionedLoadRequest does not accept
+    # (e.g. dry_run, resilient — control keys passed through from the gateway).
+    partitioned_options = {
+        k: v
+        for k, v in partitioned_options.items()
+        if k in SqlPartitionedLoadRequest.model_fields
+    }
+    partitioned_options.setdefault("as_pandas", False)
+    partitioned_options.setdefault("partitioned", True)
 
     return SqlPartitionedLoadRequest.model_validate(partitioned_options)
 
@@ -179,7 +150,7 @@ def load_sql_partitioned(
     resource: SqlDatabaseResource,
     request: SqlPartitionedLoadRequest,
 ):
-    loader = SqlPartitionedLoader(config, resource=resource)
+    loader = SqlPartitionedLoader(config, resource=resource, use_arrow=request.use_arrow)
     return loader.load_request(request)
 
 

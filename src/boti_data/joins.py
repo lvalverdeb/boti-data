@@ -5,14 +5,9 @@ from time import perf_counter
 from typing import Any
 
 import dask.dataframe as dd
-from boti_dask import (
-    current_client_summary,
-    describe_frame,
-    diagnostics_logger,
-    inspect_graph,
-    safe_persist,
-)
+from boti_dask.resilience import safe_persist
 
+from boti_data.distributed import current_client_summary, describe_frame, diagnostics_logger
 from boti_data.schema import (
     DataFrameLike,
     apply_schema_map,
@@ -60,7 +55,6 @@ def left_join_frames(
     right_on: Sequence[str] | None = None,
     join_schema_map: Mapping[str, str],
     diagnostics: bool = False,
-    dry_run: bool = False,
     logger: Any | None = None,
     label: str = "left_join_frames",
 ) -> DataFrameLike:
@@ -89,15 +83,32 @@ def left_join_frames(
         left_on=resolved_left_on,
         right_on=resolved_right_on,
     )
-    if dry_run and diagnostics and active_logger is not None and isinstance(joined, dd.DataFrame):
-        active_logger.info(
-            f"{label}: dry run requested; execution skipped with graph={inspect_graph(joined)}"
-        )
     if diagnostics and active_logger is not None:
         active_logger.info(
             f"{label}: completed in {perf_counter() - started:.2f}s with metrics={describe_frame(joined)}"
         )
     return joined
+
+
+def _safe_persist_side(
+    frame: DataFrameLike,
+    *,
+    label: str,
+    persist: bool,
+    dry_run: bool,
+    resilient: bool,
+    logger: Any | None = None,
+    side_name: str = "frame",
+) -> DataFrameLike:
+    if not persist or not isinstance(frame, dd.DataFrame):
+        return frame
+    if dry_run and logger is not None:
+        logger.info(f"{label}: dry run requested; persist steps skipped")
+    elif resilient:
+        frame = safe_persist(frame)
+    else:
+        frame = frame.persist()
+    return frame
 
 
 def indexed_left_join(
@@ -108,9 +119,9 @@ def indexed_left_join(
     join_schema_map: Mapping[str, str],
     persist: bool = False,
     resilient: bool = False,
+    dry_run: bool = False,
     reset_index: bool = True,
     diagnostics: bool = False,
-    dry_run: bool = False,
     logger: Any | None = None,
     label: str = "indexed_left_join",
 ) -> DataFrameLike:
@@ -129,12 +140,8 @@ def indexed_left_join(
             active_logger.info(f"{label}: active client={client_summary}")
         active_logger.info(
             f"{label}: left={describe_frame(left_aligned)} right={describe_frame(right_aligned)} "
-            f"join_key={join_key} persist={persist} resilient={resilient}"
+            f"join_key={join_key} persist={persist}"
         )
-        if isinstance(left_aligned, dd.DataFrame):
-            active_logger.info(f"{label}: left_graph={inspect_graph(left_aligned)}")
-        if isinstance(right_aligned, dd.DataFrame):
-            active_logger.info(f"{label}: right_graph={inspect_graph(right_aligned)}")
         if isinstance(left_aligned, dd.DataFrame) and not persist:
             active_logger.warning(
                 f"{label}: persist=False may recompute expensive set_index/join stages on repeated downstream actions."
@@ -142,35 +149,30 @@ def indexed_left_join(
     left_indexed = left_aligned.set_index(join_key)
     right_indexed = right_aligned.set_index(join_key)
 
-    if dry_run and persist and diagnostics and active_logger is not None:
-        active_logger.info(f"{label}: dry run requested; persist steps skipped.")
-    if persist and not dry_run and isinstance(left_indexed, dd.DataFrame):
-        left_indexed = (
-            safe_persist(left_indexed, logger=active_logger)
-            if resilient
-            else left_indexed.persist()
-        )
-    if persist and not dry_run and isinstance(right_indexed, dd.DataFrame):
-        right_indexed = (
-            safe_persist(right_indexed, logger=active_logger)
-            if resilient
-            else right_indexed.persist()
-        )
+    left_indexed = _safe_persist_side(
+        left_indexed, label=label, persist=persist, dry_run=dry_run,
+        resilient=resilient, logger=active_logger, side_name="left",
+    )
+    right_indexed = _safe_persist_side(
+        right_indexed, label=label, persist=persist, dry_run=dry_run,
+        resilient=resilient, logger=active_logger, side_name="right",
+    )
 
     joined = left_indexed.join(right_indexed, how="left")
-    if persist and not dry_run and isinstance(joined, dd.DataFrame):
-        joined = safe_persist(joined, logger=active_logger) if resilient else joined.persist()
+    joined = _safe_persist_side(
+        joined, label=label, persist=persist, dry_run=dry_run,
+        resilient=resilient, logger=active_logger, side_name="joined",
+    )
 
     if reset_index:
         joined = joined.reset_index()
-    if dry_run and diagnostics and active_logger is not None and isinstance(joined, dd.DataFrame):
-        active_logger.info(
-            f"{label}: dry run requested; execution skipped with graph={inspect_graph(joined)}"
-        )
     if diagnostics and active_logger is not None:
-        active_logger.info(
-            f"{label}: completed in {perf_counter() - started:.2f}s with metrics={describe_frame(joined)}"
-        )
+        if dry_run:
+            active_logger.info(f"{label}: dry run requested; execution skipped with graph={describe_frame(joined)}")
+        else:
+            active_logger.info(
+                f"{label}: completed in {perf_counter() - started:.2f}s with metrics={describe_frame(joined)}"
+            )
     return joined
 
 

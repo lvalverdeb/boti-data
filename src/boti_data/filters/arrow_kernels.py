@@ -14,8 +14,6 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.compute as pc
 
-
-
 # ---------------------------------------------------------------------------
 # Type coercion helpers
 # ---------------------------------------------------------------------------
@@ -150,7 +148,7 @@ def icontains_kernel(column: pa.ChunkedArray, pattern: str) -> pa.ChunkedArray:
     return pc.match_substring_regex(
         ensure_string_array(column),
         _escape_like_pattern(pattern),
-        ignore_case=True,
+        options=pc.MatchSubstringOptions(case_insensitive=True),
     )
 
 
@@ -159,7 +157,7 @@ def regex_kernel(column: pa.ChunkedArray, pattern: str, case_insensitive: bool =
     return pc.match_substring_regex(
         ensure_string_array(column),
         pattern,
-        ignore_case=case_insensitive,
+        options=pc.MatchSubstringOptions(case_insensitive=case_insensitive),
     )
 
 
@@ -333,9 +331,7 @@ def apply_arrow_filters(
     """Apply a complete filter dict (including $and/$or/$not) to an Arrow Table.
 
     This is the high-level entry point for Arrow-backed filtering.
-    Uses the Rust-accelerated implementation when available.
     """
-
     return table.filter(compile_arrow_filter(filters)(table))
 
 
@@ -343,20 +339,13 @@ def apply_arrow_filters(
 # Utility: escape LIKE patterns for regex conversion
 # ---------------------------------------------------------------------------
 
-_REGEX_META = frozenset('.^$*+?{}[]\\|()')
-
-
 def _escape_like_pattern(value: str) -> str:
     """Convert a SQL LIKE pattern to a regex pattern."""
-
-    out = []
-    for ch in value:
-        if ch == '%':
-            out.append('.*')
-        elif ch == '_':
-            out.append('.')
-        elif ch in _REGEX_META:
-            out.append('\\' + ch)
-        else:
-            out.append(ch)
-    return ''.join(out)
+    import re
+    # Escape regex special chars, then convert SQL wildcards
+    escaped = re.escape(value)
+    # SQL % -> regex .*
+    # SQL _ -> regex .
+    # But re.escape already escaped them, so we undo that
+    escaped = escaped.replace(r"\%", ".*").replace(r"\_", ".")
+    return escaped

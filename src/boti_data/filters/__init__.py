@@ -10,6 +10,7 @@ from .expressions import (
     TrueExpr,
 )
 from .handler import FilterHandler
+from .utils import validate_regex_pattern
 
 __all__ = [
     "And",
@@ -22,4 +23,5 @@ __all__ = [
     "ParquetFilterGroup",
     "ParquetFilters",
     "TrueExpr",
+    "validate_regex_pattern",
 ]

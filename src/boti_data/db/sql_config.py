@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import logging
 import warnings
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
-from boti.core import ResourceConfig, SqlDatabaseSettings, is_valid_env_var_name, load_prefixed_model
+from boti.core.models import ResourceConfig
+from boti.core.security import is_valid_env_var_name
+from boti.core.settings import SqlDatabaseSettings, load_prefixed_model
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from sqlalchemy.pool import NullPool, Pool, QueuePool, StaticPool
 
-_logger = logging.getLogger(__name__)
 _ALLOWED_POOLCLASS_IMPORTS = {
     "sqlalchemy.pool.NullPool": NullPool,
     "sqlalchemy.pool.QueuePool": QueuePool,
@@ -66,7 +66,7 @@ class SqlDatabaseConfig(ResourceConfig):
     def from_env(
         cls,
         *,
-        env_file: str | Path | None = None,
+        env_file: Union[str, Path] | None = None,
         **overrides: Any,
     ) -> SqlDatabaseConfig:
         return cls.from_env_prefix("DB_", env_file=env_file, **overrides)
@@ -76,7 +76,7 @@ class SqlDatabaseConfig(ResourceConfig):
         cls,
         prefix: str,
         *,
-        env_file: str | Path | None = None,
+        env_file: Union[str, Path] | None = None,
         **overrides: Any,
     ) -> SqlDatabaseConfig:
         settings = load_prefixed_model(SqlDatabaseSettings, prefix, env_file=env_file)
@@ -151,16 +151,10 @@ class WorkerSqlConfig(BaseModel):
             payload["connection_env_var"] = config.worker_connection_env_var
         else:
             warnings.warn(
-                "Distributed SQL task payloads will carry the raw DSN credential because "
-                "'worker_connection_env_var' is not set on SqlDatabaseConfig. "
-                "Set 'worker_connection_env_var' to the name of an environment variable "
-                "that resolves the DSN on each worker to avoid serializing credentials.",
+                "worker_connection_env_var is not set; falling back to raw DSN. "
+                "Credentials may be visible in scheduler logs.",
+                UserWarning,
                 stacklevel=2,
-                category=UserWarning,
-            )
-            _logger.warning(
-                "WorkerSqlConfig created with raw DSN fallback; "
-                "set worker_connection_env_var to avoid credential serialization."
             )
             payload["connection_url"] = config.connection_url
         return cls(**payload)

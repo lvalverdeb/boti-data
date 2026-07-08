@@ -8,6 +8,7 @@ import asyncio
 import datetime as dt
 import functools
 import posixpath
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -18,18 +19,16 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.fs as pafs
-import pyarrow.parquet as pq
-from boti.core import (
-    FilesystemConfig,
-    ResourceConfig,
-    SecureResource,
-    create_filesystem,
-    is_valid_identifier,
-)
+from boti.core.filesystem import FilesystemConfig, create_filesystem
+from boti.core.models import ResourceConfig
+from boti.core.secure_io import SecureResource
+from boti.core.security import is_valid_identifier
 from fsspec.implementations.local import LocalFileSystem
 from pydantic import Field, field_validator, model_validator
 
 from boti_data.filters import FilterHandler
+from boti_data.filters.utils import parse_filter_key
+from boti_data.parquet.file_info import ArrowFileInfoProvider, FsspecFileInfoProvider
 
 
 def create_local_filesystem() -> fsspec.AbstractFileSystem:
@@ -105,6 +104,18 @@ class ParquetDataConfig(ResourceConfig):
         return self
 
 
+_RAW_FILTER_CLAUSE_DISPATCH: dict[str, Callable[[Any, Any], ds.Expression]] = {
+    "=": lambda col, v: col == v,
+    "!=": lambda col, v: col != v,
+    ">": lambda col, v: col > v,
+    ">=": lambda col, v: col >= v,
+    "<": lambda col, v: col < v,
+    "<=": lambda col, v: col <= v,
+    "in": lambda col, v: col.isin(v),
+    "not in": lambda col, v: ~col.isin(v),
+}
+
+
 class ParquetDataResource(SecureResource):
     """Secure resource for discovering and loading Parquet data."""
 
@@ -116,19 +127,12 @@ class ParquetDataResource(SecureResource):
         fs_factory: Any | None = None,
         catalog: Any | None = None,
     ) -> None:
-        self._filesystem_config: FilesystemConfig | None = None
-        self._filesystem_adapter: Any | None = None
-        resolved_fs_factory = fs_factory
-        if fs is None and resolved_fs_factory is None and config.filesystem_profile is not None:
-            if catalog is None:
-                raise ValueError(
-                    "ParquetDataResource requires a catalog when filesystem_profile is configured."
-                )
-            self._filesystem_config = catalog.filesystem_config(config.filesystem_profile)
-            # Route profile-backed filesystem creation through the catalog adapter
-            # so adapter retry/cache behavior is shared across callers.
-            self._filesystem_adapter = catalog.filesystem_adapter(config.filesystem_profile)
-            resolved_fs_factory = self._filesystem_adapter.get_filesystem
+        self._filesystem_config, resolved_fs_factory = self._resolve_filesystem_factory(
+            config,
+            fs=fs,
+            fs_factory=fs_factory,
+            catalog=catalog,
+        )
 
         super().__init__(
             config=config,
@@ -136,31 +140,46 @@ class ParquetDataResource(SecureResource):
             fs_factory=resolved_fs_factory or (None if fs is not None else create_local_filesystem),
         )
         self.config = config
-        # Eagerly validate the storage path at construction time for local paths
-        # so path-traversal attempts are caught before any data access.
-        if config.parquet_storage_path is not None:
-            storage = config.parquet_storage_path
-            parsed = __import__("urllib.parse", fromlist=["urlparse"]).urlparse(storage)
-            if not parsed.scheme or parsed.scheme == "file":
-                local = parsed.path if parsed.scheme == "file" else storage
-                if "\x00" in local:
-                    raise ValueError(
-                        "parquet_storage_path contains a null byte and has been rejected."
-                    )
-                self.get_secure_path(local)
+        if self.config.parquet_storage_path is not None:
+            self._secure_local_path(self.config.parquet_storage_path)
 
-    def __getstate__(self) -> dict[str, Any]:
-        state = super().__getstate__()
-        # Adapter instances can carry runtime-only locks and cache state.
-        state.pop("_filesystem_adapter", None)
-        return state
+    @staticmethod
+    def _resolve_filesystem_factory(
+        config: ParquetDataConfig,
+        *,
+        fs: fsspec.AbstractFileSystem | None,
+        fs_factory: Any | None,
+        catalog: Any | None,
+    ) -> tuple[FilesystemConfig | None, Any | None]:
+        if fs is not None or fs_factory is not None or config.filesystem_profile is None:
+            return None, fs_factory
+        if catalog is None:
+            raise ValueError(
+                "ParquetDataResource requires a catalog when filesystem_profile is configured."
+            )
+        filesystem_config = catalog.filesystem_config(config.filesystem_profile)
+        adapter_factory = ParquetDataResource._catalog_filesystem_factory(
+            catalog,
+            config.filesystem_profile,
+        )
+        return filesystem_config, adapter_factory or functools.partial(
+            create_filesystem,
+            filesystem_config,
+        )
+
+    @staticmethod
+    def _catalog_filesystem_factory(catalog: Any, profile: str) -> Any | None:
+        if not hasattr(catalog, "filesystem_adapter"):
+            return None
+        adapter = catalog.filesystem_adapter(profile)
+        if adapter is not None and hasattr(adapter, "get_filesystem"):
+            return adapter.get_filesystem
+        return None
 
     def _restore_runtime_state(self) -> None:
         super()._restore_runtime_state()
         if not self._is_closed and self.fs is None and self._fs_factory is None:
-            if self._filesystem_adapter is not None:
-                self._fs_factory = self._filesystem_adapter.get_filesystem
-            elif self._filesystem_config is not None:
+            if self._filesystem_config is not None:
                 self._fs_factory = functools.partial(create_filesystem, self._filesystem_config)
             else:
                 self._fs_factory = create_local_filesystem
@@ -257,9 +276,8 @@ class ParquetDataResource(SecureResource):
     ) -> dd.DataFrame:
         """Load Parquet data from a high-level filter spec with pushdown + residual masking."""
         filter_handler = FilterHandler(backend="dask", logger=self.logger, debug=self.debug)
-        pushdown_filters, residual_filters = filter_handler.split_pushdown_and_residual(
-            filters or {}
-        )
+        coerced = self._coerce_temporal_filters(filters or {})
+        pushdown_filters, residual_filters = filter_handler.split_pushdown_and_residual(coerced)
         dataframe = self.load_files(filters=pushdown_filters or None, columns=columns)
         if residual_filters:
             dataframe = filter_handler.apply_filters(dataframe, filters=residual_filters)
@@ -273,9 +291,8 @@ class ParquetDataResource(SecureResource):
     ) -> pa.Table:
         """Load Parquet data as Arrow with pushdown and Arrow residual filters."""
         filter_handler = FilterHandler(backend="arrow", logger=self.logger, debug=self.debug)
-        pushdown_filters, residual_filters = filter_handler.split_pushdown_and_residual(
-            filters or {}
-        )
+        coerced = self._coerce_temporal_filters(filters or {})
+        pushdown_filters, residual_filters = filter_handler.split_pushdown_and_residual(coerced)
         table = self.load_arrow(filters=pushdown_filters or None, columns=columns)
         if residual_filters:
             table = filter_handler.apply_filters(table, filters=residual_filters)
@@ -322,7 +339,9 @@ class ParquetDataResource(SecureResource):
             partition_key = self.config.partition_on[0]
         else:
             partitioning = ds.partitioning(
-                schema=pa.schema([("year", pa.int32()), ("month", pa.int32()), ("day", pa.int32())])
+                schema=pa.schema(
+                    [("year", pa.int32()), ("month", pa.int32()), ("day", pa.int32())]
+                )
             )
             partition_key = "year"
 
@@ -348,7 +367,9 @@ class ParquetDataResource(SecureResource):
                 ds.field(partition_key) <= str(end_date)
             )
         else:
-            expression = (ds.field("year") >= start_date.year) & (ds.field("year") <= end_date.year)
+            expression = (ds.field("year") >= start_date.year) & (
+                ds.field("year") <= end_date.year
+            )
 
         fragments = dataset.get_fragments(expression)
         found_files = [self._restore_protocol(fragment.path) for fragment in fragments]
@@ -413,9 +434,7 @@ class ParquetDataResource(SecureResource):
                 return list(fs.find(base_path))
             if hasattr(fs, "glob"):
                 return [
-                    path
-                    for path in fs.glob(f"{base_path.rstrip('/')}/**")
-                    if not path.endswith("/")
+                    path for path in fs.glob(f"{base_path.rstrip('/')}/**") if not path.endswith("/")
                 ]
         except (FileNotFoundError, OSError, pa.ArrowInvalid, pa.ArrowException) as exc:
             if self._is_missing_path_error(exc):
@@ -435,7 +454,7 @@ class ParquetDataResource(SecureResource):
         for segment in path.split("/"):
             if not segment.startswith(marker):
                 continue
-            partition_value = segment[len(marker) :]
+            partition_value = segment[len(marker):]
             try:
                 partition_date = dt.date.fromisoformat(partition_value)
             except ValueError:
@@ -476,51 +495,42 @@ class ParquetDataResource(SecureResource):
         if modified_at is None:
             return False
 
-        now = dt.datetime.now(dt.UTC)
+        now = dt.datetime.now(dt.timezone.utc)
         if modified_at.tzinfo is None:
-            modified_at = modified_at.replace(tzinfo=dt.UTC)
+            modified_at = modified_at.replace(tzinfo=dt.timezone.utc)
         return (now - modified_at) <= dt.timedelta(minutes=self.config.parquet_max_age_minutes)
 
     def _get_file_info(self, path: str) -> dict[str, Any] | None:
         fs = self.require_fs()
+        return self._file_info_provider(fs).info(path)
+
+    def _get_arrow_file_info(self, fs: pafs.FileSystem, path: str) -> dict[str, Any] | None:
+        return self._arrow_file_info_provider(fs).info(path)
+
+    def _get_fsspec_file_info(self, fs: Any, path: str) -> dict[str, Any] | None:
+        return self._fsspec_file_info_provider(fs).info(path)
+
+    def _try_fsspec_modified(self, fs: Any, path: str, original_exc: Exception) -> dict[str, Any] | None:
+        return self._fsspec_file_info_provider(fs)._try_modified(path, original_exc)
+
+    def _file_info_provider(self, fs: Any) -> ArrowFileInfoProvider | FsspecFileInfoProvider:
         if isinstance(fs, pafs.FileSystem):
-            try:
-                info = fs.get_file_info(path)
-            except Exception as exc:
-                if self._is_missing_path_error(exc):
-                    return None
-                raise self._filesystem_runtime_error(
-                    "read parquet file metadata", path, exc
-                ) from exc
-            if getattr(info, "type", None) == pafs.FileType.NotFound:
-                return None
-            payload: dict[str, Any] = {}
-            size = getattr(info, "size", None)
-            if isinstance(size, int):
-                payload["size"] = size
-            modified = getattr(info, "mtime", None)
-            if modified is not None:
-                payload["mtime"] = modified
-            return payload
-        try:
-            return fs.info(path)
-        except Exception as exc:
-            if self._is_missing_path_error(exc):
-                return None
-            if hasattr(fs, "modified"):
-                try:
-                    modified = fs.modified(path)
-                except Exception as modified_exc:
-                    if self._is_missing_path_error(modified_exc):
-                        return None
-                    raise self._filesystem_runtime_error(
-                        "read parquet file metadata",
-                        path,
-                        modified_exc,
-                    ) from modified_exc
-                if modified is not None:
-                    return {"mtime": modified}
-            raise self._filesystem_runtime_error("read parquet file metadata", path, exc) from exc
+            return self._arrow_file_info_provider(fs)
+        return self._fsspec_file_info_provider(fs)
+
+    def _arrow_file_info_provider(self, fs: pafs.FileSystem) -> ArrowFileInfoProvider:
+        return ArrowFileInfoProvider(
+            fs,
+            is_missing_path_error=self._is_missing_path_error,
+            filesystem_runtime_error=self._filesystem_runtime_error,
+        )
+
+    def _fsspec_file_info_provider(self, fs: Any) -> FsspecFileInfoProvider:
+        return FsspecFileInfoProvider(
+            fs,
+            is_missing_path_error=self._is_missing_path_error,
+            filesystem_runtime_error=self._filesystem_runtime_error,
+        )
 
     @staticmethod
     def _get_mtime_from_info(info: dict[str, Any]) -> dt.datetime | None:
@@ -528,13 +538,101 @@ class ParquetDataResource(SecureResource):
         if isinstance(modified, dt.datetime):
             return modified
         if isinstance(modified, (int, float)):
-            return dt.datetime.fromtimestamp(modified, tz=dt.UTC)
+            return dt.datetime.fromtimestamp(modified, tz=dt.timezone.utc)
         if isinstance(modified, str):
             try:
                 return dt.datetime.fromisoformat(modified)
             except ValueError:
                 return None
         return None
+
+    def _dataset_schema(self) -> pa.Schema | None:
+        """Return the Arrow schema of the resolved dataset, or ``None`` if unavailable.
+
+        Cached per-instance: the storage schema is stable for a fixed config, and
+        this spares a metadata round-trip on every filtered load.
+        """
+        cached = getattr(self, "_schema_cache", None)
+        if cached is not None:
+            return cached
+        files = self._resolve_files_to_load()
+        if not files:
+            return None
+        try:
+            dataset = ds.dataset(
+                [self._normalized_arrow_load_path(path) for path in files],
+                filesystem=self._arrow_filesystem(),
+                format="parquet",
+            )
+            schema = dataset.schema
+        except (FileNotFoundError, OSError, pa.ArrowInvalid, pa.ArrowException):
+            return None
+        self._schema_cache = schema
+        return schema
+
+    def _coerce_temporal_filters(self, filters: dict[str, Any]) -> dict[str, Any]:
+        """Coerce date/datetime filter values to ISO strings for string-typed columns.
+
+        A ``date``/``datetime`` value compared against a string column (e.g. an
+        ISO-8601 date stored as text) has no PyArrow comparison kernel and would
+        raise ``ArrowNotImplementedError`` on both the pushdown and residual
+        paths. Rewriting the value to its ISO string makes the comparison a
+        (correct) lexicographic string comparison. Columns with a genuine
+        temporal type, and explicitly cast filters, are left untouched.
+        """
+        if not filters:
+            return filters
+        schema = self._dataset_schema()
+        if schema is None:
+            return filters
+        string_fields = {
+            field.name
+            for field in schema
+            if pa.types.is_string(field.type) or pa.types.is_large_string(field.type)
+        }
+        if not string_fields:
+            return filters
+        return self._coerce_mapping(filters, string_fields)
+
+    def _coerce_mapping(
+        self, filters: dict[str, Any], string_fields: set[str]
+    ) -> dict[str, Any]:
+        coerced: dict[str, Any] = {}
+        for key, value in filters.items():
+            if key in {"$and", "$or"} and isinstance(value, (list, tuple)):
+                coerced[key] = [
+                    self._coerce_mapping(sub, string_fields)
+                    if isinstance(sub, dict)
+                    else sub
+                    for sub in value
+                ]
+            elif key == "$not" and isinstance(value, dict):
+                coerced[key] = self._coerce_mapping(value, string_fields)
+            elif str(key).startswith("$"):
+                coerced[key] = value
+            else:
+                field, casting, _op = parse_filter_key(key)
+                if casting is None and field in string_fields:
+                    coerced[key] = self._stringify_temporal(value)
+                else:
+                    coerced[key] = value
+        return coerced
+
+    @staticmethod
+    def _stringify_temporal(value: Any) -> Any:
+        def convert(item: Any) -> Any:
+            # pandas.Timestamp subclasses datetime, so it is handled here too.
+            if isinstance(item, dt.datetime):
+                if item.time() == dt.time(0, 0):
+                    return item.date().isoformat()
+                return item.isoformat()
+            if isinstance(item, dt.date):
+                return item.isoformat()
+            return item
+
+        if isinstance(value, (list, tuple)):
+            return type(value)(convert(item) for item in value)
+        return convert(value)
 
     def _dataset_source(self) -> tuple[str, Any | None]:
         parsed = urlparse(self.parquet_storage_path)
@@ -574,13 +672,10 @@ class ParquetDataResource(SecureResource):
         return str(self._secure_local_path(path))
 
     def _secure_local_path(self, path: str) -> Path:
+        if "\x00" in path:
+            raise ValueError(f"null byte detected in path: {path!r}")
         parsed = urlparse(path)
         local_path = parsed.path if parsed.scheme == "file" else path
-        # Guard against null-byte injection which can truncate paths on some systems.
-        if "\x00" in local_path:
-            raise ValueError(
-                "Path contains a null byte and has been rejected for security reasons."
-            )
         return self.get_secure_path(local_path)
 
     @staticmethod
@@ -598,48 +693,20 @@ class ParquetDataResource(SecureResource):
 
         expression: ds.Expression | None = None
         for field, op, value in filters:
-            clause: ds.Expression
-            if op == "=":
-                clause = ds.field(field) == value
-            elif op == "!=":
-                clause = ds.field(field) != value
-            elif op == ">":
-                clause = ds.field(field) > value
-            elif op == ">=":
-                clause = ds.field(field) >= value
-            elif op == "<":
-                clause = ds.field(field) < value
-            elif op == "<=":
-                clause = ds.field(field) <= value
-            elif op == "in":
-                clause = ds.field(field).isin(value)
-            elif op == "not in":
-                clause = ~ds.field(field).isin(value)
-            else:
-                raise ValueError(f"Unsupported parquet pushdown operator for Arrow load: {op!r}")
+            clause = ParquetDataResource._raw_filter_clause(field, op, value)
             expression = clause if expression is None else expression & clause
         return expression
 
-    def _empty_ddf(self) -> dd.DataFrame:
-        try:
-            fs = self.require_fs()
-            storage_path = self.parquet_storage_path
-            for meta_file in ("_common_metadata", "_metadata"):
-                meta_path = posixpath.join(storage_path, meta_file)
-                try:
-                    if isinstance(fs, pafs.FileSystem):
-                        if fs.get_file_info(meta_path).type != pafs.FileType.File:
-                            continue
-                    elif not fs.exists(meta_path):
-                        continue
-                    schema = pq.read_schema(meta_path, filesystem=fs)
-                    return dd.from_pandas(
-                        pd.DataFrame(columns=schema.names), npartitions=1
-                    )
-                except Exception:
-                    continue
-        except Exception:
-            pass
+    @staticmethod
+    def _raw_filter_clause(field: str, op: str, value: Any) -> ds.Expression:
+        column = ds.field(field)
+        handler = _RAW_FILTER_CLAUSE_DISPATCH.get(op)
+        if handler is None:
+            raise ValueError(f"Unsupported parquet pushdown operator for Arrow load: {op!r}")
+        return handler(column, value)
+
+    @staticmethod
+    def _empty_ddf() -> dd.DataFrame:
         return dd.from_pandas(pd.DataFrame(), npartitions=1)
 
     @staticmethod

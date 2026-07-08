@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import keyword
 import re
-from typing import Any
+from typing import Any, Union
 
-from boti.core import is_valid_dotted_identifier
+from boti.core.security import is_valid_dotted_identifier
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -39,7 +39,7 @@ class SqlAlchemyModelBuilder:
     Delegates dynamic reflection tracking natively to the caching registry.
     """
 
-    def __init__(self, engine: Engine | AsyncEngine, table_name: str, config: BuilderConfig | None = None):
+    def __init__(self, engine: Union[Engine, AsyncEngine], table_name: str, config: BuilderConfig | None = None):
         self.engine = engine
         self.table_name = table_name
         self.config = config or BuilderConfig()

@@ -4,7 +4,7 @@ import logging
 import threading
 from typing import Any
 
-from boti.core import Logger
+from boti.core.logger import Logger
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import create_async_engine

@@ -18,6 +18,7 @@ from boti_data.db import (
     SqlPartitionedLoader,
     SqlPartitionedLoadRequest,
 )
+from boti_data.db.partitioned_planner import SqlPartitionPlanner
 from boti_data.db.partitioned_execution import SqlPartitionExecutor
 from boti_data.db.partitioned_types import MAX_PARTITION_FETCH_CONCURRENCY
 
@@ -242,12 +243,15 @@ def test_partitioned_loader_computes_with_distributed_client(tmp_path):
         ],
     )
 
-    with LocalCluster(
-        n_workers=2,
-        threads_per_worker=1,
-        processes=False,
-        dashboard_address=":0",
-    ) as cluster, Client(cluster):
+    with (
+        LocalCluster(
+            n_workers=2,
+            threads_per_worker=1,
+            processes=False,
+            dashboard_address=":0",
+        ) as cluster,
+        Client(cluster),
+    ):
         with SqlPartitionedLoader(config) as loader:
             frame = loader.load(statement=select(User), model=User, chunk_size=2)
 
@@ -290,18 +294,22 @@ def test_partition_executor_streams_partition_rows_without_fetchall():
 
     meta_dtypes = {"id": "Int64", "status": "string"}
     original = SqlPartitionExecutor.fetch_partition.__globals__["_get_cached_worker_sync_engine"]
-    SqlPartitionExecutor.fetch_partition.__globals__["_get_cached_worker_sync_engine"] = lambda _config: FakeEngine()
+    SqlPartitionExecutor.fetch_partition.__globals__["_get_cached_worker_sync_engine"] = (
+        lambda _config: FakeEngine()
+    )
     try:
         result = SqlPartitionExecutor.fetch_partition(
             config=None,
             gate_key="stream-test",
             max_concurrent_fetches=1,
-            partition=type("Partition", (), {"sql": "SELECT 1", "params": None})(),
+            partition=type("Partition", (), {"sql": "SELECT 1", "params": {}})(),
             meta_dtypes=meta_dtypes,
-            use_arrow=False,
+            use_arrow=True,
         )
     finally:
-        SqlPartitionExecutor.fetch_partition.__globals__["_get_cached_worker_sync_engine"] = original
+        SqlPartitionExecutor.fetch_partition.__globals__["_get_cached_worker_sync_engine"] = (
+            original
+        )
 
     assert result["id"].tolist() == [1, 2, 3]
     assert result["status"].tolist() == ["active", "inactive", "active"]
@@ -310,7 +318,9 @@ def test_partition_executor_streams_partition_rows_without_fetchall():
 def test_align_and_coerce_partition_skips_redundant_validation(monkeypatch):
     monkeypatch.setattr(
         "boti_data.db.partitioned_execution.validate_schema",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("validate_schema should not run")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("validate_schema should not run")
+        ),
         raising=False,
     )
     frame = pd.DataFrame({"id": ["1"], "status": ["active"]})
@@ -322,6 +332,95 @@ def test_align_and_coerce_partition_skips_redundant_validation(monkeypatch):
 
     assert result["id"].tolist() == [1]
     assert result["status"].tolist() == ["active"]
+
+
+def test_estimated_rows_skips_count_query(tmp_path, monkeypatch):
+    config = _create_user_db(
+        tmp_path,
+        [{"id": i, "status": "active", "description": str(i)} for i in range(100)],
+    )
+
+    count_calls = 0
+    original_count = SqlPartitionPlanner.count_rows
+    def _counting(*args: Any, **_kwargs: Any) -> int:
+        nonlocal count_calls
+        count_calls += 1
+        return original_count(*args, **_kwargs)
+
+    monkeypatch.setattr(SqlPartitionPlanner, "count_rows", _counting)
+
+    request = SqlPartitionedLoadRequest(
+        statement=select(User),
+        model=User,
+        chunk_size=50_000,
+        estimated_rows=100,
+    )
+
+    with SqlPartitionedLoader(config) as loader:
+        plan = loader.plan(request=request)
+        frame = loader.load(request=request)
+
+    assert count_calls == 0
+    assert len(plan.partitions) == 1
+    assert plan.total_rows == 100
+    assert frame.compute()["id"].tolist() == list(range(100))
+
+
+def test_estimated_rows_zero_returns_empty_plan(tmp_path, monkeypatch):
+    config = _create_user_db(tmp_path, [{"id": 1, "status": "a", "description": "b"}])
+
+    count_calls = 0
+    original_count = SqlPartitionPlanner.count_rows
+    def _counting(*args: Any, **_kwargs: Any) -> int:
+        nonlocal count_calls
+        count_calls += 1
+        return original_count(*args, **_kwargs)
+
+    monkeypatch.setattr(SqlPartitionPlanner, "count_rows", _counting)
+
+    request = SqlPartitionedLoadRequest(
+        statement=select(User),
+        model=User,
+        chunk_size=50_000,
+        estimated_rows=0,
+    )
+
+    with SqlPartitionedLoader(config) as loader:
+        plan = loader.plan(request=request)
+
+    assert count_calls == 0
+    assert len(plan.partitions) == 0
+    assert plan.total_rows == 0
+
+
+def test_estimated_rows_greater_than_chunk_still_counts(tmp_path, monkeypatch):
+    config = _create_user_db(
+        tmp_path,
+        [{"id": i, "status": "active", "description": str(i)} for i in range(100)],
+    )
+
+    count_calls = 0
+    original_count = SqlPartitionPlanner.count_rows
+    def _counting(*args: Any, **_kwargs: Any) -> int:
+        nonlocal count_calls
+        count_calls += 1
+        return original_count(*args, **_kwargs)
+
+    monkeypatch.setattr(SqlPartitionPlanner, "count_rows", _counting)
+
+    request = SqlPartitionedLoadRequest(
+        statement=select(User),
+        model=User,
+        chunk_size=10,
+        estimated_rows=100,
+    )
+
+    with SqlPartitionedLoader(config) as loader:
+        plan = loader.plan(request=request)
+
+    assert count_calls >= 1
+    assert plan.total_rows == 100
+    assert len(plan.partitions) == 10
 
 
 def test_partitioned_loader_accepts_prevalidated_request(tmp_path, monkeypatch):
@@ -340,7 +439,11 @@ def test_partitioned_loader_accepts_prevalidated_request(tmp_path, monkeypatch):
     monkeypatch.setattr(
         SqlPartitionedLoadRequest,
         "model_validate",
-        classmethod(lambda cls, *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("model_validate should not run"))),
+        classmethod(
+            lambda cls, *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("model_validate should not run")
+            )
+        ),
     )
 
     with SqlPartitionedLoader(config) as loader:

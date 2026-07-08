@@ -4,6 +4,12 @@ Typed catalog for named SQL and filesystem connection profiles.
 
 from __future__ import annotations
 
+__all__ = [
+    "ConnectionCatalog",
+    "LocalS3Profile",
+    "S3Catalog",
+]
+
 import functools
 import re
 import threading
@@ -11,7 +17,7 @@ from pathlib import Path
 
 import fsspec
 import pyarrow.fs as pafs
-from boti.core import FilesystemAdapter, FilesystemConfig, create_filesystem
+from boti.core.filesystem import FilesystemAdapter, FilesystemConfig, create_filesystem
 
 from boti_data.db.sql_config import SqlDatabaseConfig
 from boti_data.db.sql_resource import AsyncSqlDatabaseResource, SqlDatabaseResource
@@ -180,5 +186,4 @@ class S3Catalog:
         self.adapter.invalidate()
 
 
-class LocalS3Profile(S3Catalog):
-    """Backward-compatible alias for the legacy local S3 profile helper."""
+LocalS3Profile = S3Catalog

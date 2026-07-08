@@ -55,6 +55,7 @@ class DatacubeResource:
             return request
         if hasattr(request, "model_copy"):
             return request.model_copy(update={"cube": self.config.default_cube})
+        request.cube = self.config.default_cube
         return request
 
     def _prepare_request(self, request: Any) -> Any:

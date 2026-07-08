@@ -4,6 +4,17 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+__all__ = [
+    "DataFrameLike",
+    "SchemaValidationError",
+    "normalize_dtype_alias",
+    "normalize_schema_map",
+    "infer_schema_map",
+    "apply_schema_map",
+    "validate_schema",
+    "align_frames_for_join",
+]
+
 import dask.dataframe as dd
 import pandas as pd
 import pyarrow as pa
@@ -127,40 +138,43 @@ def _coerce_boolean_partition(series: pd.Series) -> pd.Series:
     return pd.Series(coerced, index=series.index, dtype="boolean")
 
 
+def _coerce_dt_utc(series: Any, is_dask: bool) -> Any:
+    fn = dd.to_datetime if is_dask else pd.to_datetime
+    return fn(series, errors="coerce", utc=True)
+
+
+def _coerce_dt(series: Any, is_dask: bool) -> Any:
+    if is_dask:
+        converted = dd.to_datetime(series, errors="coerce")
+        return converted.map_partitions(
+            _drop_timezone_partition,
+            meta=(series.name, "datetime64[ns]"),
+        )
+    return _drop_timezone_partition(pd.to_datetime(series, errors="coerce"))
+
+
+def _coerce_numeric(series: Any, target_dtype: str, is_dask: bool) -> Any:
+    fn = dd.to_numeric if is_dask else pd.to_numeric
+    return fn(series, errors="coerce").astype(target_dtype)
+
+
 def _coerce_series(series: Any, target_dtype: str, *, is_dask: bool) -> Any:
     if target_dtype == "datetime64[ns, UTC]":
-        if is_dask:
-            return dd.to_datetime(series, errors="coerce", utc=True)
-        return pd.to_datetime(series, errors="coerce", utc=True)
-
+        return _coerce_dt_utc(series, is_dask)
     if target_dtype == "datetime64[ns]":
-        if is_dask:
-            converted = dd.to_datetime(series, errors="coerce")
-            return converted.map_partitions(
-                _drop_timezone_partition,
-                meta=(series.name, "datetime64[ns]"),
-            )
-        return _drop_timezone_partition(pd.to_datetime(series, errors="coerce"))
-
+        return _coerce_dt(series, is_dask)
     if target_dtype in {"Int64", "Int32", "Float64"}:
-        if is_dask:
-            return dd.to_numeric(series, errors="coerce").astype(target_dtype)
-        return pd.to_numeric(series, errors="coerce").astype(target_dtype)
-
+        return _coerce_numeric(series, target_dtype, is_dask)
     if target_dtype == "boolean":
-        if is_dask:
-            return series.map_partitions(
-                _coerce_boolean_partition,
-                meta=(series.name, "boolean"),
-            )
-        return _coerce_boolean_partition(series)
-
+        return (
+            series.map_partitions(_coerce_boolean_partition, meta=(series.name, "boolean"))
+            if is_dask
+            else _coerce_boolean_partition(series)
+        )
     if target_dtype == "string":
         return series.astype("string")
-
     if target_dtype == "category":
         return series.astype("category")
-
     return series.astype(target_dtype)
 
 

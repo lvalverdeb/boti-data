@@ -5,7 +5,7 @@ from typing import Any, ClassVar
 
 import dask.dataframe as dd
 import pyarrow as pa
-from boti.core import Logger
+from boti.core.logger import Logger
 
 from . import arrow_kernels
 from .expressions import (
@@ -18,6 +18,7 @@ from .expressions import (
     ParquetFilters,
     TrueExpr,
 )
+from .parquet_compiler import ParquetFilterCompiler
 from .utils import (
     COMPARISON_OPERATORS,
     DATE_OPERATORS,
@@ -41,6 +42,7 @@ class FilterHandler:
     COMPARISON_OPERATORS: ClassVar[list[str]] = COMPARISON_OPERATORS
     DT_OPERATORS: ClassVar[list[str]] = DT_OPERATORS
     DATE_OPERATORS: ClassVar[list[str]] = DATE_OPERATORS
+    PARQUET_OP_MAP: ClassVar[dict[str, str]] = ParquetFilterCompiler.OPERATOR_MAP
 
     _parse_filter_key = staticmethod(parse_filter_key)
     _parse_filter_value = staticmethod(parse_filter_value)
@@ -62,8 +64,7 @@ class FilterHandler:
     def _pushdown_ops(self) -> set[str]:
         base_ops = pushdown_ops()
         if self.backend == "arrow":
-            # Arrow can push down more operations via compute kernels
-            return base_ops | arrow_kernels.ARROW_PUSHDOWN_OPS | arrow_kernels.ARROW_RESIDUAL_OPS
+            return base_ops | arrow_kernels.ARROW_PUSHDOWN_OPS
         return base_ops
 
     def split_pushdown_and_residual(
@@ -78,80 +79,83 @@ class FilterHandler:
         residual_filters: dict[str, Any] = {}
 
         for key, value in filters.items():
-            if str(key).startswith("$"):
-                # For Arrow, boolean operators go to residual (handled by arrow_kernels)
-                if self.backend == "arrow":
-                    residual_filters[key] = value
-                else:
-                    residual_filters[key] = value
-                continue
-            field, casting, op = self._parse_filter_key(key)
-
-            if casting == "date" and op in {"gt", "gte", "lt", "lte", "range"}:
-                rewritten = self._rewrite_date_logic(op, value)
-                for new_op, new_value in rewritten.items():
-                    pushdown_candidates[f"{field}__{new_op}"] = new_value
-                continue
-
-            if casting is not None:
-                residual_filters[key] = value
-                continue
-
-            if op in self._pushdown_ops():
-                pushdown_candidates[key] = value
-                if self.backend == "dask" and op in {"in", "not_in"}:
-                    residual_filters[key] = value
-            else:
-                residual_filters[key] = value
+            self._classify_pushdown_filter(
+                key,
+                value,
+                pushdown_candidates=pushdown_candidates,
+                residual_filters=residual_filters,
+            )
 
         parquet_filters = self.to_parquet_filters(pushdown_candidates)
         return parquet_filters, residual_filters
+
+    def _classify_pushdown_filter(
+        self,
+        key: str,
+        value: Any,
+        *,
+        pushdown_candidates: dict[str, Any],
+        residual_filters: dict[str, Any],
+    ) -> None:
+        if str(key).startswith("$"):
+            residual_filters[key] = value
+            return
+
+        field, casting, op = self._parse_filter_key(key)
+        if self._append_date_pushdown(field, casting, op, value, pushdown_candidates):
+            return
+
+        if casting is not None:
+            residual_filters[key] = value
+            return
+
+        if op in self._pushdown_ops():
+            pushdown_candidates[key] = value
+            if self.backend == "dask" and op in {"in", "not_in"}:
+                residual_filters[key] = value
+            return
+
+        residual_filters[key] = value
+
+    def _append_date_pushdown(
+        self,
+        field: str,
+        casting: str | None,
+        op: str,
+        value: Any,
+        output: dict[str, Any],
+    ) -> bool:
+        if casting != "date" or op not in {"gt", "gte", "lt", "lte", "range"}:
+            return False
+        try:
+            rewritten = self._rewrite_date_logic(op, value)
+        except (ValueError, TypeError):
+            return False
+        for new_op, new_value in rewritten.items():
+            output[f"{field}__{new_op}"] = new_value
+        return True
 
     def to_parquet_filters(
         self,
         filters: dict[str, Any] | None = None,
     ) -> ParquetFilterGroup:
-        filters = filters or {}
-        output: list[tuple[str, str, Any]] = []
+        return self._parquet_filter_compiler().compile(filters)
 
-        for key, value in filters.items():
-            if str(key).startswith("$"):
-                continue
-            field, casting, op = self._parse_filter_key(key)
+    def _append_parquet_filter(
+        self,
+        output: list[tuple[str, str, Any]],
+        field: str,
+        op: str,
+        value: Any,
+    ) -> None:
+        output.extend(ParquetFilterCompiler.compile_parsed(field, op, value))
 
-            if casting is not None or op not in self._pushdown_ops():
-                continue
-
-            parsed_value = self._parse_filter_value(casting, value)
-
-            if op == "range":
-                if isinstance(parsed_value, (list, tuple)) and len(parsed_value) == 2:
-                    lower_bound, upper_bound = parsed_value
-                    output.extend([(field, ">=", lower_bound), (field, "<=", upper_bound)])
-                continue
-
-            if op == "exact":
-                output.append((field, "=", parsed_value))
-            elif op == "gt":
-                output.append((field, ">", parsed_value))
-            elif op == "gte":
-                output.append((field, ">=", parsed_value))
-            elif op == "lt":
-                output.append((field, "<", parsed_value))
-            elif op == "lte":
-                output.append((field, "<=", parsed_value))
-            elif op == "not_exact":
-                output.append((field, "!=", parsed_value))
-            elif op == "in":
-                safe_value = list(parsed_value) if not isinstance(parsed_value, list) else parsed_value
-                if safe_value:
-                    output.append((field, "in", safe_value))
-            elif op == "not_in":
-                safe_value = list(parsed_value) if not isinstance(parsed_value, list) else parsed_value
-                if safe_value:
-                    output.append((field, "not in", safe_value))
-
-        return output
+    def _parquet_filter_compiler(self) -> ParquetFilterCompiler:
+        return ParquetFilterCompiler(
+            parse_key=self._parse_filter_key,
+            parse_value=self._parse_filter_value,
+            pushdown_ops=self._pushdown_ops,
+        )
 
     @staticmethod
     def _combine_and(exprs: list[Expr]) -> Expr:

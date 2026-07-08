@@ -9,9 +9,7 @@ from boti_data.db.sql_config import SqlDatabaseConfig
 from boti_data.db.sql_resource import SqlDatabaseResource
 from boti_data.parquet.resource import ParquetDataConfig, ParquetDataResource
 
-from .sql_guard import validate_raw_sql_statement
-
-BackendName = Literal["sqlalchemy", "parquet", "datacube"]
+BackendName = str
 BackendConfig = Union[SqlDatabaseConfig, ParquetDataConfig, DatacubeConfig]
 BackendResource = Union[SqlDatabaseResource, ParquetDataResource, DatacubeResource]
 ResolvedReturnType = Literal["pandas", "arrow", "dask", "polars"]
@@ -76,10 +74,56 @@ class DataFrameOptions(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     sort_field: str | None = None
-    duplicate_expr: str | list[str] | None = None
-    duplicate_keep: Literal["first", "last"] | bool = "last"
-    group_by_expr: str | list[str] | None = None
-    group_expr: str | dict[str, str] | None = None
+    duplicate_expr: Union[str, list[str]] | None = None
+    duplicate_keep: Union[Literal["first", "last"], bool] = "last"
+    group_by_expr: Union[str, list[str]] | None = None
+    group_expr: Union[str, dict[str, str]] | None = None
+
+
+class NormalizedFilters(BaseModel):
+    """Result of normalizing configured-mode filters into control + filter buckets."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    control: dict[str, Any] = Field(default_factory=dict)
+    filters: dict[str, Any] = Field(default_factory=dict)
+
+
+class ConfiguredRequest(BaseModel):
+    """Typed result of building a configured-mode SQL request.
+
+    Carries the reflected SA model, prepared statement, DB-translated filters,
+    control kwargs, and resolved fieldnames so callers don't need to recompute
+    fieldnames from the control dict.
+    """
+
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+    model: Any
+    statement: Any
+    db_filters: dict[str, Any] = Field(default_factory=dict)
+    db_columns: list[str] | None = None
+    control: dict[str, Any] = Field(default_factory=dict)
+    configured_fieldnames: tuple[str, Any] | None = None
+
+
+class PartitionedLoadConfig(BaseModel):
+    """Typed configuration for building a partitioned SQL load request."""
+
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+    statement: Any
+    model: Any
+    filters: dict[str, Any] = Field(default_factory=dict)
+    partitioned: bool = True
+    as_pandas: bool = False
+    limit: int | None = None
+    chunk_size: int | None = None
+    max_concurrent_fetches: int | None = None
+    partition_strategy: str | None = None
+    partition_column: str | None = None
+    order_column: str | None = None
+    diagnostics: bool = False
 
 
 class SqlLoadRequest(BaseModel):
@@ -97,28 +141,37 @@ class SqlLoadRequest(BaseModel):
     as_pandas: bool = False
     diagnostics: bool = False
     return_type: ResolvedReturnType = "pandas"
-    allow_raw_sql: bool = False
 
     @model_validator(mode="after")
     def validate_request(self) -> SqlLoadRequest:
+        self._validate_source_selection()
+        self._validate_projection_requirements()
+        self._validate_filter_requirements()
+        self._validate_return_mode()
+        return self
+
+    def _validate_source_selection(self) -> None:
         if not self.sql and self.statement is None:
             raise ValueError("Either sql or statement must be provided.")
         if self.sql and self.statement is not None:
             raise ValueError("Provide either sql or statement, not both.")
-        if self.sql:
-            validate_raw_sql_statement(sql=self.sql, allow_raw_sql=self.allow_raw_sql)
+
+    def _validate_projection_requirements(self) -> None:
         if self.columns:
             if self.statement is None:
                 raise ValueError("columns require a SQLAlchemy statement input.")
             if self.model is None:
                 raise ValueError("columns require model for SQLAlchemy column resolution.")
+
+    def _validate_filter_requirements(self) -> None:
         if self.filters:
             if self.statement is None:
                 raise ValueError("filters require a SQLAlchemy statement input.")
             if self.model is None:
                 raise ValueError("filters require model for SQLAlchemy column resolution.")
+
+    def _validate_return_mode(self) -> None:
         if self.return_type == "dask":
-            # Dask return type requires statement+model (lazy path)
             if self.statement is None or self.model is None:
                 raise ValueError(
                     "return_type='dask' requires statement and model for lazy SQL path."
@@ -128,7 +181,6 @@ class SqlLoadRequest(BaseModel):
                 "SqlLoadRequest eager return types require as_pandas=True. Use DataGateway.load(...) "
                 "with statement and model for the default lazy SQL path, or set as_pandas=True for eager convenience reads."
             )
-        return self
 
 
 class ParquetLoadRequest(BaseModel):
@@ -154,18 +206,3 @@ class ParquetLoadRequest(BaseModel):
                 "Use as_pandas=True, return_type='arrow', or apply Dask head()/partitions explicitly."
             )
         return self
-
-
-class DatacubeLoadRequest(BaseModel):
-    """Validated load request for datacube-backed gateway usage."""
-
-    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
-
-    cube: str | None = None
-    filters: dict[str, Any] = Field(default_factory=dict)
-    params: dict[str, Any] = Field(default_factory=dict)
-    limit: int | None = Field(default=None, ge=0)
-    columns: list[str] | None = None
-    diagnostics: bool = False
-    return_type: ResolvedReturnType = "pandas"
-

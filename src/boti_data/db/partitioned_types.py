@@ -88,14 +88,25 @@ class SqlPartitionedLoadRequest(BaseModel):
     diagnostics: bool = False
     as_pandas: bool = False
     use_arrow: bool = True
+    estimated_rows: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_request(self) -> SqlPartitionedLoadRequest:
+        self._validate_partitioned_flag()
+        self._validate_statement_type()
+        self._validate_no_clauses_in_statement()
+        self._validate_strategy_config()
+        return self
+
+    def _validate_partitioned_flag(self) -> None:
         if self.partitioned is not True:
             raise ValueError("partitioned SQL requests must set partitioned=True.")
+
+    def _validate_statement_type(self) -> None:
         if not isinstance(self.statement, Select):
             raise ValueError("statement must be a SQLAlchemy Select object.")
 
+    def _validate_no_clauses_in_statement(self) -> None:
         if getattr(self.statement, "_limit_clause", None) is not None:
             raise ValueError(
                 "partitioned SQL statements must not include LIMIT; use request limit instead."
@@ -109,16 +120,21 @@ class SqlPartitionedLoadRequest(BaseModel):
                 "partitioned SQL statements must not include ORDER BY; use order_column instead."
             )
 
+    def _validate_strategy_config(self) -> None:
         if self.partition_strategy == "range":
-            if not self.partition_column:
-                raise ValueError("partition_strategy='range' requires partition_column.")
-            _resolve_model_column(self.model, self.partition_column)
-            if self.limit is not None:
-                raise ValueError(
-                    "range partitioning does not support request limit; use offset partitioning instead."
-                )
+            self._validate_range_strategy()
         else:
-            order_column = self.order_column or _infer_primary_key_name(self.model)
-            _resolve_model_column(self.model, order_column)
+            self._validate_offset_strategy()
 
-        return self
+    def _validate_range_strategy(self) -> None:
+        if not self.partition_column:
+            raise ValueError("partition_strategy='range' requires partition_column.")
+        _resolve_model_column(self.model, self.partition_column)
+        if self.limit is not None:
+            raise ValueError(
+                "range partitioning does not support request limit; use offset partitioning instead."
+            )
+
+    def _validate_offset_strategy(self) -> None:
+        order_column = self.order_column or _infer_primary_key_name(self.model)
+        _resolve_model_column(self.model, order_column)

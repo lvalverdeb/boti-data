@@ -15,8 +15,8 @@ from boti.core import ResourceConfig, SecureResource
 from boti_dask import safe_persist
 from pydantic import Field, field_validator
 
+from boti_data import ParquetReader
 from boti_data.parquet import ParquetDataConfig
-from boti_data.parquet_reader import ParquetReader
 
 FrameResult: TypeAlias = Union[pd.DataFrame, dd.DataFrame, pa.Table, pl.DataFrame]
 ParquetDestination: TypeAlias = Union[ParquetReader, ParquetDataConfig, Mapping[str, Any]]
@@ -26,7 +26,9 @@ def to_dask_frame(frame: FrameResult) -> dd.DataFrame:
     if isinstance(frame, dd.DataFrame):
         return frame
     if isinstance(frame, pd.DataFrame):
-        return dd.from_pandas(frame, npartitions=max(1, len(frame) or 1))
+        rows = len(frame) or 1
+        npartitions = max(1, rows // 50_000 + 1)
+        return dd.from_pandas(frame, npartitions=npartitions)
     if isinstance(frame, pa.Table):
         return dd.from_pandas(frame.to_pandas(), npartitions=1)
     if isinstance(frame, pl.DataFrame):

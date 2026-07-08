@@ -4,59 +4,8 @@ import datetime
 import functools
 import math
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from typing import Any
-
-# ---------------------------------------------------------------------------
-# ReDoS guard
-# ---------------------------------------------------------------------------
-
-# Maximum pattern length accepted for regex/iregex filters.
-_MAX_REGEX_PATTERN_LENGTH: int = 500
-
-# Detects structurally dangerous patterns:
-#   • Nested quantifiers on a group:  (X+)+  (X*)+ etc.
-#   • Quantified alternation group: (a|b)+ or similar with embedded quantifiers
-_DANGEROUS_NESTED_QUANTIFIER_RE = re.compile(
-    r"\([^()]*[+*][^()]*\)[+*{]"
-    r"|"
-    r"\([^()]+\)\{"
-)
-
-
-def validate_regex_pattern(pattern: str, *, max_length: int = _MAX_REGEX_PATTERN_LENGTH) -> None:
-    """Validate a user-supplied regex pattern for safety before passing to any engine.
-
-    Raises:
-        ValueError: If the pattern exceeds *max_length*, is syntactically invalid,
-            or contains constructs known to cause catastrophic backtracking.
-    """
-    # Rust regex validator is deprecated; always fall back to Python validation.
-    pass
-
-    if len(pattern) > max_length:
-        raise ValueError(
-            f"Regex pattern is too long ({len(pattern)} chars); "
-            f"maximum allowed is {max_length}."
-        )
-    try:
-        re.compile(pattern)
-    except re.error as exc:
-        raise ValueError(f"Invalid regex pattern: {exc}") from exc
-
-    if _DANGEROUS_NESTED_QUANTIFIER_RE.search(pattern):
-        raise ValueError(
-            "Regex pattern contains nested quantifiers that may cause "
-            "catastrophic backtracking and has been rejected for safety. "
-            "Simplify the pattern to avoid constructs like (X+)+ or (X*)* ."
-        )
-
-
-def _validated_regex(value: Any) -> str:
-    """Validate and return the regex pattern string; raises ValueError on unsafe input."""
-    pattern = str(value)
-    validate_regex_pattern(pattern)
-    return pattern
 
 import dask.dataframe as dd
 import pandas as pd
@@ -91,42 +40,61 @@ DT_OPERATORS = ["date", "time"]
 DATE_OPERATORS = ["year", "month", "day", "hour", "minute", "second", "week_day"]
 
 
+_RE_NESTED_QUANTIFIER = re.compile(r"\([^)]*[+*?}{]\)[+*?{]")
+
+
+def validate_regex_pattern(pattern: str) -> None:
+    if len(pattern) > 500:
+        raise ValueError(
+            f"Regex pattern is too long ({len(pattern)} chars, max 500)."
+        )
+    try:
+        re.compile(pattern)
+    except re.error as exc:
+        raise ValueError(f"Invalid regex pattern: {exc}") from exc
+    if _RE_NESTED_QUANTIFIER.search(pattern):
+        raise ValueError(
+            "Regex pattern contains nested quantifiers which may cause "
+            "catastrophic backtracking (ReDoS)."
+        )
+
+
 def pushdown_ops() -> set[str]:
     return {"exact", "gt", "gte", "lt", "lte", "in", "range", "not_exact", "not_in"}
+
+
+def _normalize_op(op: str) -> str:
+    if op == "ne":
+        return "not_exact"
+    if op == "nin":
+        return "not_in"
+    return op
+
+
+def _parse_3part_key(parts: list[str]) -> tuple[str | None, str]:
+    if parts[1] == "not":
+        return None, _normalize_op(f"not_{parts[2]}")
+    return parts[1], _normalize_op(parts[2])
+
+
+def _parse_2part_key(second: str) -> tuple[str | None, str]:
+    if second in COMPARISON_OPERATORS:
+        return None, second
+    if second in DT_OPERATORS + DATE_OPERATORS:
+        return second, "exact"
+    return None, _normalize_op(second)
 
 
 def parse_filter_key(key: str) -> tuple[str, str | None, str]:
     parts = key.split("__")
     field_name = parts[0]
-    casting = None
-    operation = "exact"
-
     if len(parts) == 3:
-        if parts[1] == "not":
-            operation = f"not_{parts[2]}"
-        else:
-            casting = parts[1]
-            operation = parts[2]
-
-        if operation == "ne":
-            operation = "not_exact"
-        if operation == "nin":
-            operation = "not_in"
-
-    elif len(parts) == 2:
-        second = parts[1]
-        if second == "ne":
-            operation = "not_exact"
-        elif second == "nin":
-            operation = "not_in"
-        elif second in COMPARISON_OPERATORS:
-            operation = second
-        elif second in DT_OPERATORS + DATE_OPERATORS:
-            casting = second
-        else:
-            operation = second
-
-    return field_name, casting, operation
+        casting, operation = _parse_3part_key(parts)
+        return field_name, casting, operation
+    if len(parts) == 2:
+        casting, operation = _parse_2part_key(parts[1])
+        return field_name, casting, operation
+    return field_name, None, "exact"
 
 
 def time_to_seconds(value: Any) -> int:
@@ -265,7 +233,6 @@ def escape_like_pattern(value: Any) -> str:
 
 def regex_sqlalchemy(column: Any, value: Any, *, case_insensitive: bool = False) -> Any:
     pattern = str(value)
-    validate_regex_pattern(pattern)
     if case_insensitive:
         return func.lower(cast(column, String)).regexp_match(pattern.lower())
     return column.regexp_match(pattern)
@@ -311,22 +278,19 @@ def operation_map_dask() -> dict[str, Any]:
         "startswith": lambda col, val: as_str(col).str.startswith(val, na=False),
         "endswith": lambda col, val: as_str(col).str.endswith(val, na=False),
         "not_contains": lambda col, val: ~as_str(col).str.contains(val, regex=True, na=False),
-        "regex": lambda col, val: as_str(col).str.contains(_validated_regex(val), regex=True, na=False),
+        "regex": lambda col, val: as_str(col).str.contains(val, regex=True, na=False),
         "icontains": lambda col, val: as_str(col).str.contains(val, case=False, regex=True, na=False),
         "istartswith": lambda col, val: as_str(col).str.lower().str.startswith(str(val).lower(), na=False),
         "iendswith": lambda col, val: as_str(col).str.lower().str.endswith(str(val).lower(), na=False),
         "iexact": lambda col, val: as_str(col).str.lower() == str(val).lower(),
-        "iregex": lambda col, val: as_str(col).str.contains(_validated_regex(val), case=False, regex=True, na=False),
+        "iregex": lambda col, val: as_str(col).str.contains(val, case=False, regex=True, na=False),
         "isnull": lambda col, val: col.isnull() if val else col.notnull(),
         "not_exact": lambda col, val: col != val,
     }
 
 
 def as_str(column: Any) -> Any:
-    # Do NOT fill NA: downstream string ops use na=False, and keeping NA ensures
-    # NULL rows never match non-NULL filter values (filling "" caused iexact("") to
-    # match NULL rows and NULL join keys to silently match empty-string keys).
-    return column.astype("string")
+    return column.astype("string").fillna("")
 
 
 def strip_tz(column: Any) -> Any:
@@ -348,30 +312,66 @@ def apply_isin(column: Any, value: Any, negated: bool = False) -> Any:
     return ~mask if negated else mask
 
 
+def _build_in_clauses(
+    column: Any,
+    normalized_values: list[Any],
+    has_null: bool,
+    *,
+    negated: bool,
+) -> list[Any]:
+    clauses: list[Any] = []
+    if normalized_values:
+        clauses.append(~column.in_(normalized_values) if negated else column.in_(normalized_values))
+    if has_null:
+        clauses.append(column.is_not(None) if negated else column.is_(None))
+    return clauses
+
+
 def apply_in_sqlalchemy(column: Any, value: Any, *, negated: bool) -> Any:
     normalized_values, has_null = normalize_in_filter_values(value)
     if negated:
         if not normalized_values and not has_null:
             return true()
-        clauses: list[Any] = []
-        if normalized_values:
-            clauses.append(~column.in_(normalized_values))
-        if has_null:
-            clauses.append(column.is_not(None))
+        clauses = _build_in_clauses(column, normalized_values, has_null, negated=True)
         if len(clauses) == 1:
             return clauses[0]
         return and_(*clauses)
 
     if not normalized_values and not has_null:
         return false()
-    clauses = []
-    if normalized_values:
-        clauses.append(column.in_(normalized_values))
-    if has_null:
-        clauses.append(column.is_(None))
+    clauses = _build_in_clauses(column, normalized_values, has_null, negated=False)
     if len(clauses) == 1:
         return clauses[0]
     return or_(*clauses)
+
+
+def _suggest_walk_filters(
+    node: Mapping[str, Any],
+    *,
+    chunk_size: int = 900,
+    max_concurrency: int = 8,
+) -> Iterator[dict[str, Any]]:
+    for key, value in node.items():
+        if str(key).startswith("$"):
+            items = value if isinstance(value, list) else [value]
+            for sub in items:
+                if isinstance(sub, Mapping):
+                    yield from _suggest_walk_filters(sub, chunk_size=chunk_size, max_concurrency=max_concurrency)
+            continue
+        _, _, op = parse_filter_key(str(key))
+        if op != "in":
+            continue
+        normalized_values, _ = normalize_in_filter_values(value)
+        if len(normalized_values) <= chunk_size:
+            continue
+        chunk_count = math.ceil(len(normalized_values) / chunk_size)
+        yield {
+            "filter_key": key,
+            "value_count": len(normalized_values),
+            "in_chunk_size": chunk_size,
+            "chunk_count": chunk_count,
+            "in_chunk_concurrency": max(1, min(max_concurrency, chunk_count)),
+        }
 
 
 def suggest_in_filter_chunking(
@@ -381,37 +381,9 @@ def suggest_in_filter_chunking(
     max_concurrency: int = 8,
 ) -> dict[str, Any] | None:
     best: dict[str, Any] | None = None
-
-    def _visit(node: Mapping[str, Any]) -> None:
-        nonlocal best
-        for key, value in node.items():
-            if str(key).startswith("$"):
-                if isinstance(value, list):
-                    for sub in value:
-                        if isinstance(sub, Mapping):
-                            _visit(sub)
-                elif isinstance(value, Mapping):
-                    _visit(value)
-                continue
-            _, _, op = parse_filter_key(str(key))
-            if op != "in":
-                continue
-            normalized_values, _ = normalize_in_filter_values(value)
-            value_count = len(normalized_values)
-            if value_count <= chunk_size:
-                continue
-            chunk_count = math.ceil(value_count / chunk_size)
-            suggestion = {
-                "filter_key": key,
-                "value_count": value_count,
-                "in_chunk_size": chunk_size,
-                "chunk_count": chunk_count,
-                "in_chunk_concurrency": max(1, min(max_concurrency, chunk_count)),
-            }
-            if best is None or suggestion["value_count"] > best["value_count"]:
-                best = suggestion
-
-    _visit(filters)
+    for suggestion in _suggest_walk_filters(filters, chunk_size=chunk_size, max_concurrency=max_concurrency):
+        if best is None or suggestion["value_count"] > best["value_count"]:
+            best = suggestion
     return best
 
 
@@ -439,29 +411,25 @@ def normalize_in_filter_values(value: Any) -> tuple[list[Any], bool]:
     return normalized, has_null
 
 
+def _try_to_list(value: Any) -> list[Any] | None:
+    for attr in ("to_list", "tolist"):
+        fn = getattr(value, attr, None)
+        if callable(fn) and not isinstance(value, (str, bytes)):
+            try:
+                result = fn()
+                if isinstance(result, (list, tuple)):
+                    return list(result)
+            except Exception:
+                pass
+    return None
+
+
 def _coerce_in_values(value: Any) -> list[Any]:
-    if isinstance(value, list):
-        return value
-    if isinstance(value, tuple):
+    if isinstance(value, (list, tuple, set, frozenset, pd.Index, pd.Series)):
         return list(value)
-    if isinstance(value, (set, frozenset, pd.Index, pd.Series)):
-        return list(value)
-    to_list = getattr(value, "to_list", None)
-    if callable(to_list) and not isinstance(value, (str, bytes)):
-        try:
-            return list(to_list())
-        except Exception:
-            pass
-    tolist = getattr(value, "tolist", None)
-    if callable(tolist) and not isinstance(value, (str, bytes)):
-        try:
-            result = tolist()
-            if isinstance(result, list):
-                return result
-            if isinstance(result, tuple):
-                return list(result)
-        except Exception:
-            pass
+    result = _try_to_list(value)
+    if result is not None:
+        return result
     if _is_non_string_iterable(value):
         return list(value)
     return [value]
@@ -495,21 +463,12 @@ def align_in_types(column: Any, value: Any) -> tuple[Any, list[Any]]:
     kind = getattr(getattr(column, "dtype", None), "kind", None)
     if kind in ("i", "u"):
         try:
-            # Preserve None/NA as-is; Dask isin handles nulls natively.
-            coerced = [None if _is_null_scalar(v) else int(v) for v in values]
-            return column.astype("Int64"), coerced
-        except (ValueError, TypeError) as exc:
-            raise TypeError(
-                f"IN filter values {values!r} cannot be coerced to integer "
-                f"for an integer column: {exc}"
-            ) from exc
+            return column.astype("Int64"), [int(item) for item in values]
+        except Exception:
+            pass
     if kind in ("f",):
         try:
-            coerced = [None if _is_null_scalar(v) else float(v) for v in values]
-            return column.astype("float64"), coerced
-        except (ValueError, TypeError) as exc:
-            raise TypeError(
-                f"IN filter values {values!r} cannot be coerced to float "
-                f"for a float column: {exc}"
-            ) from exc
+            return column.astype("float64"), [float(item) for item in values]
+        except Exception:
+            pass
     return as_str(column), [str(item) for item in values]

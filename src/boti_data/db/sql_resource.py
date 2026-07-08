@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import asyncio
-import threading
 from typing import Any
 
-from boti.core import Logger, ManagedResource
+from boti.core.logger import Logger
+from boti.core.managed_resource import ManagedResource
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -130,30 +129,11 @@ class AsyncSqlDatabaseResource:
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
         self._engine_key: tuple | None = None
         self._is_open = False
-        self._is_closed = False
-        self._closing = False
-        self._state_lock = threading.RLock()
-        self._aclose_lock = asyncio.Lock()
 
     def _get_engine_key(self) -> tuple:
         return _build_async_engine_key(self.config)
 
-    def _assert_not_closed(self) -> None:
-        with self._state_lock:
-            if self._is_closed or self._closing:
-                raise RuntimeError(f"{self.__class__.__name__} is closed")
-
-    @property
-    def closed(self) -> bool:
-        with self._state_lock:
-            return self._is_closed
-
     async def __aenter__(self) -> AsyncSqlDatabaseResource:
-        self._assert_not_closed()
-        with self._state_lock:
-            if self._is_open:
-                return self
-
         connection_url = _normalize_connection_url(self.config.connection_url.get_secret_value())
         parsed = _validate_async_driver_url(connection_url)
         ensure_greenlet_available()
@@ -169,57 +149,31 @@ class AsyncSqlDatabaseResource:
         if self.config.query_only and not reused:
             _configure_query_only_engine(engine.sync_engine, parsed)
 
-        with self._state_lock:
-            if self._is_closed or self._closing:
-                # Resource was closed while connecting; release the engine immediately.
-                key = self._engine_key
-            else:
-                key = None
-                self._engine = engine
-                self._engine_view = engine
-                self._session_factory = async_sessionmaker(
-                    bind=self._engine,
-                    expire_on_commit=False,
-                    class_=ReadOnlyAsyncSession if self.config.query_only else AsyncSession,
-                )
-                self._is_open = True
-                return self
-
-        if key is not None:
-            await EngineRegistry.release_async(key, logger=self.logger)
-        raise RuntimeError(f"{self.__class__.__name__} is closed")
+        self._engine = engine
+        self._engine_view = engine
+        self._session_factory = async_sessionmaker(
+            bind=self._engine,
+            expire_on_commit=False,
+            class_=ReadOnlyAsyncSession if self.config.query_only else AsyncSession,
+        )
+        self._is_open = True
+        return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self.aclose(suppress_errors=exc_type is not None)
+        await self.aclose()
 
-    async def aclose(self, *, suppress_errors: bool = False) -> None:
-        async with self._aclose_lock:
-            with self._state_lock:
-                if self._is_closed or self._closing:
-                    return
-                self._closing = True
-                key = self._engine_key
-                has_engine = self._engine is not None
+    async def aclose(self) -> None:
+        if self._engine_key and self._engine:
+            await EngineRegistry.release_async(self._engine_key, logger=self.logger)
+        self._engine = None
+        self._engine_view = None
+        self._session_factory = None
+        self._engine_key = None
+        self._is_open = False
 
-            try:
-                if key is not None and has_engine:
-                    await EngineRegistry.release_async(key, logger=self.logger)
-            except Exception:
-                self.logger.error(
-                    f"Error during {self.__class__.__name__}.aclose()",
-                    exc_info=self.config.debug,
-                )
-                if not suppress_errors:
-                    raise
-            finally:
-                with self._state_lock:
-                    self._engine = None
-                    self._engine_view = None
-                    self._session_factory = None
-                    self._engine_key = None
-                    self._is_open = False
-                    self._is_closed = True
-                    self._closing = False
+    @property
+    def closed(self) -> bool:
+        return not self._is_open
 
     @property
     def engine(self) -> Any:
