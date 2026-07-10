@@ -5,6 +5,7 @@ Dask-first gateway over existing boti_data backend resources.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import OrderedDict
 from typing import Any, Literal
 
@@ -53,6 +54,8 @@ from .requests import (
 )
 from .return_type import AutoReturnTypeResolver
 from .sql_guard import validate_raw_sql_statement
+
+_log = logging.getLogger(__name__)
 
 
 class DataGateway:
@@ -759,6 +762,7 @@ class DataGateway:
         try:
             return strategy_for_frame(df).has_any_rows(df)
         except Exception:
+            _log.debug("Failed to check has_any_rows", exc_info=True)
             return False
 
     def semi_join(

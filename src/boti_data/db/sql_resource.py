@@ -74,10 +74,10 @@ class SqlDatabaseResource(ManagedResource):
                     hide_password=True,
                 )
                 action = "Reused cached" if reused else "Spawned new"
-                self.logger.debug(f"{action} SQLAlchemy instance connected against {safe_url}")
+                self.logger.debug("%s SQLAlchemy instance connected against %s", action, safe_url)
 
         except Exception as exc:
-            self.logger.error(f"SQL Backend initialization failed: {exc}")
+            self.logger.error("SQL Backend initialization failed: %s", exc)
             raise SQLAlchemyError(f"DB Engine creation failed: {exc}") from exc
 
     def _cleanup(self) -> None:

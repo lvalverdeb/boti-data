@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Literal
 
@@ -13,6 +14,8 @@ from boti_data.db.arrow_schema_mapper import arrow_table_to_pandas
 
 from .arrow_adapters import apply_table_options
 from .requests import DataFrameOptions, DataFrameParams, ResolvedReturnType
+
+_log = logging.getLogger(__name__)
 
 LoaderReturnType = Literal["pandas", "arrow", "dask"]
 FrameResult = pd.DataFrame | dd.DataFrame | pa.Table | pl.DataFrame
@@ -165,6 +168,7 @@ class DaskFrameStrategy(FrameStrategy):
             head = dataframe.head(1, npartitions=1, compute=True)
             return len(head.index) > 0
         except Exception:
+            _log.debug("Failed to check has_any_rows for Dask frame", exc_info=True)
             return False
 
     def rename_columns(self, frame: FrameResult, rename_map: dict[str, str]) -> dd.DataFrame:

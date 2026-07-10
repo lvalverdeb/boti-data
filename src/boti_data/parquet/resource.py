@@ -229,7 +229,7 @@ class ParquetDataResource(SecureResource):
             self.logger.warning("No files found.")
             return self._empty_ddf()
 
-        self.logger.debug(f"Loading {files_to_load} from {self.parquet_storage_path}")
+        self.logger.debug("Loading %s from %s", files_to_load, self.parquet_storage_path)
         filesystem = self.require_fs()
         read_kwargs: dict[str, Any] = {
             "filesystem": filesystem,
@@ -377,8 +377,8 @@ class ParquetDataResource(SecureResource):
             return self._discover_partitioned_files_via_listing(partition_key)
 
         if self.debug:
-            self.logger.debug(f"Requested range: {start_date} to {end_date}")
-            self.logger.debug(f"Actual files found: {len(found_files)}")
+            self.logger.debug("Requested range: %s to %s", start_date, end_date)
+            self.logger.debug("Actual files found: %s", len(found_files))
 
         return found_files
 
@@ -672,8 +672,6 @@ class ParquetDataResource(SecureResource):
         return str(self._secure_local_path(path))
 
     def _secure_local_path(self, path: str) -> Path:
-        if "\x00" in path:
-            raise ValueError(f"null byte detected in path: {path!r}")
         parsed = urlparse(path)
         local_path = parsed.path if parsed.scheme == "file" else path
         return self.get_secure_path(local_path)

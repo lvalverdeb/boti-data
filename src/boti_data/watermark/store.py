@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 from pathlib import Path
 from typing import Any, Protocol
 
 import fsspec
+
+_log = logging.getLogger(__name__)
 
 
 class WatermarkStore(Protocol):
@@ -52,6 +55,7 @@ class FsspecWatermarkStore:
             except FileNotFoundError:
                 return None
             except Exception:
+                _log.debug("Failed to read watermark file %s", self._path, exc_info=True)
                 return None
             try:
                 data = json.loads(raw)

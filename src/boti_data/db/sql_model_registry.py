@@ -123,6 +123,7 @@ class SqlModelRegistry:
                 if getattr(mapped_cls, "__table__", None) is tbl:
                     return mapped_cls
             except Exception:
+                self.logger.debug("Failed to inspect mapper for table reflection", exc_info=True)
                 continue
         return None
 

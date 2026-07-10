@@ -75,7 +75,7 @@ def left_join_frames(
         )
         client_summary = current_client_summary()
         if client_summary is not None:
-            active_logger.info(f"{label}: active client={client_summary}")
+            active_logger.info("%s: active client=%s", label, client_summary)
 
     joined = left_aligned.merge(
         right_aligned,
@@ -103,7 +103,7 @@ def _safe_persist_side(
     if not persist or not isinstance(frame, dd.DataFrame):
         return frame
     if dry_run and logger is not None:
-        logger.info(f"{label}: dry run requested; persist steps skipped")
+        logger.info("%s: dry run requested; persist steps skipped", label)
     elif resilient:
         frame = safe_persist(frame)
     else:
@@ -137,7 +137,7 @@ def indexed_left_join(
     if diagnostics and active_logger is not None:
         client_summary = current_client_summary()
         if client_summary is not None:
-            active_logger.info(f"{label}: active client={client_summary}")
+            active_logger.info("%s: active client=%s", label, client_summary)
         active_logger.info(
             f"{label}: left={describe_frame(left_aligned)} right={describe_frame(right_aligned)} "
             f"join_key={join_key} persist={persist}"
@@ -168,7 +168,7 @@ def indexed_left_join(
         joined = joined.reset_index()
     if diagnostics and active_logger is not None:
         if dry_run:
-            active_logger.info(f"{label}: dry run requested; execution skipped with graph={describe_frame(joined)}")
+            active_logger.info("%s: dry run requested; execution skipped with graph=%s", label, describe_frame(joined))
         else:
             active_logger.info(
                 f"{label}: completed in {perf_counter() - started:.2f}s with metrics={describe_frame(joined)}"

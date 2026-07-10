@@ -127,8 +127,10 @@ class SqlPartitionedLoader:
         if not request.use_arrow and not request.as_pandas:
             t_prepare = perf_counter()
             prepared_stmt = self._planner.prepare_statement(request)
+            probe_limit = request.chunk_size + 1
             if request.limit is not None:
-                prepared_stmt = prepared_stmt.limit(request.limit)
+                probe_limit = min(request.limit, probe_limit)
+            prepared_stmt = prepared_stmt.limit(probe_limit)
             t_fetch = perf_counter()
             with self.resource.engine.connect() as conn:
                 df = pd.read_sql(prepared_stmt, conn)

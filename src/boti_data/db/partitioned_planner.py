@@ -63,11 +63,15 @@ class SqlPartitionPlanner:
         statement = self.prepare_statement(request)
         meta_dtypes = self.infer_meta_dtypes(statement)
 
-        if request.estimated_rows is not None and request.estimated_rows <= request.chunk_size:
+        single_fetch_limit = request.chunk_size
+        if request.single_fetch_threshold is not None:
+            single_fetch_limit = max(request.chunk_size, request.single_fetch_threshold)
+
+        if request.estimated_rows is not None and request.estimated_rows <= single_fetch_limit:
             total_rows = request.estimated_rows
         else:
-            total_rows = self.count_rows_up_to(statement, request.chunk_size + 1)
-        if total_rows > request.chunk_size:
+            total_rows = self.count_rows_up_to(statement, single_fetch_limit + 1)
+        if total_rows > single_fetch_limit:
             total_rows = self.count_rows(statement)
         if request.limit is not None:
             total_rows = min(total_rows, request.limit)
@@ -77,6 +81,23 @@ class SqlPartitionPlanner:
                 total_rows=0,
                 strategy=request.partition_strategy,
                 partitions=(),
+                meta_dtypes=meta_dtypes,
+            )
+
+        if total_rows <= single_fetch_limit:
+            # Return a single partition — call offset planner so it
+            # compiles the full-statement spec (same as its own ≤chunk_size path).
+            partitions = self.plan_offset_partitions(
+                statement=statement,
+                model=request.model,
+                order_column=request.order_column,
+                total_rows=total_rows,
+                chunk_size=total_rows,
+            )
+            return SqlPartitionPlan(
+                total_rows=total_rows,
+                strategy=request.partition_strategy,
+                partitions=partitions,
                 meta_dtypes=meta_dtypes,
             )
 
@@ -145,10 +166,7 @@ class SqlPartitionPlanner:
         statement = self.prepare_statement(request)
         meta_dtypes = self.infer_meta_dtypes(statement)
 
-        if (
-            request.estimated_rows is not None
-            and request.estimated_rows <= request.chunk_size
-        ):
+        if request.estimated_rows is not None and request.estimated_rows <= request.chunk_size:
             total_rows = request.estimated_rows
             if request.limit is not None:
                 total_rows = min(total_rows, request.limit)
@@ -180,9 +198,7 @@ class SqlPartitionPlanner:
         meta_dtypes: dict[str, str],
         engine: Any,
     ) -> SqlPartitionPlan:
-        partitioning_column = _resolve_model_column(
-            request.model, request.partition_column or ""
-        )
+        partitioning_column = _resolve_model_column(request.model, request.partition_column or "")
         async with engine.connect() as count_conn, engine.connect() as bounds_conn:
             total_rows, (lower_bound, upper_bound) = await asyncio.gather(
                 self._async_count_rows(statement, count_conn),
@@ -228,7 +244,9 @@ class SqlPartitionPlanner:
     ) -> SqlPartitionPlan:
         async with engine.connect() as conn:
             total_rows = await self._async_count_rows_up_to(
-                statement, request.chunk_size + 1, conn,
+                statement,
+                request.chunk_size + 1,
+                conn,
             )
         if total_rows > request.chunk_size:
             async with engine.connect() as conn:
@@ -242,6 +260,33 @@ class SqlPartitionPlanner:
                 partitions=(),
                 meta_dtypes=meta_dtypes,
             )
+
+        order_column_name = request.order_column or _infer_primary_key_name(request.model)
+        ordering_column = _resolve_model_column(request.model, order_column_name)
+        base_statement = self.base_statement(statement).order_by(None).order_by(ordering_column)
+
+        if self._is_range_compatible_column(ordering_column):
+            lower_bound, upper_bound = await self._async_compute_ordering_bounds(
+                base_statement,
+                ordering_column,
+                engine,
+            )
+            if lower_bound is not None and upper_bound is not None:
+                partitions = self._plan_keyset_partitions(
+                    base_statement=base_statement,
+                    ordering_column=ordering_column,
+                    total_rows=total_rows,
+                    chunk_size=request.chunk_size,
+                    lower_bound=lower_bound,
+                    upper_bound=upper_bound,
+                )
+                return SqlPartitionPlan(
+                    total_rows=total_rows,
+                    strategy=request.partition_strategy,
+                    partitions=partitions,
+                    meta_dtypes=meta_dtypes,
+                )
+
         partitions = self.plan_offset_partitions(
             statement=statement,
             model=request.model,
@@ -256,6 +301,23 @@ class SqlPartitionPlanner:
             meta_dtypes=meta_dtypes,
         )
 
+    async def _async_compute_ordering_bounds(
+        self,
+        base_statement: Select[Any],
+        ordering_column: Any,
+        engine: Any,
+    ) -> tuple[Any, Any]:
+        projection = base_statement.with_only_columns(
+            ordering_column,
+            maintain_column_froms=True,
+        )
+        subquery = projection.subquery()
+        subquery_column = next(iter(subquery.c))
+        bounds_statement = select(func.min(subquery_column), func.max(subquery_column))
+        async with engine.connect() as conn:
+            result = await conn.execute(bounds_statement)
+            return result.one()
+
     async def _async_count_rows(self, statement: Select[Any], conn: Any) -> int:
         count_statement = select(func.count()).select_from(
             self.base_statement(statement).subquery()
@@ -263,7 +325,9 @@ class SqlPartitionPlanner:
         result = await conn.execute(count_statement)
         return int(result.scalar_one())
 
-    async def _async_count_rows_up_to(self, statement: Select[Any], max_rows: int, conn: Any) -> int:
+    async def _async_count_rows_up_to(
+        self, statement: Select[Any], max_rows: int, conn: Any
+    ) -> int:
         limited_statement = self.base_statement(statement).limit(max_rows + 1)
         count_statement = select(func.count()).select_from(limited_statement.subquery())
         result = await conn.execute(count_statement)
@@ -299,13 +363,95 @@ class SqlPartitionPlanner:
         ordering_column = _resolve_model_column(model, order_column_name)
         base_statement = self.base_statement(statement).order_by(None).order_by(ordering_column)
 
+        if self._is_range_compatible_column(ordering_column):
+            lower_bound, upper_bound = self._compute_ordering_bounds(
+                base_statement,
+                ordering_column,
+            )
+            if lower_bound is not None and upper_bound is not None:
+                return self._plan_keyset_partitions(
+                    base_statement=base_statement,
+                    ordering_column=ordering_column,
+                    total_rows=total_rows,
+                    chunk_size=chunk_size,
+                    lower_bound=lower_bound,
+                    upper_bound=upper_bound,
+                )
+
+        return self._plan_offset_partitions_legacy(
+            base_statement=base_statement,
+            total_rows=total_rows,
+            chunk_size=chunk_size,
+        )
+
+    @staticmethod
+    def _is_range_compatible_column(column: Any) -> bool:
+        return isinstance(column.type, (SmallInteger, Integer, BigInteger))
+
+    def _compute_ordering_bounds(
+        self,
+        base_statement: Select[Any],
+        ordering_column: Any,
+    ) -> tuple[Any, Any]:
+        projection = base_statement.with_only_columns(
+            ordering_column,
+            maintain_column_froms=True,
+        )
+        subquery = projection.subquery()
+        subquery_column = next(iter(subquery.c))
+        bounds_statement = select(func.min(subquery_column), func.max(subquery_column))
+        with self.resource.engine.connect() as conn:
+            return conn.execute(bounds_statement).one()
+
+    def _plan_keyset_partitions(
+        self,
+        *,
+        base_statement: Select[Any],
+        ordering_column: Any,
+        total_rows: int,
+        chunk_size: int,
+        lower_bound: Any,
+        upper_bound: Any,
+    ) -> tuple[SqlPartitionSpec, ...]:
+        if lower_bound is None or upper_bound is None:
+            return (self.compile_partition(base_statement.limit(chunk_size)),)
+        if lower_bound == upper_bound:
+            return (
+                self.compile_partition(
+                    base_statement.where(ordering_column >= lower_bound),
+                ),
+            )
+
+        target_partitions = max(1, math.ceil(total_rows / chunk_size))
+        target_partitions = min(target_partitions, total_rows)
+
+        bounds = self.build_numeric_range_bounds(
+            lower_bound=lower_bound,
+            upper_bound=upper_bound,
+            target_partitions=target_partitions,
+        )
+
+        partitions: list[SqlPartitionSpec] = []
+        for lower, upper in bounds:
+            stmt = base_statement.where(ordering_column >= lower)
+            if upper is not None:
+                stmt = stmt.where(ordering_column < upper)
+            partitions.append(self.compile_partition(stmt))
+
+        return tuple(partitions)
+
+    def _plan_offset_partitions_legacy(
+        self,
+        *,
+        base_statement: Select[Any],
+        total_rows: int,
+        chunk_size: int,
+    ) -> tuple[SqlPartitionSpec, ...]:
         partitions: list[SqlPartitionSpec] = []
         for offset in range(0, total_rows, chunk_size):
             partition_limit = min(chunk_size, total_rows - offset)
             partitions.append(
-                self.compile_partition(
-                    base_statement.limit(partition_limit).offset(offset)
-                )
+                self.compile_partition(base_statement.limit(partition_limit).offset(offset))
             )
         return tuple(partitions)
 
@@ -387,9 +533,7 @@ class SqlPartitionPlanner:
                 raise ValueError(
                     f"partitioned SQL statements must expose unique result column names; duplicate '{key_str}' found."
                 )
-            meta_dtypes[key_str] = _sqlalchemy_type_to_pandas_dtype(
-                getattr(selected, "type", None)
-            )
+            meta_dtypes[key_str] = _sqlalchemy_type_to_pandas_dtype(getattr(selected, "type", None))
 
         if not meta_dtypes:
             raise ValueError("partitioned SQL statements must select at least one result column.")

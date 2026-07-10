@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -18,6 +19,8 @@ __all__ = [
 import dask.dataframe as dd
 import pandas as pd
 import pyarrow as pa
+
+_logger = logging.getLogger(__name__)
 
 DataFrameLike = pd.DataFrame | dd.DataFrame
 
@@ -200,7 +203,7 @@ def apply_schema_map(
             table = arrow_schema.cast_table(table)
             return arrow_schema.to_pandas(table)
         except (KeyError, TypeError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError):
-            pass
+            _logger.debug("ArrowSchema cast failed, falling back to per-column coercion")
 
     is_dask = isinstance(dataframe, dd.DataFrame)
     transforms = {}

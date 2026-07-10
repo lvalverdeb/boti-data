@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -10,6 +11,8 @@ import pandas as pd
 import polars as pl
 import pyarrow as pa
 from boti.core.logger import Logger
+
+_log = logging.getLogger(__name__)
 
 try:
     from dask.distributed import Client, LocalCluster, get_client
@@ -133,6 +136,7 @@ def describe_client(client: Any) -> dict[str, Any]:
     try:
         info = client.scheduler_info()
     except Exception:
+        _log.debug("Failed to get scheduler info", exc_info=True)
         info = {}
     workers = info.get("workers", {}) if isinstance(info, dict) else {}
     scheduler = getattr(getattr(client, "cluster", None), "scheduler_address", None)
@@ -152,6 +156,7 @@ def current_client_summary() -> dict[str, Any] | None:
     try:
         return describe_client(get_client())
     except Exception:
+        _log.debug("Failed to describe current client", exc_info=True)
         return None
 
 

@@ -10,6 +10,7 @@ registering it — no changes to dispatch chains in *core.py*,
 from __future__ import annotations
 
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -61,6 +62,8 @@ from .requests import (
     ReturnType,
     SqlLoadRequest,
 )
+
+_log = logging.getLogger(__name__)
 
 _DEFAULT_PARTITION_CHUNK_SIZE: int = SqlPartitionedLoadRequest.model_fields["chunk_size"].default
 
@@ -502,43 +505,45 @@ class SqlAlchemyStrategy(BackendStrategy):
         # Fast path: bypass planner entirely for small queries
         # Fetch LIMIT chunk_size + 1 rows directly; if <= chunk_size, return immediately.
         # Eliminates the COUNT query overhead for the common single-partition case.
-        if not request.use_arrow and not request.as_pandas:
+        if not request.as_pandas:
             t_prepare = perf_counter()
             prepared_stmt = planner.prepare_statement(request)
+            probe_limit = request.chunk_size + 1
             if request.limit is not None:
-                prepared_stmt = prepared_stmt.limit(request.limit)
+                probe_limit = min(request.limit, probe_limit)
+            prepared_stmt = prepared_stmt.limit(probe_limit)
             t_fetch = perf_counter()
             async with async_resource.engine.connect() as conn:
                 df = await conn.run_sync(
                     lambda sync_conn: pd.read_sql(prepared_stmt, sync_conn),
                 )
-            t_coerce = perf_counter()
-            if len(df) <= request.chunk_size:
-                df = SqlPartitionExecutor.align_and_coerce_partition(
-                    df, planner.infer_meta_dtypes(prepared_stmt),
-                )
-                t_dask = perf_counter()
-                result = dd.from_pandas(df, npartitions=1)
-                t_end = perf_counter()
+                t_coerce = perf_counter()
+                if len(df) <= request.chunk_size:
+                    df = SqlPartitionExecutor.align_and_coerce_partition(
+                        df, planner.infer_meta_dtypes(prepared_stmt),
+                    )
+                    t_dask = perf_counter()
+                    result = dd.from_pandas(df, npartitions=1)
+                    t_end = perf_counter()
+                    if request.diagnostics:
+                        async_resource.logger.info(
+                            "Partitioned SQL fast path: single partition "
+                            f"rows={len(df)} chunk_size={request.chunk_size} "
+                            f"total={t_end - started:.3f}s "
+                            f"planner_init={t_prepare - t_planner_created:.3f}s "
+                            f"prepare_stmt={t_fetch - t_prepare:.3f}s "
+                            f"db_fetch={t_coerce - t_fetch:.3f}s "
+                            f"coerce={t_dask - t_coerce:.3f}s "
+                            f"from_pandas={t_end - t_dask:.3f}s"
+                        )
+                    return result
                 if request.diagnostics:
                     async_resource.logger.info(
-                        "Partitioned SQL fast path: single partition "
-                        f"rows={len(df)} chunk_size={request.chunk_size} "
-                        f"total={t_end - started:.3f}s "
-                        f"planner_init={t_prepare - t_planner_created:.3f}s "
+                        "Partitioned SQL fast path fallback: rows exceed chunk_size, "
+                        f"rows_fetched={len(df)} chunk_size={request.chunk_size} "
                         f"prepare_stmt={t_fetch - t_prepare:.3f}s "
-                        f"db_fetch={t_coerce - t_fetch:.3f}s "
-                        f"coerce={t_dask - t_coerce:.3f}s "
-                        f"from_pandas={t_end - t_dask:.3f}s"
+                        f"db_fetch={perf_counter() - t_fetch:.3f}s"
                     )
-                return result
-            if request.diagnostics:
-                async_resource.logger.info(
-                    "Partitioned SQL fast path fallback: rows exceed chunk_size, "
-                    f"rows_fetched={len(df)} chunk_size={request.chunk_size} "
-                    f"prepare_stmt={t_fetch - t_prepare:.3f}s "
-                    f"db_fetch={perf_counter() - t_fetch:.3f}s"
-                )
 
         t_plan = perf_counter()
         plan = await planner.async_plan_request(request, async_resource.engine)
@@ -557,7 +562,7 @@ class SqlAlchemyStrategy(BackendStrategy):
         worker_config = WorkerSqlConfig.from_database_config(ctx.config)
         gate_key = _get_worker_engine_identity(worker_config)
 
-        if len(plan.partitions) == 1 and not request.use_arrow and not request.as_pandas:
+        if len(plan.partitions) == 1 and not request.as_pandas:
             t_prepare2 = perf_counter()
             prepared_stmt = planner.prepare_statement(request)
             t_fetch2 = perf_counter()
@@ -1145,6 +1150,7 @@ class ParquetStrategy(BackendStrategy):
         try:
             return _resolve_parquet_scan_summary(resource)
         except Exception:
+            _log.debug("Failed to resolve parquet scan summary", exc_info=True)
             return None
 
     @staticmethod
@@ -1160,6 +1166,7 @@ class ParquetStrategy(BackendStrategy):
         try:
             return _resolve_parquet_scan_summary(resource)
         except Exception:
+            _log.debug("Failed to resolve parquet scan summary", exc_info=True)
             return None
 
 

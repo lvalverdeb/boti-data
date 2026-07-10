@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import functools
+import logging
 import math
 import re
 from collections.abc import Iterable, Iterator, Mapping
@@ -13,6 +14,9 @@ from sqlalchemy import Column, String, and_, cast, false, func, or_, true
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import ColumnProperty
 from sqlalchemy.sql.sqltypes import Date, Time
+
+_log = logging.getLogger(__name__)
+
 
 COMPARISON_OPERATORS = [
     "gte",
@@ -298,9 +302,11 @@ def strip_tz(column: Any) -> Any:
         try:
             return series.dt.tz_convert("UTC").dt.tz_localize(None)
         except Exception:
+            _log.debug("Failed to convert timezone to UTC for series, trying tz_localize(None)")
             try:
                 return series.dt.tz_localize(None)
             except Exception:
+                _log.debug("Failed to localize timezone for series, returning as-is")
                 return series
 
     return column.map_partitions(_partition, meta=column._meta)
@@ -420,7 +426,7 @@ def _try_to_list(value: Any) -> list[Any] | None:
                 if isinstance(result, (list, tuple)):
                     return list(result)
             except Exception:
-                pass
+                _log.debug("Failed to call %s on value of type %s", attr, type(value).__name__)
     return None
 
 
@@ -445,10 +451,12 @@ def _is_null_scalar(value: Any) -> bool:
     try:
         result = pd.isna(value)
     except Exception:
+        _log.debug("pd.isna failed for value of type %s", type(value).__name__)
         return False
     try:
         return bool(result)
     except Exception:
+        _log.debug("bool() conversion failed for pd.isna result on value of type %s", type(value).__name__)
         return False
 
 
@@ -465,10 +473,10 @@ def align_in_types(column: Any, value: Any) -> tuple[Any, list[Any]]:
         try:
             return column.astype("Int64"), [int(item) for item in values]
         except Exception:
-            pass
+            _log.debug("Failed to cast column to Int64, falling back to string")
     if kind in ("f",):
         try:
             return column.astype("float64"), [float(item) for item in values]
         except Exception:
-            pass
+            _log.debug("Failed to cast column to float64, falling back to string")
     return as_str(column), [str(item) for item in values]

@@ -8,6 +8,7 @@ Tables, replacing the per-column pandas coercion loop with a single-pass
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from decimal import Decimal
 from typing import Any
 
@@ -28,6 +29,8 @@ from sqlalchemy.sql.sqltypes import (
     Unicode,
     UnicodeText,
 )
+
+_logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # SQLAlchemy → PyArrow type mapping
@@ -226,7 +229,7 @@ def _coerce_row_to_arrays(
             arrays.append(arr)
             continue
         except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError):
-            pass
+            _logger.debug("Fast array construction failed, falling back to per-value coercion")
 
         # Slow path: coerce individual values
         coerced = [_coerce_value(v, field.type) for v in raw_values]

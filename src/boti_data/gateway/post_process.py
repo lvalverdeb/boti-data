@@ -151,7 +151,7 @@ class PostProcessor:
         )
         client_summary = current_client_summary()
         if client_summary is not None:
-            logger.info(f"Gateway load active Dask client={client_summary}")
+            logger.info("Gateway load active Dask client=%s", client_summary)
 
     def coerce_eager_sql_frame(self, frame: pd.DataFrame, *, statement: Any) -> pd.DataFrame:
         meta_dtypes = SqlPartitionPlanner.infer_meta_dtypes(statement)

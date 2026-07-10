@@ -13,7 +13,7 @@ __all__ = [
 import functools
 import re
 import threading
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import fsspec
 import pyarrow.fs as pafs
@@ -23,6 +23,20 @@ from boti_data.db.sql_config import SqlDatabaseConfig
 from boti_data.db.sql_resource import AsyncSqlDatabaseResource, SqlDatabaseResource
 
 _PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def _normalise_parts(parts: tuple[str, ...]) -> list[str]:
+    """Resolve ``..`` and ``.`` segments without touching the filesystem."""
+    result: list[str] = []
+    for part in parts:
+        if part == "..":
+            if result and result[-1] != "..":
+                result.pop()
+            else:
+                result.append("..")
+        elif part and part != ".":
+            result.append(part)
+    return result if result else ["."]
 
 
 class ConnectionCatalog:
@@ -173,14 +187,31 @@ class S3Catalog:
     def fs(self):
         return self.adapter.get_filesystem()
 
-    def open(self, relative_path: str, mode: str = "rb"):
-        return self.fs().open(f"{self.config.fs_path.rstrip('/')}/{relative_path.lstrip('/')}", mode)
+    def open(self, sub_key: str, mode: str = "rb"):
+        return self.fs().open(self._resolve_key(sub_key), mode)
 
     def ls(self, path: str = ""):
-        target = self.config.fs_path.rstrip("/")
-        if path:
-            target = f"{target}/{path.lstrip('/')}"
-        return self.fs().ls(target)
+        return self.fs().ls(self._resolve_key(path) if path else self.config.fs_path)
+
+    def _resolve_key(self, sub_key: str) -> str:
+        """Join *sub_key* to the configured S3 prefix and reject traversal.
+
+        S3 has a flat key namespace, but ``../`` segments in a key name
+        could still cause confusion or collision with unintended objects.
+        This method normalises separator conventions and rejects any
+        path that would escape the configured base via ``..`` segments
+        or absolute sub-paths.
+        """
+        base = PurePosixPath(self.config.fs_path)
+        candidate = PurePosixPath(base) / sub_key
+        # Normalise ".." segments to detect actual traversal
+        resolved = PurePosixPath(*_normalise_parts(candidate.parts))
+        # is_relative_to compares path components, not raw strings: a string
+        # startswith(str(base)) check would wrongly accept a sibling prefix
+        # like "data/prod_public" as being inside "data/prod".
+        if not resolved.is_relative_to(base):
+            raise PermissionError(f"Path traversal denied: {sub_key}")
+        return str(resolved)
 
     def invalidate(self) -> None:
         self.adapter.invalidate()

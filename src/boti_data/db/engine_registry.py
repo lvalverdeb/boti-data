@@ -74,18 +74,18 @@ class EngineRegistry:
 
                     if logger:
                         try:
-                            logger.debug(f"DB Engine ref count: {wrapper['ref_count']} for {key}")
+                            logger.debug("DB Engine ref count: %s for %s", wrapper['ref_count'], key)
                         except Exception:
-                            pass
+                            _log.debug("Failed to log engine ref count for key %s", key, exc_info=True)
 
                     if wrapper["ref_count"] <= 0:
                         try:
                             wrapper["engine"].dispose()
                             if logger:
                                 try:
-                                    logger.debug(f"Disposed DB Engine for key {key}")
+                                    logger.debug("Disposed DB Engine for key %s", key)
                                 except Exception:
-                                    pass
+                                    _log.debug("Failed to log engine disposal for key %s", key, exc_info=True)
                         finally:
                             cls._registry.pop(key, None)
         except Exception:

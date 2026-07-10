@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -16,6 +17,8 @@ from .frame_strategies import FrameResult, get_frame_strategy
 from .normalization import DEFAULT_IN_CHUNK_SIZE, LOAD_CONTROL_KEYS, split_control_and_filters
 from .planning import InChunkPolicy
 from .requests import ReturnType
+
+_log = logging.getLogger(__name__)
 
 ChunkTarget = tuple[str, str, Any]
 ExecuteFn = Callable[..., FrameResult]
@@ -284,6 +287,7 @@ class ChunkedLoadExecutor:
         try:
             return _strategy_for_frame(frame).has_any_rows(frame)
         except Exception:
+            _log.debug("Failed to check has_any_rows", exc_info=True)
             return False
 
 

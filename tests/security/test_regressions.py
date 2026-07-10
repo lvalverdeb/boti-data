@@ -372,9 +372,12 @@ def test_parquet_resource_rejects_path_traversal_at_construction(tmp_path):
 
 
 def test_parquet_resource_rejects_null_byte_in_path(tmp_path):
+    """NUL bytes are now rejected by the shared SecureResource.get_secure_path
+    fail-closed handling (boti.core.secure_io) rather than a local ad-hoc check,
+    so this asserts PermissionError instead of ValueError."""
     from boti_data.parquet.resource import ParquetDataConfig, ParquetDataResource
 
     config = ParquetDataConfig(parquet_storage_path=str(tmp_path))
     resource = ParquetDataResource(config)
-    with pytest.raises(ValueError, match="null byte"):
+    with pytest.raises(PermissionError, match="could not be resolved"):
         resource._secure_local_path("/tmp/file\x00.parquet")
