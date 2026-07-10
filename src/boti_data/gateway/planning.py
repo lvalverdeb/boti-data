@@ -75,7 +75,9 @@ class LoadPlanner:
         self._resolve_auto_return_type = resolve_auto_return_type
         self._resolve_auto_return_type_async = resolve_auto_return_type_async
 
-    def plan(self, options: dict[str, Any], *, request: GatewayLoadRequest | None = None) -> LoadPlan:
+    def _prepare_plan_inputs(
+        self, options: dict[str, Any], *, request: GatewayLoadRequest | None = None
+    ) -> tuple[LoadControls, ReturnType, ExecutionMode]:
         controls = self._resolve_load_controls(options, request=request)
         requested_return_type = self._resolve_requested_return_type(
             as_pandas=controls.as_pandas,
@@ -83,6 +85,12 @@ class LoadPlanner:
             request=request,
         )
         requested_execution_mode = self._resolve_requested_execution_mode(options, request=request)
+        return controls, requested_return_type, requested_execution_mode
+
+    def plan(self, options: dict[str, Any], *, request: GatewayLoadRequest | None = None) -> LoadPlan:
+        controls, requested_return_type, requested_execution_mode = self._prepare_plan_inputs(
+            options, request=request
+        )
         resolved_return_type, resolved_execution_mode = self._resolve_execution_plan(
             requested_return_type=requested_return_type,
             requested_execution_mode=requested_execution_mode,
@@ -97,13 +105,9 @@ class LoadPlanner:
         )
 
     async def aplan(self, options: dict[str, Any], *, request: GatewayLoadRequest | None = None) -> LoadPlan:
-        controls = self._resolve_load_controls(options, request=request)
-        requested_return_type = self._resolve_requested_return_type(
-            as_pandas=controls.as_pandas,
-            options=options,
-            request=request,
+        controls, requested_return_type, requested_execution_mode = self._prepare_plan_inputs(
+            options, request=request
         )
-        requested_execution_mode = self._resolve_requested_execution_mode(options, request=request)
         resolved_return_type, resolved_execution_mode = await self._resolve_execution_plan_async(
             requested_return_type=requested_return_type,
             requested_execution_mode=requested_execution_mode,
@@ -217,6 +221,19 @@ class LoadPlanner:
             resolved_return_type=resolved_return_type,
         )
 
+    @staticmethod
+    def _requested_or_fixed_return_type(
+        *,
+        requested_return_type: ReturnType,
+        requested_execution_mode: ExecutionMode,
+    ) -> ResolvedReturnType | None:
+        """Returns a decision that doesn't require consulting the auto-resolver, else None."""
+        if requested_return_type != "auto":
+            return requested_return_type
+        if requested_execution_mode != "auto":
+            return "dask" if requested_execution_mode == "lazy" else "pandas"
+        return None
+
     def _resolve_return_type(
         self,
         *,
@@ -224,11 +241,13 @@ class LoadPlanner:
         requested_execution_mode: ExecutionMode,
         options: dict[str, Any],
     ) -> ResolvedReturnType:
-        if requested_return_type != "auto":
-            return requested_return_type
-        if requested_execution_mode == "auto":
-            return self._resolve_auto_return_type(options)
-        return "dask" if requested_execution_mode == "lazy" else "pandas"
+        decision = self._requested_or_fixed_return_type(
+            requested_return_type=requested_return_type,
+            requested_execution_mode=requested_execution_mode,
+        )
+        if decision is not None:
+            return decision
+        return self._resolve_auto_return_type(options)
 
     async def _resolve_return_type_async(
         self,
@@ -237,11 +256,13 @@ class LoadPlanner:
         requested_execution_mode: ExecutionMode,
         options: dict[str, Any],
     ) -> ResolvedReturnType:
-        if requested_return_type != "auto":
-            return requested_return_type
-        if requested_execution_mode == "auto":
-            return await self._resolve_auto_return_type_async(options)
-        return "dask" if requested_execution_mode == "lazy" else "pandas"
+        decision = self._requested_or_fixed_return_type(
+            requested_return_type=requested_return_type,
+            requested_execution_mode=requested_execution_mode,
+        )
+        if decision is not None:
+            return decision
+        return await self._resolve_auto_return_type_async(options)
 
     @staticmethod
     def _resolve_execution_mode(

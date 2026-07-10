@@ -93,10 +93,7 @@ pip install "boti[data]"
 
 ## Imports
 
-> **Breaking change:** Dask runtime/session/resilience helpers are no longer re-exported from `boti_data`.
-> Update imports like `from boti_data import DaskSession, safe_compute` to `from boti_dask import DaskSession, safe_compute`.
-
-`boti-data` uses the top-level Python package `boti_data`:
+`boti-data` uses the top-level Python package `boti_data`. Dask runtime/session/resilience helpers live in `boti_dask` and are not re-exported here.
 
 ```python
 from boti_data import (

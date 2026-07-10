@@ -15,10 +15,9 @@ import pandas as pd
 import polars as pl
 import pyarrow as pa
 from boti.core.logger import Logger
-from boti_dask import safe_persist
+from boti_dask import current_client_summary, describe_frame, safe_persist
 
 from boti_data.db.partitioned_planner import SqlPartitionPlanner
-from boti_data.distributed import current_client_summary, describe_frame
 from boti_data.field_map import FieldMap
 from boti_data.schema import apply_schema_map
 

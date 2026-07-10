@@ -116,6 +116,25 @@ def build_sql_partitioned_request(options: dict[str, Any]) -> SqlPartitionedLoad
     return SqlPartitionedLoadRequest.model_validate(partitioned_options)
 
 
+def _finalize_arrow_result(
+    rows: list[tuple[Any, ...]],
+    columns: list[str],
+    *,
+    statement: Any | None,
+    limit: int | None,
+) -> pa.Table:
+    table = _arrow_table_from_sql_result(rows, columns, statement=statement)
+    if limit is not None:
+        table = table.slice(0, limit)
+    return table
+
+
+def _finalize_frame_result(frame: pd.DataFrame, *, limit: int | None) -> pd.DataFrame:
+    if limit is not None:
+        frame = frame.head(limit)
+    return frame
+
+
 def load_sql(
     resource: SqlDatabaseResource,
     request: SqlLoadRequest,
@@ -129,20 +148,15 @@ def load_sql(
     with resource.engine.connect() as conn:
         if request.return_type == "arrow":
             result = conn.execute(statement, execute_params or {})
-            rows = result.fetchall()
-            table = _arrow_table_from_sql_result(
-                [tuple(row) for row in rows],
+            return _finalize_arrow_result(
+                [tuple(row) for row in result.fetchall()],
                 list(result.keys()),
                 statement=statement,
+                limit=request.limit,
             )
-            if request.limit is not None:
-                table = table.slice(0, request.limit)
-            return table
         frame = pd.read_sql(statement, conn, params=execute_params)
 
-    if request.limit is not None:
-        frame = frame.head(request.limit)
-    return frame
+    return _finalize_frame_result(frame, limit=request.limit)
 
 
 def load_sql_partitioned(
@@ -167,22 +181,17 @@ async def read_sql_async(
     async with resource.engine.connect() as conn:
         if request.return_type == "arrow":
             result = await conn.execute(statement, execute_params or {})
-            rows = result.fetchall()
-            table = _arrow_table_from_sql_result(
-                [tuple(row) for row in rows],
+            return _finalize_arrow_result(
+                [tuple(row) for row in result.fetchall()],
                 list(result.keys()),
                 statement=statement,
+                limit=request.limit,
             )
-            if request.limit is not None:
-                table = table.slice(0, request.limit)
-            return table
         frame = await conn.run_sync(
             lambda sync_conn: pd.read_sql(statement, sync_conn, params=execute_params)
         )
 
-    if request.limit is not None:
-        frame = frame.head(request.limit)
-    return frame
+    return _finalize_frame_result(frame, limit=request.limit)
 
 
 def load_parquet(
@@ -219,6 +228,13 @@ def load_parquet(
     return frame
 
 
+def _select_from_model(model: Any, db_column_names: list[str] | None) -> Any:
+    if db_column_names:
+        columns = [getattr(model, col) for col in db_column_names]
+        return select(*columns)
+    return select(model)
+
+
 async def reflect_and_select_async(
     resource: Any,
     table: str,
@@ -237,14 +253,7 @@ async def reflect_and_select_async(
     """
     builder = SqlAlchemyModelBuilder(resource.engine, table)
     model = await builder.build_model_async()
-
-    if db_column_names:
-        columns = [getattr(model, col) for col in db_column_names]
-        stmt = select(*columns)
-    else:
-        stmt = select(model)
-
-    return model, stmt
+    return model, _select_from_model(model, db_column_names)
 
 
 def reflect_and_select(
@@ -266,11 +275,4 @@ def reflect_and_select(
     """
     builder = SqlAlchemyModelBuilder(resource.engine, table)
     model = builder.build_model()
-
-    if db_column_names:
-        columns = [getattr(model, col) for col in db_column_names]
-        stmt = select(*columns)
-    else:
-        stmt = select(model)
-
-    return model, stmt
+    return model, _select_from_model(model, db_column_names)

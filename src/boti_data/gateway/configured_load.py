@@ -135,7 +135,7 @@ class ConfiguredLoadService:
     # Sync configured load
     # ------------------------------------------------------------------
 
-    def load(
+    def _build_configured_load_context(
         self,
         options: dict[str, Any],
         *,
@@ -143,9 +143,9 @@ class ConfiguredLoadService:
         execution_mode: ResolvedExecutionMode,
         loader_return_type: Literal["pandas", "arrow", "dask"],
         loader_as_pandas: bool,
-    ) -> FrameResult:
+    ) -> ConfiguredLoadContext:
         norm = self._normalize_for_configured(options)
-        ctx = ConfiguredLoadContext(
+        return ConfiguredLoadContext(
             resource=self._resource,
             config=self._config,
             control=norm.control,
@@ -166,6 +166,23 @@ class ConfiguredLoadService:
             async_sql_resource=self._async_sql_resource,
             chunk_size=self._df_params.chunk_size,
         )
+
+    def load(
+        self,
+        options: dict[str, Any],
+        *,
+        return_type: ReturnType,
+        execution_mode: ResolvedExecutionMode,
+        loader_return_type: Literal["pandas", "arrow", "dask"],
+        loader_as_pandas: bool,
+    ) -> FrameResult:
+        ctx = self._build_configured_load_context(
+            options,
+            return_type=return_type,
+            execution_mode=execution_mode,
+            loader_return_type=loader_return_type,
+            loader_as_pandas=loader_as_pandas,
+        )
         return self._strategy.load_configured_sync(ctx)
 
     # ------------------------------------------------------------------
@@ -181,26 +198,11 @@ class ConfiguredLoadService:
         loader_return_type: Literal["pandas", "arrow", "dask"],
         loader_as_pandas: bool,
     ) -> FrameResult:
-        norm = self._normalize_for_configured(options)
-        ctx = ConfiguredLoadContext(
-            resource=self._resource,
-            config=self._config,
-            control=norm.control,
-            combined_filters=norm.combined_filters,
-            db_filters=norm.db_filters,
-            db_columns=norm.db_columns,
-            configured_fieldnames=norm.configured_fieldnames,
-            field_map=self._field_map,
-            exclude=self._exclude,
-            sticky_filters=self._sticky_filters,
+        ctx = self._build_configured_load_context(
+            options,
             return_type=return_type,
+            execution_mode=execution_mode,
             loader_return_type=loader_return_type,
             loader_as_pandas=loader_as_pandas,
-            execution_mode=execution_mode,
-            post_processor=self._post_processor,
-            get_configured_select=self._get_configured_select,
-            get_configured_select_async=self._get_configured_select_async,
-            async_sql_resource=self._async_sql_resource,
-            chunk_size=self._df_params.chunk_size,
         )
         return await self._strategy.load_configured_async(ctx)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, TypeAlias, Union, cast
 from urllib.parse import urlparse
@@ -15,8 +15,7 @@ from boti.core import ResourceConfig, SecureResource
 from boti_dask import safe_persist
 from pydantic import Field, field_validator
 
-from boti_data import ParquetReader
-from boti_data.parquet import ParquetDataConfig
+from boti_data.parquet import ParquetDataConfig, ParquetReader
 
 FrameResult: TypeAlias = Union[pd.DataFrame, dd.DataFrame, pa.Table, pl.DataFrame]
 ParquetDestination: TypeAlias = Union[ParquetReader, ParquetDataConfig, Mapping[str, Any]]
@@ -67,6 +66,54 @@ def prepare_partitioned_frame(
             f"from date_field. Missing columns: {missing!r}."
         )
     return frame
+
+
+def _rm_recursive(fs: fsspec.AbstractFileSystem, path: str) -> None:
+    try:
+        fs.rm(path, recursive=True)
+    except TypeError:
+        fs.rm(path)
+
+
+def _write_with_staging(
+    *,
+    fs: fsspec.AbstractFileSystem,
+    target_path: str,
+    overwrite: bool,
+    write_fn: Callable[[str], list[str]],
+) -> list[str]:
+    """Write sink output, protecting existing data when overwriting.
+
+    When *overwrite* is set and the target already exists, the new output is
+    fully computed into a ``.staging`` sibling first, and the previous output
+    is removed only after the write succeeded — so a failed compute can no
+    longer destroy the existing dataset. The remove-then-rename swap itself
+    is not atomic: a crash between the two steps leaves the new data in the
+    staging directory, which the next overwrite run cleans up.
+    """
+    if not overwrite or not fs.exists(target_path):
+        return write_fn(target_path)
+
+    staging_path = f"{target_path.rstrip('/')}.staging"
+    if fs.exists(staging_path):
+        # Leftover from a previous crashed run.
+        _rm_recursive(fs, staging_path)
+
+    files = write_fn(staging_path)
+
+    try:
+        _rm_recursive(fs, target_path)
+        try:
+            fs.mv(staging_path, target_path, recursive=True)
+        except TypeError:
+            fs.mv(staging_path, target_path)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to swap staged sink output into {target_path!r}. "
+            f"The newly written data is intact at {staging_path!r}."
+        ) from exc
+
+    return [file.replace(staging_path, target_path.rstrip("/"), 1) for file in files]
 
 
 @dataclass(slots=True)
@@ -179,26 +226,25 @@ class CsvSink(SecureResource):
             ddf = safe_persist(ddf)
 
         fs, fs_path, public_path = self._filesystem_parts()
-        if overwrite and fs.exists(fs_path):
-            try:
-                fs.rm(fs_path, recursive=True)
-            except TypeError:
-                fs.rm(fs_path)
 
-        if self.config.partition_on:
-            files = self._write_partitioned_csv(
+        def _write(directory: str) -> list[str]:
+            if self.config.partition_on:
+                return self._write_partitioned_csv(
+                    ddf,
+                    fs=fs,
+                    base_path=directory,
+                    write_index=write_index,
+                )
+            return self._write_csv_pattern(
                 ddf,
                 fs=fs,
-                base_path=fs_path,
+                directory=directory,
                 write_index=write_index,
             )
-        else:
-            files = self._write_csv_pattern(
-                ddf,
-                fs=fs,
-                directory=fs_path,
-                write_index=write_index,
-            )
+
+        files = _write_with_staging(
+            fs=fs, target_path=fs_path, overwrite=overwrite, write_fn=_write
+        )
         return SinkWriteResult(path=public_path, files=tuple(files))
 
     def _write_partitioned_csv(
@@ -344,26 +390,25 @@ class JsonlSink(SecureResource):
             ddf = safe_persist(ddf)
 
         fs, fs_path, public_path = self._filesystem_parts()
-        if overwrite and fs.exists(fs_path):
-            try:
-                fs.rm(fs_path, recursive=True)
-            except TypeError:
-                fs.rm(fs_path)
 
-        if self.config.partition_on:
-            files = self._write_partitioned_jsonl(
+        def _write(directory: str) -> list[str]:
+            if self.config.partition_on:
+                return self._write_partitioned_jsonl(
+                    ddf,
+                    fs=fs,
+                    base_path=directory,
+                    write_index=write_index,
+                )
+            return self._write_jsonl_pattern(
                 ddf,
                 fs=fs,
-                base_path=fs_path,
+                directory=directory,
                 write_index=write_index,
             )
-        else:
-            files = self._write_jsonl_pattern(
-                ddf,
-                fs=fs,
-                directory=fs_path,
-                write_index=write_index,
-            )
+
+        files = _write_with_staging(
+            fs=fs, target_path=fs_path, overwrite=overwrite, write_fn=_write
+        )
         return SinkWriteResult(path=public_path, files=tuple(files))
 
     def _write_partitioned_jsonl(
@@ -526,24 +571,23 @@ class ParquetSink:
 
         fs = self.reader.resource.require_fs()
         target_path = cast(str, self.reader.parquet_storage_path)
-        if overwrite and fs.exists(target_path):
-            try:
-                fs.rm(target_path, recursive=True)
-            except TypeError:
-                fs.rm(target_path)
 
-        params: dict[str, Any] = {
-            "path": target_path,
-            "engine": "pyarrow",
-            "write_index": write_index,
-            "filesystem": fs,
-        }
-        if self.partition_on:
-            params["partition_on"] = list(self.partition_on)
-        ddf.to_parquet(**params)
+        def _write(directory: str) -> list[str]:
+            params: dict[str, Any] = {
+                "path": directory,
+                "engine": "pyarrow",
+                "write_index": write_index,
+                "filesystem": fs,
+            }
+            if self.partition_on:
+                params["partition_on"] = list(self.partition_on)
+            ddf.to_parquet(**params)
+            return sorted(
+                self._restore_protocol(path) for path in fs.glob(f"{directory.rstrip('/')}/*")
+            )
 
-        files = sorted(
-            self._restore_protocol(path) for path in fs.glob(f"{target_path.rstrip('/')}/*")
+        files = _write_with_staging(
+            fs=fs, target_path=target_path, overwrite=overwrite, write_fn=_write
         )
         return SinkWriteResult(path=target_path, files=tuple(files))
 

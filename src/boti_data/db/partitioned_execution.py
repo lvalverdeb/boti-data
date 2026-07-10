@@ -177,6 +177,13 @@ class SqlPartitionExecutor:
         )
 
     @staticmethod
+    def _dataframe_from_result_rows(result: Any, meta_dtypes: dict[str, str]) -> pd.DataFrame:
+        columns = list(result.keys())
+        rows = result.fetchall()
+        df = pd.DataFrame(rows, columns=columns)
+        return SqlPartitionExecutor.align_and_coerce_partition(df, meta_dtypes)
+
+    @staticmethod
     def fetch_partition(
         *,
         config: WorkerSqlConfig,
@@ -192,10 +199,7 @@ class SqlPartitionExecutor:
             with engine.connect() as conn:
                 if not use_arrow:
                     result = conn.exec_driver_sql(partition.sql, partition.params)
-                    columns = list(result.keys())
-                    rows = result.fetchall()
-                    df = pd.DataFrame(rows, columns=columns)
-                    return SqlPartitionExecutor.align_and_coerce_partition(df, meta_dtypes)
+                    return SqlPartitionExecutor._dataframe_from_result_rows(result, meta_dtypes)
                 if partition.params is None:
                     result = conn.exec_driver_sql(partition.sql)
                 else:
@@ -281,12 +285,7 @@ class SqlPartitionExecutor:
                 async with engine.connect() as conn:
                     if not use_arrow:
                         result = await conn.exec_driver_sql(partition.sql, partition.params)
-                        columns = list(result.keys())
-                        rows = result.fetchall()
-                        df = pd.DataFrame(rows, columns=columns)
-                        return SqlPartitionExecutor.align_and_coerce_partition(
-                            df, meta_dtypes,
-                        )
+                        return SqlPartitionExecutor._dataframe_from_result_rows(result, meta_dtypes)
                     if partition.params is None:
                         result = await conn.exec_driver_sql(partition.sql)
                     else:

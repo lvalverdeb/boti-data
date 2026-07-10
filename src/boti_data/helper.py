@@ -4,7 +4,8 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from boti_data.distributed import DaskSession, dask_session
+from boti_dask import DaskSession, dask_session
+
 from boti_data.gateway import DataGateway
 from boti_data.gateway.incremental import IncrementalLoadService
 from boti_data.gateway.requests import BackendConfig

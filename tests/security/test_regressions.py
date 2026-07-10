@@ -381,3 +381,34 @@ def test_parquet_resource_rejects_null_byte_in_path(tmp_path):
     resource = ParquetDataResource(config)
     with pytest.raises(PermissionError, match="could not be resolved"):
         resource._secure_local_path("/tmp/file\x00.parquet")
+
+
+def test_engine_keys_differ_when_only_the_password_differs():
+    """Two configs identical except for the password must never alias to the
+    same cached engine (e.g. after a credential rotation), and the key itself
+    must not contain the plaintext secret."""
+    from pydantic import SecretStr
+
+    from boti_data.db.sql_engine import _build_async_engine_key, _build_sync_engine_key
+
+    config_a = SqlDatabaseConfig(
+        connection_url=SecretStr("mysql+pymysql://app:old-password@db.internal:3306/reports")
+    )
+    config_b = SqlDatabaseConfig(
+        connection_url=SecretStr("mysql+pymysql://app:new-password@db.internal:3306/reports")
+    )
+
+    sync_key_a = _build_sync_engine_key(config_a)
+    sync_key_b = _build_sync_engine_key(config_b)
+    assert sync_key_a != sync_key_b
+
+    async_key_a = _build_async_engine_key(config_a)
+    async_key_b = _build_async_engine_key(config_b)
+    assert async_key_a != async_key_b
+
+    for key in (sync_key_a, sync_key_b, async_key_a, async_key_b):
+        assert "old-password" not in repr(key)
+        assert "new-password" not in repr(key)
+
+    # Same config still produces a stable key (cache hits keep working).
+    assert sync_key_a == _build_sync_engine_key(config_a)

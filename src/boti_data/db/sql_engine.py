@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from typing import Any
 
@@ -146,12 +147,28 @@ def _build_async_engine_kwargs(config: SqlDatabaseConfig) -> dict[str, Any]:
     return kwargs
 
 
+def _connection_url_digest(connection_url: str) -> str:
+    """Digest of the full normalized URL, credentials included.
+
+    Engine keys render the URL with the password hidden so key reprs are safe
+    to log — but that alone would alias two configs that differ only in
+    password to the same cached engine (e.g. after a credential rotation).
+    The digest differentiates them without ever putting the secret in the key.
+    """
+    normalized = _normalize_connection_url(connection_url)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+
 def _build_sync_engine_key(config: SqlDatabaseConfig) -> tuple:
-    normalized_url = _render_normalized_url(
-        config.connection_url.get_secret_value(),
-        hide_password=True,
-    )
-    key_parts = ["sync", str(normalized_url), config.poolclass, config.query_only]
+    raw_url = config.connection_url.get_secret_value()
+    normalized_url = _render_normalized_url(raw_url, hide_password=True)
+    key_parts = [
+        "sync",
+        str(normalized_url),
+        _connection_url_digest(raw_url),
+        config.poolclass,
+        config.query_only,
+    ]
     if config.poolclass not in (NullPool, StaticPool):
         key_parts.extend([config.pool_size, config.max_overflow, config.pool_timeout])
     key_parts.extend([config.pool_recycle, config.pool_pre_ping])
@@ -159,14 +176,18 @@ def _build_sync_engine_key(config: SqlDatabaseConfig) -> tuple:
 
 
 def _build_async_engine_key(config: SqlDatabaseConfig) -> tuple:
-    normalized_url = _render_normalized_url(
-        config.connection_url.get_secret_value(),
-        hide_password=True,
-    )
+    raw_url = config.connection_url.get_secret_value()
+    normalized_url = _render_normalized_url(raw_url, hide_password=True)
     actual_poolclass = config.poolclass
     key_poolclass = "async_default_queue" if actual_poolclass is QueuePool else actual_poolclass
 
-    key_parts = ["async", str(normalized_url), key_poolclass, config.query_only]
+    key_parts = [
+        "async",
+        str(normalized_url),
+        _connection_url_digest(raw_url),
+        key_poolclass,
+        config.query_only,
+    ]
     if actual_poolclass not in (NullPool, StaticPool):
         key_parts.extend([config.pool_size, config.max_overflow, config.pool_timeout])
     key_parts.extend([config.pool_recycle, config.pool_pre_ping])

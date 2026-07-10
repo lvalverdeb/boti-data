@@ -5,9 +5,9 @@ from time import perf_counter
 from typing import Any
 
 import dask.dataframe as dd
+from boti_dask import current_client_summary, describe_frame, diagnostics_logger
 from boti_dask.resilience import safe_persist
 
-from boti_data.distributed import current_client_summary, describe_frame, diagnostics_logger
 from boti_data.schema import (
     DataFrameLike,
     apply_schema_map,
@@ -102,9 +102,11 @@ def _safe_persist_side(
 ) -> DataFrameLike:
     if not persist or not isinstance(frame, dd.DataFrame):
         return frame
-    if dry_run and logger is not None:
-        logger.info("%s: dry run requested; persist steps skipped", label)
-    elif resilient:
+    if dry_run:
+        if logger is not None:
+            logger.info("%s: dry run requested; persist steps skipped", label)
+        return frame
+    if resilient:
         frame = safe_persist(frame)
     else:
         frame = frame.persist()

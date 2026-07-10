@@ -659,58 +659,10 @@ class SqlAlchemyStrategy(BackendStrategy):
         assert isinstance(ctx.config, SqlDatabaseConfig)
 
         if ctx.resource is not None:
-            return await self._aload_configured_sync_sql(ctx)
+            # load_configured_sync() is pure blocking SQLAlchemy work; run the
+            # whole thing off-thread rather than re-implementing it here.
+            return await asyncio.to_thread(self.load_configured_sync, ctx)
         return await self._aload_configured_async_sql(ctx)
-
-    async def _aload_configured_sync_sql(
-        self,
-        ctx: ConfiguredLoadContext,
-    ) -> FrameResult:
-        assert isinstance(ctx.resource, SqlDatabaseResource)
-        assert ctx.get_configured_select is not None
-
-        model, stmt = ctx.get_configured_select(ctx.db_columns)
-        partitioned_options = build_partitioned_load_options(
-            statement=stmt,
-            model=model,
-            filters=ctx.db_filters,
-            control=ctx.control.model_dump(),
-            default_chunk_size=(ctx.chunk_size or _DEFAULT_PARTITION_CHUNK_SIZE),
-        )
-        if ctx.execution_mode == "lazy":
-            options_dict = partitioned_options.model_dump(exclude_none=True)
-            options_dict["use_arrow"] = False
-            request = build_sql_partitioned_request(options_dict)
-            df = await asyncio.to_thread(
-                load_sql_partitioned,
-                ctx.config,
-                ctx.resource,
-                request,
-            )
-        else:
-            df = await asyncio.to_thread(
-                load_sql,
-                ctx.resource,
-                self._trusted_sql_request(
-                    statement=stmt,
-                    model=model,
-                    filters=ctx.db_filters,
-                    params=ctx.control.params,
-                    limit=ctx.control.limit,
-                    as_pandas=True,
-                    diagnostics=ctx.control.diagnostics,
-                    return_type=ctx.loader_return_type,
-                ),
-            )
-            if isinstance(df, pd.DataFrame):
-                df = ctx.post_processor.coerce_eager_sql_frame(df, statement=stmt)
-
-        return ctx.post_processor.finalize_configured_result(
-            df,
-            return_type=ctx.return_type,
-            apply_field_map=True,
-            fieldnames=ctx.configured_fieldnames,
-        )
 
     async def _aload_configured_async_sql(
         self,
@@ -866,43 +818,61 @@ class SqlAlchemyStrategy(BackendStrategy):
         return self._estimate_structured(ctx)
 
     @staticmethod
-    def _estimate_structured(
+    def _early_structured_estimate(
         ctx: StructuredLoadContext,
-    ) -> tuple[int | None, int | None] | None:
-        from boti_data.db.partitioned_planner import SqlPartitionPlanner
-
+    ) -> tuple[SqlPartitionedLoadRequest, int] | tuple[None, None]:
+        """Returns (request, threshold) to probe, or (None, None) to abstain."""
         options = ctx.opts
         if options.get("partitioned") is True:
-            return None
+            return None, None
         if options.get("sql") is not None:
-            return None
+            return None, None
         if options.get("statement") is None or options.get("model") is None:
-            return None
+            return None, None
         request = build_sql_partitioned_request(options)
         threshold = _auto_sql_threshold(request.limit)
         if threshold == 0:
-            return None
-        if not isinstance(ctx.resource, SqlDatabaseResource):
-            return None
-        planner = SqlPartitionPlanner(ctx.resource)
+            return None, None
+        return request, threshold
+
+    @staticmethod
+    def _probe_sync(
+        resource: SqlDatabaseResource,
+        request: SqlPartitionedLoadRequest,
+        threshold: int,
+    ) -> tuple[int, None]:
+        planner = SqlPartitionPlanner(resource)
         statement = planner.prepare_statement(request)
         probed_rows = min(planner.count_rows_up_to(statement, threshold), threshold)
         return probed_rows, None
 
     @staticmethod
-    def _estimate_configured(
-        ctx: ConfiguredLoadContext,
+    def _estimate_structured(
+        ctx: StructuredLoadContext,
     ) -> tuple[int | None, int | None] | None:
+        request, threshold = SqlAlchemyStrategy._early_structured_estimate(ctx)
+        if request is None:
+            return None
+        if not isinstance(ctx.resource, SqlDatabaseResource):
+            return None
+        return SqlAlchemyStrategy._probe_sync(ctx.resource, request, threshold)
+
+    _NO_CONFIGURED_SHORTCUT = object()
+
+    @staticmethod
+    def _configured_early_estimate(ctx: ConfiguredLoadContext) -> Any:
+        """Returns an estimate tuple/None if resolvable without a probe, else a sentinel."""
         if ctx.control.partitioned is True:
             return None
         limit = ctx.control.limit
         if isinstance(limit, int) and limit <= _AUTO_EAGER_MAX_ROWS:
             return limit, None
-        if not isinstance(ctx.resource, SqlDatabaseResource):
-            return None
-        if ctx.get_configured_select is None:
-            return None
-        model, stmt = ctx.get_configured_select(ctx.db_columns)
+        return SqlAlchemyStrategy._NO_CONFIGURED_SHORTCUT
+
+    @staticmethod
+    def _build_configured_probe_request(
+        ctx: ConfiguredLoadContext, stmt: Any, model: Any
+    ) -> SqlPartitionedLoadRequest:
         partitioned_options = build_partitioned_load_options(
             statement=stmt,
             model=model,
@@ -910,16 +880,25 @@ class SqlAlchemyStrategy(BackendStrategy):
             control=ctx.control.model_dump(),
             default_chunk_size=ctx.chunk_size or _DEFAULT_PARTITION_CHUNK_SIZE,
         )
-        request = build_sql_partitioned_request(partitioned_options.model_dump(exclude_none=True))
-        from boti_data.db.partitioned_planner import SqlPartitionPlanner
+        return build_sql_partitioned_request(partitioned_options.model_dump(exclude_none=True))
 
-        planner = SqlPartitionPlanner(ctx.resource)
-        statement = planner.prepare_statement(request)
+    @staticmethod
+    def _estimate_configured(
+        ctx: ConfiguredLoadContext,
+    ) -> tuple[int | None, int | None] | None:
+        shortcut = SqlAlchemyStrategy._configured_early_estimate(ctx)
+        if shortcut is not SqlAlchemyStrategy._NO_CONFIGURED_SHORTCUT:
+            return shortcut
+        if not isinstance(ctx.resource, SqlDatabaseResource):
+            return None
+        if ctx.get_configured_select is None:
+            return None
+        model, stmt = ctx.get_configured_select(ctx.db_columns)
+        request = SqlAlchemyStrategy._build_configured_probe_request(ctx, stmt, model)
         threshold = _auto_sql_threshold(request.limit)
         if threshold == 0:
             return None
-        probed_rows = min(planner.count_rows_up_to(statement, threshold), threshold)
-        return probed_rows, None
+        return SqlAlchemyStrategy._probe_sync(ctx.resource, request, threshold)
 
     async def estimate_result_size_async(
         self,
@@ -935,47 +914,27 @@ class SqlAlchemyStrategy(BackendStrategy):
         self,
         ctx: StructuredLoadContext,
     ) -> tuple[int | None, int | None] | None:
-        options = ctx.opts
-        if options.get("partitioned") is True:
-            return None
-        if options.get("sql") is not None:
-            return None
-        if options.get("statement") is None or options.get("model") is None:
-            return None
-        request = build_sql_partitioned_request(options)
-        threshold = _auto_sql_threshold(request.limit)
-        if threshold == 0:
+        request, threshold = self._early_structured_estimate(ctx)
+        if request is None:
             return None
         if ctx.resource is not None:
             assert isinstance(ctx.resource, SqlDatabaseResource)
-            planner = SqlPartitionPlanner(ctx.resource)
-            statement = planner.prepare_statement(request)
-            probed_rows = min(planner.count_rows_up_to(statement, threshold), threshold)
-            return probed_rows, None
+            return self._probe_sync(ctx.resource, request, threshold)
         return await self._probe_async(request, threshold, ctx.async_sql_resource)
 
     async def _estimate_configured_async(
         self,
         ctx: ConfiguredLoadContext,
     ) -> tuple[int | None, int | None] | None:
-        if ctx.control.partitioned is True:
-            return None
-        limit = ctx.control.limit
-        if isinstance(limit, int) and limit <= _AUTO_EAGER_MAX_ROWS:
-            return limit, None
+        shortcut = self._configured_early_estimate(ctx)
+        if shortcut is not self._NO_CONFIGURED_SHORTCUT:
+            return shortcut
         assert ctx.get_configured_select_async is not None
         model, stmt = await ctx.get_configured_select_async(
             ctx.async_sql_resource,
             ctx.db_columns,
         )
-        partitioned_options = build_partitioned_load_options(
-            statement=stmt,
-            model=model,
-            filters=ctx.db_filters,
-            control=ctx.control.model_dump(),
-            default_chunk_size=ctx.chunk_size or _DEFAULT_PARTITION_CHUNK_SIZE,
-        )
-        request = build_sql_partitioned_request(partitioned_options.model_dump(exclude_none=True))
+        request = self._build_configured_probe_request(ctx, stmt, model)
         return await self._probe_async(
             request,
             _auto_sql_threshold(request.limit),
@@ -1288,18 +1247,4 @@ def _auto_sql_threshold(limit: int | None = None) -> int:
 def _resolve_parquet_scan_summary(
     resource: ParquetDataResource,
 ) -> tuple[int | None, int | None]:
-    files_to_load = resource._resolve_files_to_load()
-    if not files_to_load:
-        return 0, 0
-    if len(files_to_load) > _AUTO_EAGER_MAX_FILES:
-        return None, None
-    total_bytes = 0
-    for path in files_to_load:
-        info = resource._get_file_info(path)
-        if info is None:
-            return None, None
-        size = info.get("size")
-        if not isinstance(size, int):
-            return None, None
-        total_bytes += size
-    return None, total_bytes
+    return resource.scan_summary(max_files=_AUTO_EAGER_MAX_FILES)

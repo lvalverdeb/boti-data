@@ -68,6 +68,18 @@ class _LoadPlan:
     live_end: str | None = None
 
 
+@dataclass(slots=True)
+class _MixedLoadPrep:
+    return_type: ResolvedReturnType
+    branch_options: dict[str, Any]
+    persist: bool
+    resilient: bool
+    historical_start: Any
+    historical_end: Any
+    live_start: Any
+    live_end: Any
+
+
 class _HybridEngineBoundDataset:
     """Engine-specific view over an existing :class:`HybridDataset`."""
 
@@ -328,53 +340,63 @@ class HybridDataset:
             return combined.persist()
         return combined
 
-    def _load_mixed_sync(self, plan: _LoadPlan, options: Mapping[str, Any]) -> FrameResult:
+    def _prepare_mixed_load(self, plan: _LoadPlan, options: Mapping[str, Any]) -> _MixedLoadPrep:
         return_type = self._resolved_mixed_return_type(options)
         branch_options, persist, resilient = self._branch_options(options, return_type=return_type)
         historical_start, historical_end = self._require_bounds(plan.historical_start, plan.historical_end)
         live_start, live_end = self._require_bounds(plan.live_start, plan.live_end)
+        return _MixedLoadPrep(
+            return_type=return_type,
+            branch_options=branch_options,
+            persist=persist,
+            resilient=resilient,
+            historical_start=historical_start,
+            historical_end=historical_end,
+            live_start=live_start,
+            live_end=live_end,
+        )
+
+    def _load_mixed_sync(self, plan: _LoadPlan, options: Mapping[str, Any]) -> FrameResult:
+        prep = self._prepare_mixed_load(plan, options)
         historical_frame = self.historical.load_period(
             self.date_field,
-            historical_start,
-            historical_end,
-            **branch_options,
+            prep.historical_start,
+            prep.historical_end,
+            **prep.branch_options,
         )
         live_frame = self.live.load_period(
             self.date_field,
-            live_start,
-            live_end,
-            **branch_options,
+            prep.live_start,
+            prep.live_end,
+            **prep.branch_options,
         )
         return self._combine_mixed_frames(
             [historical_frame, live_frame],
-            return_type=return_type,
-            persist=persist,
-            resilient=resilient,
+            return_type=prep.return_type,
+            persist=prep.persist,
+            resilient=prep.resilient,
         )
 
     async def _load_mixed_async(self, plan: _LoadPlan, options: Mapping[str, Any]) -> FrameResult:
-        return_type = self._resolved_mixed_return_type(options)
-        branch_options, persist, resilient = self._branch_options(options, return_type=return_type)
-        historical_start, historical_end = self._require_bounds(plan.historical_start, plan.historical_end)
-        live_start, live_end = self._require_bounds(plan.live_start, plan.live_end)
+        prep = self._prepare_mixed_load(plan, options)
         historical_task = self.historical.aload_period(
             self.date_field,
-            historical_start,
-            historical_end,
-            **branch_options,
+            prep.historical_start,
+            prep.historical_end,
+            **prep.branch_options,
         )
         live_task = self.live.aload_period(
             self.date_field,
-            live_start,
-            live_end,
-            **branch_options,
+            prep.live_start,
+            prep.live_end,
+            **prep.branch_options,
         )
         historical_frame, live_frame = await asyncio.gather(historical_task, live_task)
         return self._combine_mixed_frames(
             [historical_frame, live_frame],
-            return_type=return_type,
-            persist=persist,
-            resilient=resilient,
+            return_type=prep.return_type,
+            persist=prep.persist,
+            resilient=prep.resilient,
         )
 
 

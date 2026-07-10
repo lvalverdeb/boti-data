@@ -32,7 +32,6 @@ from boti_data.filters import (
 from boti_data.gateway import DataGateway, ParquetLoadRequest, SqlLoadRequest
 from boti_data.helper import DataHelper
 from boti_data.field_map import FieldMap
-from boti_data.distributed import DaskSession, dask_session
 from boti_data.gateway import DataFrameOptions, DataFrameParams
 from boti_data.joins import indexed_left_join, left_join_frames
 from boti_data.schema import (
@@ -84,7 +83,6 @@ __all__ = [
     "DataFrameParams",
     "DataGateway",
     "DataHelper",
-    "DaskSession",
     "DatacubeConfig",
     "DatacubeContract",
     "DefaultBase",
@@ -130,7 +128,6 @@ __all__ = [
     "available_sinks",
     "build_incremental_filters",
     "create_sink",
-    "dask_session",
     "ensure_greenlet_available",
     "get_global_registry",
     "indexed_left_join",

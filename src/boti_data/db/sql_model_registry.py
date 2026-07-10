@@ -13,6 +13,7 @@ import re
 import sys
 import threading
 import types
+from collections.abc import Callable
 from typing import Any, Union
 
 from boti.core.logger import Logger
@@ -148,21 +149,21 @@ class SqlModelRegistry:
                 self._metadata_cache[md_key] = md
             return md
 
+    @staticmethod
+    def _get_or_create_cached(cache: dict, key: Any, factory: Callable[[], Any]) -> Any:
+        value = cache.get(key)
+        if value is None:
+            value = factory()
+            cache[key] = value
+        return value
+
     def _get_or_create_md_lock(self, md_key: tuple[str, str | None]) -> threading.Lock:
         with self._lock:
-            lock = self._md_locks.get(md_key)
-            if lock is None:
-                lock = threading.Lock()
-                self._md_locks[md_key] = lock
-            return lock
+            return self._get_or_create_cached(self._md_locks, md_key, threading.Lock)
 
     async def _get_or_create_md_lock_async(self, md_key: tuple[str, str | None]) -> asyncio.Lock:
         async with self._async_lock:
-            lock = self._md_async_locks.get(md_key)
-            if lock is None:
-                lock = asyncio.Lock()
-                self._md_async_locks[md_key] = lock
-            return lock
+            return self._get_or_create_cached(self._md_async_locks, md_key, asyncio.Lock)
 
     def _register_as_module_attribute(self, cls: type, module_name: str, class_name: str) -> None:
         """
@@ -205,6 +206,65 @@ class SqlModelRegistry:
 
             setattr(sys.modules[module_name], class_name, cls)
 
+    def _resolve_model_keys(
+        self,
+        engine: Union[Engine, AsyncEngine],
+        table_name: str,
+        *,
+        schema: str | None,
+        module_label: str | None,
+    ) -> tuple[str, str | None, str, tuple[str, str | None, str], tuple[str, str | None], str]:
+        """Returns (ekey, schema, tname, model_key, md_key, module_label)."""
+        s2, tname = self._split_schema_and_table(table_name)
+        resolved_schema = schema if schema is not None else s2
+        ekey = self._engine_key(engine)
+        model_key = (ekey, resolved_schema, tname)
+        md_key = (ekey, resolved_schema)
+        resolved_module_label = self._resolve_module_label(module_label, self.config.default_module_label)
+        return ekey, resolved_schema, tname, model_key, md_key, resolved_module_label
+
+    def _build_model_class(
+        self,
+        tbl: Table,
+        *,
+        qname: str,
+        tname: str,
+        base_class: type[Any],
+        module_label: str,
+        prefer_stable_names: bool,
+        ekey: str,
+        schema: str | None,
+        missing_pk_warning_suffix: str,
+    ) -> type[Any]:
+        base_name = self._normalize_class_name(tname)
+        final_name = base_name
+
+        if self._is_class_name_taken(base_name, module_label):
+            suffix = self._short_hash(ekey, schema or "", tname)
+            final_name = f"{base_name}_{suffix}"
+        elif not prefer_stable_names:
+            suffix = self._short_hash(ekey, schema or "", tname)
+            final_name = f"{base_name}_{suffix}"
+
+        attrs: dict[str, Any] = {
+            "__tablename__": tbl.name,
+            "__table__": tbl,
+            "__module__": module_label,
+        }
+
+        if not tbl.primary_key.columns and tbl.columns:
+            # Observability hook for injected read-only views avoiding ORM exceptions
+            self.logger.warning(
+                f"Missing native Primary Key on {qname}. "
+                "Synthesizing mapper bindings using primary sequential column fallback. "
+                f"{missing_pk_warning_suffix}"
+            )
+            attrs["__mapper_args__"] = {"primary_key": [list(tbl.columns)[0]]}
+
+        model_cls = type(final_name, (base_class,), attrs)
+        self._register_as_module_attribute(model_cls, module_label, final_name)
+        return model_cls
+
     def get_model(
         self,
         engine: Engine,
@@ -219,12 +279,9 @@ class SqlModelRegistry:
         """
         Atomically reflects a table schema and scaffolds its ORM class safely.
         """
-        s2, tname = self._split_schema_and_table(table_name)
-        schema = schema if schema is not None else s2
-        ekey = self._engine_key(engine)
-        model_key = (ekey, schema, tname)
-        md_key = (ekey, schema)
-        module_label = self._resolve_module_label(module_label, self.config.default_module_label)
+        ekey, schema, tname, model_key, md_key, module_label = self._resolve_model_keys(
+            engine, table_name, schema=schema, module_label=module_label
+        )
 
         if refresh:
             with self._lock:
@@ -256,34 +313,17 @@ class SqlModelRegistry:
                 self._model_cache[model_key] = reused
             return reused
 
-        base_name = self._normalize_class_name(tname)
-        final_name = base_name
-
-        if self._is_class_name_taken(base_name, module_label):
-            suffix = self._short_hash(ekey, schema or "", tname)
-            final_name = f"{base_name}_{suffix}"
-        elif not prefer_stable_names:
-            suffix = self._short_hash(ekey, schema or "", tname)
-            final_name = f"{base_name}_{suffix}"
-
-        attrs: dict[str, Any] = {
-            "__tablename__": tbl.name,
-            "__table__": tbl,
-            "__module__": module_label,
-        }
-
-        if not tbl.primary_key.columns and tbl.columns:
-            # Observability hook for injected read-only views avoiding ORM exceptions
-            self.logger.warning(
-                f"Missing native Primary Key on {qname}. "
-                "Synthesizing mapper bindings using primary sequential column fallback. "
-                "Ensure ORM mutation sequences validate bounds manually."
-            )
-            attrs["__mapper_args__"] = {"primary_key": [list(tbl.columns)[0]]}
-
-        model_cls = type(final_name, (base_class,), attrs)
-
-        self._register_as_module_attribute(model_cls, module_label, final_name)
+        model_cls = self._build_model_class(
+            tbl,
+            qname=qname,
+            tname=tname,
+            base_class=base_class,
+            module_label=module_label,
+            prefer_stable_names=prefer_stable_names,
+            ekey=ekey,
+            schema=schema,
+            missing_pk_warning_suffix="Ensure ORM mutation sequences validate bounds manually.",
+        )
 
         with self._lock:
             self._model_cache[model_key] = model_cls
@@ -302,12 +342,9 @@ class SqlModelRegistry:
     ) -> type[Any]:
         """Atomically reflects schemas asynchronously bridging Non-Blocking asyncio event pools."""
         ensure_greenlet_available()
-        s2, tname = self._split_schema_and_table(table_name)
-        schema = schema if schema is not None else s2
-        ekey = self._engine_key(engine)
-        model_key = (ekey, schema, tname)
-        md_key = (ekey, schema)
-        module_label = self._resolve_module_label(module_label, self.config.default_module_label)
+        ekey, schema, tname, model_key, md_key, module_label = self._resolve_model_keys(
+            engine, table_name, schema=schema, module_label=module_label
+        )
 
         if refresh:
             async with self._async_lock:
@@ -339,32 +376,17 @@ class SqlModelRegistry:
                 self._model_cache[model_key] = reused
             return reused
 
-        base_name = self._normalize_class_name(tname)
-        final_name = base_name
-
-        if self._is_class_name_taken(base_name, module_label):
-            suffix = self._short_hash(ekey, schema or "", tname)
-            final_name = f"{base_name}_{suffix}"
-        elif not prefer_stable_names:
-            suffix = self._short_hash(ekey, schema or "", tname)
-            final_name = f"{base_name}_{suffix}"
-
-        attrs: dict[str, Any] = {
-            "__tablename__": tbl.name,
-            "__table__": tbl,
-            "__module__": module_label,
-        }
-
-        if not tbl.primary_key.columns and tbl.columns:
-            self.logger.warning(
-                f"Missing native Primary Key on {qname}. "
-                "Synthesizing mapper bindings using primary sequential column fallback. "
-                "Ensure Async ORM validation sequences capture bounds correctly."
-            )
-            attrs["__mapper_args__"] = {"primary_key": [list(tbl.columns)[0]]}
-
-        model_cls = type(final_name, (base_class,), attrs)
-        self._register_as_module_attribute(model_cls, module_label, final_name)
+        model_cls = self._build_model_class(
+            tbl,
+            qname=qname,
+            tname=tname,
+            base_class=base_class,
+            module_label=module_label,
+            prefer_stable_names=prefer_stable_names,
+            ekey=ekey,
+            schema=schema,
+            missing_pk_warning_suffix="Ensure Async ORM validation sequences capture bounds correctly.",
+        )
 
         async with self._async_lock:
             self._model_cache[model_key] = model_cls

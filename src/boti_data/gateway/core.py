@@ -194,6 +194,14 @@ class DataGateway:
         return self._table is not None
 
     @property
+    def default_return_type(self) -> ReturnType:
+        return self._return_type
+
+    @property
+    def default_execution_mode(self) -> ExecutionMode:
+        return self._execution_mode
+
+    @property
     def _logger(self) -> Any | None:
         if self._async_sql_resource is not None:
             return getattr(self._async_sql_resource, "logger", None)
@@ -500,6 +508,24 @@ class DataGateway:
             plan.started,
         )
 
+    @staticmethod
+    def _resolve_control_and_request(options: dict[str, Any]) -> GatewayLoadRequest:
+        control, _ = split_control_and_filters(options)
+        return GatewayLoadRequest.model_validate(control)
+
+    def _resolve_in_chunk_controls_for_plan(
+        self, loader_options: dict[str, Any], plan: Any
+    ) -> tuple[int, int | None]:
+        self._validate_runtime_filters(loader_options)
+        controls = plan.controls
+        return self._resolve_in_chunk_controls(
+            loader_options,
+            strategy=controls.in_chunk_strategy,
+            execution_mode=plan.resolved_execution_mode,
+            in_chunk_size_raw=controls.in_chunk_size_raw,
+            in_chunk_concurrency_raw=controls.in_chunk_concurrency_raw,
+        )
+
     def load(self, **options: Any) -> FrameResult:
         """Load data from the configured backend.
 
@@ -516,20 +542,14 @@ class DataGateway:
             as_pandas: If ``True``, compute the result to a Pandas DataFrame.
             **options: Filter kwargs (configured mode) or load-request fields.
         """
-        control, _ = split_control_and_filters(options)
-        request = GatewayLoadRequest.model_validate(control)
+        request = self._resolve_control_and_request(options)
         plan = self._load_planner().plan(options, request=request)
         controls = plan.controls
         loader_options = self._prepare_load_options(options, plan, controls)
 
         loader_options = _series_filters.resolve_series_filters(loader_options)
-        self._validate_runtime_filters(loader_options)
-        in_chunk_size, in_chunk_concurrency = self._resolve_in_chunk_controls(
-            loader_options,
-            strategy=controls.in_chunk_strategy,
-            execution_mode=plan.resolved_execution_mode,
-            in_chunk_size_raw=controls.in_chunk_size_raw,
-            in_chunk_concurrency_raw=controls.in_chunk_concurrency_raw,
+        in_chunk_size, in_chunk_concurrency = self._resolve_in_chunk_controls_for_plan(
+            loader_options, plan
         )
 
         def _execute_sync(**opts: Any) -> pd.DataFrame | dd.DataFrame | pa.Table:
@@ -565,8 +585,7 @@ class DataGateway:
                 sub-queries run at once. ``None`` preserves the existing
                 unbounded fan-out behavior.
         """
-        control, _ = split_control_and_filters(options)
-        request = GatewayLoadRequest.model_validate(control)
+        request = self._resolve_control_and_request(options)
         plan = await self._load_planner().aplan(options, request=request)
         controls = plan.controls
         loader_options = self._prepare_load_options(options, plan, controls)
@@ -576,13 +595,8 @@ class DataGateway:
         loader_options = await _series_filters.resolve_series_filters_async(
             loader_options
         )
-        self._validate_runtime_filters(loader_options)
-        in_chunk_size, in_chunk_concurrency = self._resolve_in_chunk_controls(
-            loader_options,
-            strategy=controls.in_chunk_strategy,
-            execution_mode=plan.resolved_execution_mode,
-            in_chunk_size_raw=controls.in_chunk_size_raw,
-            in_chunk_concurrency_raw=controls.in_chunk_concurrency_raw,
+        in_chunk_size, in_chunk_concurrency = self._resolve_in_chunk_controls_for_plan(
+            loader_options, plan
         )
 
         async def _execute(**opts: Any) -> pd.DataFrame | dd.DataFrame | pa.Table:

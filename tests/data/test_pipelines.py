@@ -387,3 +387,48 @@ def test_sink_pipeline_applies_enricher_before_write(temp_project_root):
     assert "label" in sample.columns
 
 
+
+
+def test_csv_sink_overwrite_preserves_previous_output_when_write_fails(temp_project_root):
+    """A failing compute during overwrite must not destroy the existing dataset."""
+    target = temp_project_root / "csv_staging_output"
+    sink = CsvSink(
+        CsvSinkConfig(
+            storage_path=str(target),
+            project_root=temp_project_root,
+        )
+    )
+    try:
+        first = pd.DataFrame({"id": [1, 2], "status": ["a", "b"]})
+        sink.write(first)
+        assert target.exists()
+        before = sorted(p.name for p in target.iterdir())
+
+        def _explode(df: pd.DataFrame) -> pd.DataFrame:
+            raise RuntimeError("simulated compute failure")
+
+        broken = dd.from_pandas(pd.DataFrame({"id": [3], "status": ["c"]}), npartitions=1)
+        broken = broken.map_partitions(
+            _explode,
+            meta=pd.DataFrame(
+                {"id": pd.Series(dtype="int64"), "status": pd.Series(dtype="object")}
+            ),
+        )
+
+        with pytest.raises(Exception):
+            sink.write(broken)
+
+        # Previous output survives the failed overwrite.
+        assert target.exists()
+        assert sorted(p.name for p in target.iterdir()) == before
+        survivor = pd.read_csv(next(target.glob("*.csv")))
+        assert sorted(survivor["id"].tolist()) == [1, 2]
+
+        # A subsequent successful overwrite cleans up and replaces.
+        second = pd.DataFrame({"id": [9], "status": ["z"]})
+        result = sink.write(second)
+        replaced = pd.read_csv(str(result.files[0]))
+        assert replaced["id"].tolist() == [9]
+        assert not (temp_project_root / "csv_staging_output.staging").exists()
+    finally:
+        sink.close()

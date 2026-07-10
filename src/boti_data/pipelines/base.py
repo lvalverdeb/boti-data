@@ -18,6 +18,7 @@ from boti_data.pipelines.sinks import (
 from boti_data.watermark import (
     FileWatermarkStore,
     WatermarkStore,
+    advance_watermark,
 )
 
 PipelineSource: TypeAlias = Union[DataHelper, HybridDataset]
@@ -427,16 +428,11 @@ class ParquetPipeline(SinkPipeline):
         if current is not None:
             store.write(source=source, value=current)
 
-    def _materialize_incremental(
-        self,
-        *,
-        reload: bool = False,
-        reload_options: Mapping[str, Any] | None = None,
-        write_index: bool = False,
-        overwrite: bool = True,
-        persist: bool = False,
-        **load_options: Any,
-    ) -> ParquetMaterializationResult:
+    def _prepare_incremental_filters(self, load_options: dict[str, Any]) -> str:
+        """Merges watermark-derived filters into ``load_options`` in place.
+
+        Returns the watermark field name for use by the caller.
+        """
         watermark_field: str = self._watermark_field
         store: WatermarkStore = self._watermark_store
         source: str = self._watermark_source
@@ -449,6 +445,28 @@ class ParquetPipeline(SinkPipeline):
         merged = {**load_options.pop("filters", {}), **filters}
         if merged:
             load_options["filters"] = merged
+        return watermark_field
+
+    def _finalize_reload_frame(self, frame: Any, watermark_field: str) -> Any:
+        """Discards an empty reloaded frame, else advances the watermark from it."""
+        if frame is None:
+            return None
+        if hasattr(frame, "columns") and len(frame.columns) == 0:
+            return None
+        self._update_watermark_from_frame(frame, watermark_field)
+        return frame
+
+    def _materialize_incremental(
+        self,
+        *,
+        reload: bool = False,
+        reload_options: Mapping[str, Any] | None = None,
+        write_index: bool = False,
+        overwrite: bool = True,
+        persist: bool = False,
+        **load_options: Any,
+    ) -> ParquetMaterializationResult:
+        watermark_field = self._prepare_incremental_filters(load_options)
         result = self.write(
             write_index=write_index,
             overwrite=overwrite,
@@ -458,15 +476,11 @@ class ParquetPipeline(SinkPipeline):
         frame = None
         if reload:
             if result.files:
-                frame = self.from_parquet(**self._reload_options(reload_options))
-                if frame is not None:
-                    if hasattr(frame, "columns") and len(frame.columns) == 0:
-                        frame = None
-                    else:
-                        self._update_watermark_from_frame(frame, watermark_field)
+                frame = self._finalize_reload_frame(
+                    self.from_parquet(**self._reload_options(reload_options)), watermark_field
+                )
         else:
-            written_frame = self.source.load(**load_options)
-            self._update_watermark_from_frame(written_frame, watermark_field)
+            self._update_watermark_from_frame(self.source.load(**load_options), watermark_field)
         return ParquetMaterializationResult(path=result.path, frame=frame)
 
     async def _amaterialize_incremental(
@@ -479,18 +493,7 @@ class ParquetPipeline(SinkPipeline):
         persist: bool = False,
         **load_options: Any,
     ) -> ParquetMaterializationResult:
-        watermark_field: str = self._watermark_field
-        store: WatermarkStore = self._watermark_store
-        source: str = self._watermark_source
-        previous = store.read(source=source)
-        filters = {}
-        if previous is not None:
-            filters = {f"{watermark_field}__gt": previous}
-        elif self._initial_value is not None:
-            filters = {f"{watermark_field}__gt": self._initial_value}
-        merged = {**load_options.pop("filters", {}), **filters}
-        if merged:
-            load_options["filters"] = merged
+        watermark_field = self._prepare_incremental_filters(load_options)
         result = await self.awrite(
             write_index=write_index,
             overwrite=overwrite,
@@ -500,27 +503,16 @@ class ParquetPipeline(SinkPipeline):
         frame = None
         if reload:
             if result.files:
-                frame = await self.afrom_parquet(**self._reload_options(reload_options))
-                if frame is not None:
-                    if hasattr(frame, "columns") and len(frame.columns) == 0:
-                        frame = None
-                    else:
-                        self._update_watermark_from_frame(frame, watermark_field)
+                frame = self._finalize_reload_frame(
+                    await self.afrom_parquet(**self._reload_options(reload_options)), watermark_field
+                )
         else:
-            written_frame = await self.source.aload(**load_options)
-            self._update_watermark_from_frame(written_frame, watermark_field)
+            self._update_watermark_from_frame(await self.source.aload(**load_options), watermark_field)
         return ParquetMaterializationResult(path=result.path, frame=frame)
 
 
-_advance_watermark = None
-
-
 def advance_watermark_incremental(frame: Any, watermark_field: str) -> Any | None:
-    global _advance_watermark
-    if _advance_watermark is None:
-        from boti_data.watermark import advance_watermark as _aw
-        _advance_watermark = _aw
-    return _advance_watermark(frame, watermark_field=watermark_field)
+    return advance_watermark(frame, watermark_field=watermark_field)
 
 
 __all__ = ["ParquetMaterializationResult", "ParquetPipeline", "SinkPipeline"]

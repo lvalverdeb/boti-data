@@ -500,6 +500,30 @@ class ParquetDataResource(SecureResource):
             modified_at = modified_at.replace(tzinfo=dt.timezone.utc)
         return (now - modified_at) <= dt.timedelta(minutes=self.config.parquet_max_age_minutes)
 
+    def scan_summary(self, *, max_files: int) -> tuple[int | None, int | None]:
+        """Cheap size probe for auto return-type decisions.
+
+        Returns ``(row_count, total_bytes)``; either may be ``None`` when it
+        cannot be determined cheaply (row_count is always unknown for
+        Parquet without opening the files). Returns ``(None, None)`` when the
+        file count exceeds ``max_files`` or file info is unavailable.
+        """
+        files_to_load = self._resolve_files_to_load()
+        if not files_to_load:
+            return 0, 0
+        if len(files_to_load) > max_files:
+            return None, None
+        total_bytes = 0
+        for path in files_to_load:
+            info = self._get_file_info(path)
+            if info is None:
+                return None, None
+            size = info.get("size")
+            if not isinstance(size, int):
+                return None, None
+            total_bytes += size
+        return None, total_bytes
+
     def _get_file_info(self, path: str) -> dict[str, Any] | None:
         fs = self.require_fs()
         return self._file_info_provider(fs).info(path)

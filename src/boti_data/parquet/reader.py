@@ -57,8 +57,8 @@ class ParquetReader(DataHelper):
             payload = ParquetReaderConfigBuilder.build_payload(settings, overrides)
             super().__init__(payload, fs=fs, fs_factory=fs_factory, **overrides)
 
-        self._default_return_type = getattr(self.gateway, "_return_type", "dask")
-        self._default_execution_mode = getattr(self.gateway, "_execution_mode", "auto")
+        self._default_return_type = self.gateway.default_return_type
+        self._default_execution_mode = self.gateway.default_execution_mode
 
     def load(self, **options: Any) -> Any:
         resolved_options = self._normalize_filter_options(options)

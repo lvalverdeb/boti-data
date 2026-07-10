@@ -142,16 +142,20 @@ class SqlPartitionPlanner:
             )
         return statement
 
+    def _count_statement(self, statement: Select[Any]) -> Select[Any]:
+        return select(func.count()).select_from(self.base_statement(statement).subquery())
+
+    def _count_up_to_statement(self, statement: Select[Any], max_rows: int) -> Select[Any]:
+        limited_statement = self.base_statement(statement).limit(max_rows + 1)
+        return select(func.count()).select_from(limited_statement.subquery())
+
     def count_rows(self, statement: Select[Any]) -> int:
-        count_statement = select(func.count()).select_from(
-            self.base_statement(statement).subquery()
-        )
+        count_statement = self._count_statement(statement)
         with self.resource.engine.connect() as conn:
             return int(conn.execute(count_statement).scalar_one())
 
     def count_rows_up_to(self, statement: Select[Any], max_rows: int) -> int:
-        limited_statement = self.base_statement(statement).limit(max_rows + 1)
-        count_statement = select(func.count()).select_from(limited_statement.subquery())
+        count_statement = self._count_up_to_statement(statement, max_rows)
         with self.resource.engine.connect() as conn:
             return int(conn.execute(count_statement).scalar_one())
 
@@ -301,35 +305,36 @@ class SqlPartitionPlanner:
             meta_dtypes=meta_dtypes,
         )
 
-    async def _async_compute_ordering_bounds(
-        self,
-        base_statement: Select[Any],
-        ordering_column: Any,
-        engine: Any,
-    ) -> tuple[Any, Any]:
+    @staticmethod
+    def _bounds_statement(base_statement: Select[Any], ordering_column: Any) -> Select[Any]:
         projection = base_statement.with_only_columns(
             ordering_column,
             maintain_column_froms=True,
         )
         subquery = projection.subquery()
         subquery_column = next(iter(subquery.c))
-        bounds_statement = select(func.min(subquery_column), func.max(subquery_column))
+        return select(func.min(subquery_column), func.max(subquery_column))
+
+    async def _async_compute_ordering_bounds(
+        self,
+        base_statement: Select[Any],
+        ordering_column: Any,
+        engine: Any,
+    ) -> tuple[Any, Any]:
+        bounds_statement = self._bounds_statement(base_statement, ordering_column)
         async with engine.connect() as conn:
             result = await conn.execute(bounds_statement)
             return result.one()
 
     async def _async_count_rows(self, statement: Select[Any], conn: Any) -> int:
-        count_statement = select(func.count()).select_from(
-            self.base_statement(statement).subquery()
-        )
+        count_statement = self._count_statement(statement)
         result = await conn.execute(count_statement)
         return int(result.scalar_one())
 
     async def _async_count_rows_up_to(
         self, statement: Select[Any], max_rows: int, conn: Any
     ) -> int:
-        limited_statement = self.base_statement(statement).limit(max_rows + 1)
-        count_statement = select(func.count()).select_from(limited_statement.subquery())
+        count_statement = self._count_up_to_statement(statement, max_rows)
         result = await conn.execute(count_statement)
         return int(result.scalar_one())
 
@@ -339,13 +344,7 @@ class SqlPartitionPlanner:
         partitioning_column: Any,
         conn: Any,
     ) -> tuple[Any, Any]:
-        projection = self.base_statement(statement).with_only_columns(
-            partitioning_column,
-            maintain_column_froms=True,
-        )
-        subquery = projection.subquery()
-        subquery_column = next(iter(subquery.c))
-        bounds_statement = select(func.min(subquery_column), func.max(subquery_column))
+        bounds_statement = self._bounds_statement(self.base_statement(statement), partitioning_column)
         result = await conn.execute(bounds_statement)
         minimum, maximum = result.one()
         return minimum, maximum
@@ -393,13 +392,7 @@ class SqlPartitionPlanner:
         base_statement: Select[Any],
         ordering_column: Any,
     ) -> tuple[Any, Any]:
-        projection = base_statement.with_only_columns(
-            ordering_column,
-            maintain_column_froms=True,
-        )
-        subquery = projection.subquery()
-        subquery_column = next(iter(subquery.c))
-        bounds_statement = select(func.min(subquery_column), func.max(subquery_column))
+        bounds_statement = self._bounds_statement(base_statement, ordering_column)
         with self.resource.engine.connect() as conn:
             return conn.execute(bounds_statement).one()
 
