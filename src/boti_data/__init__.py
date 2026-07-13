@@ -43,7 +43,7 @@ from boti_data.schema import (
     normalize_schema_map,
     validate_schema,
 )
-from boti_data.datacube import DatacubeConfig, DatacubeContract
+from boti_data.datacube import BaseDataCube, BaseArtifact, DatacubeConfig, DatacubeContract
 from boti_data.dataset import HybridDataset
 from boti_data.enrichment import AsyncFrameEnricher, AttachmentSpec, FrameEnricher
 from boti_data.pipelines import (
@@ -75,6 +75,8 @@ __all__ = [
     "AsyncFrameEnricher",
     "AsyncSqlDatabaseResource",
     "AttachmentSpec",
+    "BaseDataCube",
+    "BaseArtifact",
     "BuilderConfig",
     "ConnectionCatalog",
     "CsvSink",
