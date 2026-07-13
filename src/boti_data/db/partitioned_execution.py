@@ -119,10 +119,17 @@ class SqlPartitionExecutor:
 
         if (
             len(plan.partitions) == 1
-            and not self.use_arrow
             and fetch_partition is SqlPartitionExecutor.fetch_partition
         ):
-            if statement is not None:
+            # Single partition: fetch inline and skip building a Dask task graph.
+            # Previously this shortcut was gated on ``not self.use_arrow`` because
+            # its two fetch branches only produced a plain-pandas result, which
+            # would silently drop the arrow-native path when arrow was requested.
+            # It now honors ``use_arrow``: the ``pd.read_sql`` fast read is used
+            # only for the non-arrow path (it yields a plain pandas frame), while
+            # the arrow path fetches via ``fetch_partition(use_arrow=True)`` so the
+            # result matches exactly what the delayed path below would produce.
+            if statement is not None and not self.use_arrow:
                 engine = _get_cached_worker_sync_engine(self.config)
                 with engine.connect() as conn:
                     df = pd.read_sql(statement, conn)
@@ -137,7 +144,7 @@ class SqlPartitionExecutor:
                     max_concurrent_fetches=max_concurrent_fetches,
                     partition=partition,
                     meta_dtypes=plan.meta_dtypes,
-                    use_arrow=False,
+                    use_arrow=self.use_arrow,
                 )
             if as_pandas:
                 return df
