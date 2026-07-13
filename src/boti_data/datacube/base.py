@@ -16,6 +16,8 @@ import dask.dataframe as dd
 import pandas as pd
 import pyarrow as pa
 from boti.core import Logger
+from boti.core.lifecycle import LifecycleCore
+from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 
 from boti_data.datacube.contract import DatacubeFrame
 
@@ -23,7 +25,7 @@ if TYPE_CHECKING:
     from boti_data.helper import DataHelper
 
 
-class BaseDataCube:
+class BaseDataCube(PicklableLifecycleCoreMixin, LifecycleCore):
     """Base datacube with mutable ``.df`` and subclass-overridable transform hooks.
 
     Subclasses *may* override:
@@ -59,6 +61,7 @@ class BaseDataCube:
         merged = {**self.config, **kwargs}
         self._helper: DataHelper = DataHelper(merged)
         self.logger = Logger.default_logger(logger_name=self.__class__.__name__)
+        super().__init__()
 
     @classmethod
     def from_helper(cls, helper: DataHelper, **overrides: Any) -> BaseDataCube:
@@ -68,6 +71,9 @@ class BaseDataCube:
         instance._helper = helper
         instance.config = {**cls.config, **overrides}
         instance.logger = Logger.default_logger(logger_name=cls.__name__)
+        # __new__() bypasses __init__(), so LifecycleCore's state (_state_lock,
+        # _is_closed, the GC finalizer, etc.) must be wired up explicitly here.
+        LifecycleCore.__init__(instance)
         return instance
 
     # ── optional hooks ──────────────────────────────────────────────────
@@ -133,35 +139,21 @@ class BaseDataCube:
 
     # ── lifecycle ───────────────────────────────────────────────────────
 
-    def close(self) -> None:
-        self._helper.close()
-
-    async def aclose(self) -> None:
-        await self._helper.aclose()
-
     def __enter__(self) -> BaseDataCube:
+        super().__enter__()
         self._helper.__enter__()
         return self
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: Any,
-    ) -> None:
-        self._helper.__exit__(exc_type, exc_val, exc_tb)
-
     async def __aenter__(self) -> BaseDataCube:
+        await super().__aenter__()
         await self._helper.__aenter__()
         return self
 
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: Any,
-    ) -> None:
-        await self._helper.__aexit__(exc_type, exc_val, exc_tb)
+    def _cleanup(self) -> None:
+        self._helper.close()
+
+    async def _acleanup(self) -> None:
+        await self._helper.aclose()
 
 
 __all__ = ["BaseDataCube"]

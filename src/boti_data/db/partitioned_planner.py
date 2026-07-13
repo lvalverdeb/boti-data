@@ -93,6 +93,7 @@ class SqlPartitionPlanner:
                 order_column=request.order_column,
                 total_rows=total_rows,
                 chunk_size=total_rows,
+                limit=request.limit,
             )
             return SqlPartitionPlan(
                 total_rows=total_rows,
@@ -116,6 +117,7 @@ class SqlPartitionPlanner:
                 order_column=request.order_column,
                 total_rows=total_rows,
                 chunk_size=request.chunk_size,
+                limit=request.limit,
             )
 
         return SqlPartitionPlan(
@@ -269,7 +271,9 @@ class SqlPartitionPlanner:
         ordering_column = _resolve_model_column(request.model, order_column_name)
         base_statement = self.base_statement(statement).order_by(None).order_by(ordering_column)
 
-        if self._is_range_compatible_column(ordering_column):
+        # Keyset partitioning divides the ordering column's value range and cannot
+        # honor a row ``limit``; when a limit is active, use LIMIT/OFFSET below.
+        if request.limit is None and self._is_range_compatible_column(ordering_column):
             lower_bound, upper_bound = await self._async_compute_ordering_bounds(
                 base_statement,
                 ordering_column,
@@ -297,6 +301,7 @@ class SqlPartitionPlanner:
             order_column=request.order_column,
             total_rows=total_rows,
             chunk_size=request.chunk_size,
+            limit=request.limit,
         )
         return SqlPartitionPlan(
             total_rows=total_rows,
@@ -357,12 +362,17 @@ class SqlPartitionPlanner:
         order_column: str | None,
         total_rows: int,
         chunk_size: int,
+        limit: int | None = None,
     ) -> tuple[SqlPartitionSpec, ...]:
         order_column_name = order_column or _infer_primary_key_name(model)
         ordering_column = _resolve_model_column(model, order_column_name)
         base_statement = self.base_statement(statement).order_by(None).order_by(ordering_column)
 
-        if self._is_range_compatible_column(ordering_column):
+        # Keyset partitioning divides the ordering column's *value range*, so its
+        # partitions always span the full result and cannot honor a row ``limit``.
+        # When a limit is active, fall back to LIMIT/OFFSET partitioning, whose
+        # partitions sum to exactly ``total_rows`` (already clamped to the limit).
+        if limit is None and self._is_range_compatible_column(ordering_column):
             lower_bound, upper_bound = self._compute_ordering_bounds(
                 base_statement,
                 ordering_column,

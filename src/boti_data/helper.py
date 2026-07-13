@@ -4,6 +4,8 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from boti.core.lifecycle import LifecycleCore
+from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 from boti_dask import DaskSession, dask_session
 
 from boti_data.gateway import DataGateway
@@ -118,7 +120,7 @@ class _EngineBoundHelper:
         )
 
 
-class DataHelper:
+class DataHelper(PicklableLifecycleCoreMixin, LifecycleCore):
     """Thin compatibility facade over :class:`DataGateway` and related helpers."""
 
     def __init__(
@@ -130,9 +132,7 @@ class DataHelper:
             if not overrides:
                 raise TypeError("DataHelper requires a config object or legacy keyword config.")
             self.gateway = DataGateway.from_config(dict(overrides))
-            self._incremental = IncrementalLoadService(self.gateway)
-            return
-        if isinstance(config, DataGateway):
+        elif isinstance(config, DataGateway):
             if overrides:
                 raise TypeError("DataHelper does not accept overrides when wrapping an existing DataGateway.")
             self.gateway = config
@@ -142,6 +142,7 @@ class DataHelper:
             self.gateway = DataGateway(config, **overrides)
 
         self._incremental = IncrementalLoadService(self.gateway)
+        super().__init__()
 
     @classmethod
     def from_legacy_config(cls, config: dict[str, Any], **overrides: Any) -> DataHelper:
@@ -152,23 +153,19 @@ class DataHelper:
         return cls(gateway)
 
     def __enter__(self) -> DataHelper:
+        super().__enter__()
         self.gateway.__enter__()
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        self.gateway.__exit__(exc_type, exc_val, exc_tb)
-
     async def __aenter__(self) -> DataHelper:
+        await super().__aenter__()
         await self.gateway.__aenter__()
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self.gateway.__aexit__(exc_type, exc_val, exc_tb)
-
-    def close(self) -> None:
+    def _cleanup(self) -> None:
         self.gateway.close()
 
-    async def aclose(self) -> None:
+    async def _acleanup(self) -> None:
         await self.gateway.aclose()
 
     def load(self, **options: Any) -> Any:

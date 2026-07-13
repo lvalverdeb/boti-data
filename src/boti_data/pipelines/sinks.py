@@ -12,6 +12,8 @@ import pandas as pd
 import polars as pl
 import pyarrow as pa
 from boti.core import ResourceConfig, SecureResource
+from boti.core.lifecycle import LifecycleCore
+from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 from boti_dask import safe_persist
 from pydantic import Field, field_validator
 
@@ -480,7 +482,7 @@ class JsonlSink(SecureResource):
         return str(path)
 
 
-class ParquetSink:
+class ParquetSink(PicklableLifecycleCoreMixin, LifecycleCore):
     """Write a frame to a parquet dataset directory and expose the reader used for reloads."""
 
     def __init__(
@@ -496,25 +498,22 @@ class ParquetSink:
                 "ParquetSink destination must point to a parquet dataset directory; "
                 "parquet_filename is not supported for materialized write targets."
             )
+        super().__init__()
 
     def __enter__(self) -> ParquetSink:
+        super().__enter__()
         self.reader.__enter__()
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        self.reader.__exit__(exc_type, exc_val, exc_tb)
-
     async def __aenter__(self) -> ParquetSink:
+        await super().__aenter__()
         await self.reader.__aenter__()
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self.reader.__aexit__(exc_type, exc_val, exc_tb)
-
-    def close(self) -> None:
+    def _cleanup(self) -> None:
         self.reader.close()
 
-    async def aclose(self) -> None:
+    async def _acleanup(self) -> None:
         await self.reader.aclose()
 
     @staticmethod

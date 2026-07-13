@@ -5,6 +5,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, TypeAlias, Union, cast
 
+from boti.core.lifecycle import LifecycleCore
+from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
+
 from boti_data.dataset import HybridDataset
 from boti_data.helper import DataHelper
 from boti_data.pipelines.registry import create_sink
@@ -55,7 +58,7 @@ class ParquetMaterializationResult:
         return self.frame is not None
 
 
-class SinkPipeline:
+class SinkPipeline(PicklableLifecycleCoreMixin, LifecycleCore):
     """Generic orchestration layer that loads from a source and writes into a sink.
 
     This class intentionally sits *above* `DataHelper`/`DataGateway`: it orchestrates
@@ -85,21 +88,18 @@ class SinkPipeline:
             self.sink = create_sink(sink, sink_config)
         else:
             self.sink = sink
+        super().__init__()
 
     def __enter__(self) -> SinkPipeline:
+        super().__enter__()
         self.source.__enter__()
         sink_enter = getattr(self.sink, "__enter__", None)
         if callable(sink_enter):
             sink_enter()
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        sink_exit = getattr(self.sink, "__exit__", None)
-        if callable(sink_exit):
-            sink_exit(exc_type, exc_val, exc_tb)
-        self.source.__exit__(exc_type, exc_val, exc_tb)
-
     async def __aenter__(self) -> SinkPipeline:
+        await super().__aenter__()
         await self.source.__aenter__()
         sink_aenter = getattr(self.sink, "__aenter__", None)
         if callable(sink_aenter):
@@ -108,15 +108,10 @@ class SinkPipeline:
                 await cast(Any, maybe)
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        sink_aexit = getattr(self.sink, "__aexit__", None)
-        if callable(sink_aexit):
-            maybe = sink_aexit(exc_type, exc_val, exc_tb)
-            if inspect.isawaitable(maybe):
-                await cast(Any, maybe)
-        await self.source.__aexit__(exc_type, exc_val, exc_tb)
-
-    def close(self) -> None:
+    def _cleanup(self) -> None:
+        # try/finally: a sink close() failure must not skip closing the
+        # source (and vice versa isn't possible — source is always closed
+        # last, in the finally block, regardless of how the sink behaves).
         try:
             sink_close = getattr(self.sink, "close", None)
             if callable(sink_close):
@@ -124,7 +119,7 @@ class SinkPipeline:
         finally:
             self.source.close()
 
-    async def aclose(self) -> None:
+    async def _acleanup(self) -> None:
         try:
             sink_aclose = getattr(self.sink, "aclose", None)
             if callable(sink_aclose):

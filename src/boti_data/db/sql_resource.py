@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from boti.core.lifecycle import LifecycleCore
 from boti.core.logger import Logger
 from boti.core.managed_resource import ManagedResource
 from sqlalchemy.engine import Engine
@@ -118,8 +119,20 @@ class SqlDatabaseResource(ManagedResource):
         return self._session_factory
 
 
-class AsyncSqlDatabaseResource:
-    """Asynchronous context manager providing reflection/query-only SQLAlchemy access."""
+class AsyncSqlDatabaseResource(LifecycleCore):
+    """Asynchronous context manager providing reflection/query-only SQLAlchemy access.
+
+    Async-only by design: real resource acquisition (the engine, session
+    factory) happens in ``__aenter__``, not ``__init__``, since it requires
+    awaiting ``EngineRegistry.get_or_create_async()``. There is deliberately
+    no sync ``close()`` support — see ``_cleanup()`` — because releasing a
+    bound engine requires ``await EngineRegistry.release_async()``; no sync
+    path can do that safely. No pickle support either: even with
+    LifecycleCore's own locks stripped, the SQLAlchemy ``AsyncEngine``/
+    ``async_sessionmaker`` attributes below aren't picklable, and unlike the
+    sync resources in this module there's no "reopen by DSN" pattern that
+    would make reconstructing one on the other end meaningful.
+    """
 
     def __init__(self, config: SqlDatabaseConfig) -> None:
         self.config = config
@@ -128,12 +141,13 @@ class AsyncSqlDatabaseResource:
         self._engine_view: Any | None = None
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
         self._engine_key: tuple | None = None
-        self._is_open = False
+        super().__init__()
 
     def _get_engine_key(self) -> tuple:
         return _build_async_engine_key(self.config)
 
     async def __aenter__(self) -> AsyncSqlDatabaseResource:
+        await super().__aenter__()
         connection_url = _normalize_connection_url(self.config.connection_url.get_secret_value())
         parsed = _validate_async_driver_url(connection_url)
         ensure_greenlet_available()
@@ -156,33 +170,46 @@ class AsyncSqlDatabaseResource:
             expire_on_commit=False,
             class_=ReadOnlyAsyncSession if self.config.query_only else AsyncSession,
         )
-        self._is_open = True
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self.aclose()
+    def _cleanup(self) -> None:
+        if self._engine is not None:
+            raise RuntimeError(
+                f"{self.__class__.__name__} only supports async cleanup once bound — "
+                "the underlying engine is refcounted and can only be released via an "
+                "awaited coroutine. Use 'await resource.aclose()' or 'async with', not close()."
+            )
+        # Never entered __aenter__ (or already closed): nothing to release.
 
-    async def aclose(self) -> None:
+    async def _acleanup(self) -> None:
+        # LifecycleCore's aclose() barrier makes this run at most once per
+        # instance, even under concurrent callers — previously, aclose()
+        # hand-rolled its own idempotency check ("if self._engine_key and
+        # self._engine") with an await in between the check and the reset,
+        # a real TOCTOU race: two concurrent aclose() calls on the same
+        # instance could both pass the check before either reset state,
+        # each issuing their own EngineRegistry.release_async() for what
+        # should be one logical release. Confirmed harmful empirically when
+        # the engine is shared (ref_count > 1, i.e. a sibling resource also
+        # holds a reference): the double-release disposes the engine while
+        # the sibling still believes it holds a valid, live reference.
         if self._engine_key and self._engine:
             await EngineRegistry.release_async(self._engine_key, logger=self.logger)
         self._engine = None
         self._engine_view = None
         self._session_factory = None
         self._engine_key = None
-        self._is_open = False
-
-    @property
-    def closed(self) -> bool:
-        return not self._is_open
 
     @property
     def engine(self) -> Any:
-        if not self._is_open:
+        self._assert_open()
+        if self._engine_view is None:
             raise RuntimeError("Async DB is not bound.")
         return self._engine_view
 
     @property
     def session(self) -> async_sessionmaker[AsyncSession]:
-        if not self._is_open:
+        self._assert_open()
+        if self._session_factory is None:
             raise RuntimeError("Async DB is not bound.")
         return self._session_factory  # type: ignore[return-value]

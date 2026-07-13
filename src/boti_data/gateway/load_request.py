@@ -51,6 +51,7 @@ class GatewayLoadRequest(BaseModel):
     partition_column: str | None = None
     order_column: str | None = None
     chunk_size: int | None = Field(default=None, ge=1)
+    single_fetch_threshold: int | None = Field(default=None, ge=0)
     max_concurrent_fetches: int | None = None
 
     # Backend-specific

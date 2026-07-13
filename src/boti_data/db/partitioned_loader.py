@@ -6,6 +6,8 @@ from typing import Any
 
 import dask.dataframe as dd
 import pandas as pd
+from boti.core.lifecycle import LifecycleCore
+from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 from boti.core.logger import Logger
 from sqlalchemy.engine import url as sqlalchemy_url
 
@@ -20,7 +22,7 @@ from boti_data.db.sql_engine import _get_worker_engine_identity
 from boti_data.db.sql_resource import SqlDatabaseResource
 
 
-class SqlPartitionedLoader:
+class SqlPartitionedLoader(PicklableLifecycleCoreMixin, LifecycleCore):
     """Partition-aware SQL loader that returns a lazy Dask DataFrame."""
 
     def __init__(
@@ -41,6 +43,7 @@ class SqlPartitionedLoader:
         )
         self._use_arrow = use_arrow
         self._validate_distributed_config()
+        super().__init__()
 
     @property
     def resource(self) -> SqlDatabaseResource:
@@ -63,15 +66,16 @@ class SqlPartitionedLoader:
                 "SQLite in-memory DSNs are not supported; use a file-backed DSN or request as_pandas=True."
             )
 
-    def close(self) -> None:
+    def _cleanup(self) -> None:
         if self._owns_resource:
             self.resource.close()
 
-    def __enter__(self) -> SqlPartitionedLoader:
-        return self
-
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        self.close()
+    async def _acleanup(self) -> None:
+        # Previously missing entirely: SqlPartitionedLoader had no aclose()/
+        # __aenter__/__aexit__ at all, even though the wrapped SqlDatabaseResource
+        # (a ManagedResource) has always supported async cleanup.
+        if self._owns_resource:
+            await self.resource.aclose()
 
     @staticmethod
     def _coerce_request(

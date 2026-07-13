@@ -302,6 +302,35 @@ class SqlPartitionExecutor:
             return loop.run_until_complete(_fetch())
 
     @staticmethod
+    def probe_capped(
+        sync_conn: Any,
+        statement: Select[Any],
+        cap: int,
+    ) -> pd.DataFrame:
+        """Fetch at most ``cap`` rows via a server-side streaming cursor.
+
+        Deliberately does *not* add a SQL ``LIMIT`` to ``statement``: on MySQL a
+        ``LIMIT`` on a non-covering filtered scan flips the optimizer to a much
+        slower index-driven plan (measured ~3x slower than the same query with no
+        ``LIMIT``, even with ``ORDER BY`` or a derived-table wrapper). Streaming
+        keeps the fast full-scan plan while still bounding client memory — we read
+        at most ``cap`` rows, then close the cursor to abort the rest of the scan.
+
+        Returns an uncoerced frame (column names only); callers align it against
+        their ``meta_dtypes`` via :meth:`align_and_coerce_partition`, exactly as
+        the batch fetch path does.
+        """
+        result = sync_conn.execution_options(
+            stream_results=True, max_row_buffer=cap
+        ).execute(statement)
+        try:
+            rows = [tuple(row) for row in result.fetchmany(cap)]
+            columns = list(result.keys())
+        finally:
+            result.close()
+        return pd.DataFrame(rows, columns=columns)
+
+    @staticmethod
     def _arrow_align_and_coerce_table(
         rows: list[tuple[Any, ...]],
         columns: list[str],

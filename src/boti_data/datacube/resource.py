@@ -8,6 +8,8 @@ import pandas as pd
 import polars as pl
 import pyarrow as pa
 from boti.core import Logger
+from boti.core.lifecycle import LifecycleCore
+from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 
 from .contract import DatacubeConfig, DatacubeFrame
 
@@ -16,29 +18,15 @@ def _is_supported_frame(value: Any) -> bool:
     return isinstance(value, (pd.DataFrame, dd.DataFrame, pa.Table, pl.DataFrame))
 
 
-class DatacubeResource:
+class DatacubeResource(PicklableLifecycleCoreMixin, LifecycleCore):
     """Runtime wrapper that invokes datacube loader callables from config."""
 
     def __init__(self, config: DatacubeConfig) -> None:
         self.config = config
-        self._is_closed = False
         self.logger = config.logger
         if self.logger is None:
             self.logger = Logger.default_logger(logger_name=self.__class__.__name__)
-
-    @property
-    def closed(self) -> bool:
-        return self._is_closed
-
-    def close(self) -> None:
-        self._is_closed = True
-
-    async def aclose(self) -> None:
-        self._is_closed = True
-
-    def _assert_open(self) -> None:
-        if self._is_closed:
-            raise RuntimeError("DatacubeResource is closed")
+        super().__init__()
 
     def _validate_frame(self, value: Any) -> DatacubeFrame:
         if not _is_supported_frame(value):

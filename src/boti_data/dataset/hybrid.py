@@ -10,6 +10,8 @@ import dask.dataframe as dd
 import pandas as pd
 import polars as pl
 import pyarrow as pa
+from boti.core.lifecycle import LifecycleCore
+from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 from boti_dask import safe_persist
 
 from boti_data.datacube import DatacubeConfig
@@ -131,7 +133,7 @@ class _HybridEngineBoundDataset:
         )
 
 
-class HybridDataset:
+class HybridDataset(PicklableLifecycleCoreMixin, LifecycleCore):
     """Compose historical + live datasets behind one date-aware load API."""
 
     def __init__(
@@ -146,6 +148,7 @@ class HybridDataset:
         self.live = self._coerce_helper(live)
         self.date_field = date_field
         self.split_date = self._normalize_date(split_date)
+        super().__init__()
 
     @staticmethod
     def _coerce_helper(
@@ -170,30 +173,31 @@ class HybridDataset:
         return start, end
 
     def __enter__(self) -> HybridDataset:
+        super().__enter__()
         self.historical.__enter__()
         self.live.__enter__()
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        self.historical.__exit__(exc_type, exc_val, exc_tb)
-        self.live.__exit__(exc_type, exc_val, exc_tb)
-
     async def __aenter__(self) -> HybridDataset:
+        await super().__aenter__()
         await self.historical.__aenter__()
         await self.live.__aenter__()
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self.historical.__aexit__(exc_type, exc_val, exc_tb)
-        await self.live.__aexit__(exc_type, exc_val, exc_tb)
+    def _cleanup(self) -> None:
+        # try/finally so a failure closing `historical` can't leak `live` —
+        # the original hand-written close() called both unconditionally in
+        # sequence, so a historical.close() exception left live still open.
+        try:
+            self.historical.close()
+        finally:
+            self.live.close()
 
-    def close(self) -> None:
-        self.historical.close()
-        self.live.close()
-
-    async def aclose(self) -> None:
-        await self.historical.aclose()
-        await self.live.aclose()
+    async def _acleanup(self) -> None:
+        try:
+            await self.historical.aclose()
+        finally:
+            await self.live.aclose()
 
     @property
     def dask(self) -> _HybridEngineBoundDataset:

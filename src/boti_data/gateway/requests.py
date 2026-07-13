@@ -119,6 +119,7 @@ class PartitionedLoadConfig(BaseModel):
     as_pandas: bool = False
     limit: int | None = None
     chunk_size: int | None = None
+    single_fetch_threshold: int | None = None
     max_concurrent_fetches: int | None = None
     partition_strategy: str | None = None
     partition_column: str | None = None

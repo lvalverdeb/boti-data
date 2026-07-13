@@ -67,6 +67,81 @@ _log = logging.getLogger(__name__)
 
 _DEFAULT_PARTITION_CHUNK_SIZE: int = SqlPartitionedLoadRequest.model_fields["chunk_size"].default
 
+# Adaptive single-fetch ceiling for the partitioned-dask fast path.
+#
+# The ceiling represents "the largest result we'll materialize in one process" —
+# i.e. the pandas/polars comfort zone. That is fundamentally a *memory* limit, not
+# a fixed row count: a narrow 4-int result and a 40-column string result of the
+# same row count have wildly different footprints. So we size the ceiling in BYTES
+# and convert to a row count using the estimated width of a result row (from the
+# inferred column dtypes). A narrow table therefore single-fetches many more rows
+# than a wide one, and the ceiling tracks the actual choke point rather than a
+# blind guess.
+#
+# Below the ceiling we stream the whole result in one scan and return a single
+# partition (partitioning a result that fits in memory is pure overhead — a COUNT
+# round-trip plus per-partition fetch coordination). Above it we fall through to
+# keyset partitioning and return a lazy dask frame. The ceiling also bounds how
+# many rows the probe streams before deciding to partition, so it doubles as the
+# probe's memory bound.
+#
+# ``_DEFAULT_SINGLE_FETCH_BYTES`` is the estimated *final-frame* size; peak memory
+# during read_sql construction can be ~2-3x, so the budget stays well under
+# typical process RAM. A per-call ``single_fetch_threshold`` (an explicit row
+# count) overrides the byte-derived ceiling when set.
+_DEFAULT_SINGLE_FETCH_BYTES: int = 512 * 1024 * 1024
+
+# Absolute row safety-rail on the byte-derived ceiling: keeps a pathologically
+# narrow schema (e.g. a single small column) from yielding a tens-of-millions-row
+# single fetch just because the bytes fit — that many rows carries too much
+# per-object / construction overhead to treat as one comfortable partition.
+_MAX_SINGLE_FETCH_ROWS: int = 5_000_000
+
+# Estimated in-memory bytes per value, keyed by the pandas dtype that
+# ``_sqlalchemy_type_to_pandas_dtype`` infers. Variable-width text ("string" /
+# "object") is charged a deliberately conservative flat cost so string-heavy rows
+# partition earlier rather than risk OOM — over-estimating width is the safe
+# direction (it lowers the row ceiling).
+_DTYPE_BYTE_WEIGHTS: dict[str, int] = {
+    "Int64": 8,
+    "Float64": 8,
+    "boolean": 1,
+    "datetime64[ns, UTC]": 8,
+    "string": 64,
+    "object": 64,
+}
+_FALLBACK_DTYPE_BYTES: int = 16
+
+
+def _estimate_bytes_per_row(meta_dtypes: dict[str, str]) -> int:
+    """Estimate the in-memory footprint of one result row from its column dtypes."""
+    total = sum(
+        _DTYPE_BYTE_WEIGHTS.get(dtype, _FALLBACK_DTYPE_BYTES)
+        for dtype in meta_dtypes.values()
+    )
+    return max(1, total)
+
+
+def _resolve_single_fetch_ceiling(
+    *,
+    chunk_size: int,
+    meta_dtypes: dict[str, str],
+    override_rows: int | None,
+) -> int:
+    """Row ceiling below which the fast path returns a single partition.
+
+    An explicit ``override_rows`` (the request's ``single_fetch_threshold``) wins;
+    otherwise derive it from the byte budget and the estimated row width, capped by
+    ``_MAX_SINGLE_FETCH_ROWS`` and floored at ``chunk_size`` (a single chunk always
+    fits in one partition).
+    """
+    if override_rows is not None:
+        return max(chunk_size, override_rows)
+    budget_rows = _DEFAULT_SINGLE_FETCH_BYTES // _estimate_bytes_per_row(meta_dtypes)
+    budget_rows = min(budget_rows, _MAX_SINGLE_FETCH_ROWS)
+    return max(chunk_size, budget_rows)
+
+
 if TYPE_CHECKING:
     from .core import DataGateway
 
@@ -502,25 +577,50 @@ class SqlAlchemyStrategy(BackendStrategy):
         t_planner_created = perf_counter()
         planner = SqlPartitionPlanner(_EngineAdapter())  # type: ignore[arg-type]
 
-        # Fast path: bypass planner entirely for small queries
-        # Fetch LIMIT chunk_size + 1 rows directly; if <= chunk_size, return immediately.
-        # Eliminates the COUNT query overhead for the common single-partition case.
+        # Adaptive fast path: bypass the planner entirely when the whole result
+        # fits under the single-fetch ceiling. Stream up to ceiling + 1 rows in a
+        # single scan; if we get <= ceiling, return one partition immediately. Only
+        # when the result overflows do we fall through to keyset planning (a COUNT
+        # round-trip + per-partition fetches). This collapses the small AND medium
+        # tiers into one cheap scan — partitioning a result that fits in one process
+        # is pure overhead (benchmarks: a ~1.7M-row single fetch ~7s beat the
+        # multi-partition path ~15s).
+        #
+        # The ceiling is a memory budget converted to rows via the estimated row
+        # width (see _resolve_single_fetch_ceiling), never below ``chunk_size``, and
+        # overridable per-call by ``single_fetch_threshold``. It also bounds how many
+        # rows the probe buffers before deciding to partition, so it doubles as the
+        # probe's memory bound.
+        #
+        # The probe streams via a server-side cursor and stops after the cap rather
+        # than adding a SQL ``LIMIT``: on MySQL a ``LIMIT`` on a non-covering filtered
+        # scan flips the optimizer to a ~3x slower index-driven plan (verified against
+        # asm_tracking_productos — no-LIMIT ~4s vs LIMIT ~12s, unhelped by ORDER BY or a
+        # derived-table wrapper). Streaming keeps the fast full-scan plan while still
+        # bounding client memory to the cap. See SqlPartitionExecutor.probe_capped.
         if not request.as_pandas:
             t_prepare = perf_counter()
             prepared_stmt = planner.prepare_statement(request)
-            probe_limit = request.chunk_size + 1
+            meta_dtypes = planner.infer_meta_dtypes(prepared_stmt)
+            single_fetch_ceiling = _resolve_single_fetch_ceiling(
+                chunk_size=request.chunk_size,
+                meta_dtypes=meta_dtypes,
+                override_rows=request.single_fetch_threshold,
+            )
+            probe_cap = single_fetch_ceiling + 1
             if request.limit is not None:
-                probe_limit = min(request.limit, probe_limit)
-            prepared_stmt = prepared_stmt.limit(probe_limit)
+                probe_cap = min(request.limit, probe_cap)
             t_fetch = perf_counter()
             async with async_resource.engine.connect() as conn:
                 df = await conn.run_sync(
-                    lambda sync_conn: pd.read_sql(prepared_stmt, sync_conn),
+                    lambda sync_conn: SqlPartitionExecutor.probe_capped(
+                        sync_conn, prepared_stmt, probe_cap
+                    ),
                 )
                 t_coerce = perf_counter()
-                if len(df) <= request.chunk_size:
+                if len(df) <= single_fetch_ceiling:
                     df = SqlPartitionExecutor.align_and_coerce_partition(
-                        df, planner.infer_meta_dtypes(prepared_stmt),
+                        df, meta_dtypes,
                     )
                     t_dask = perf_counter()
                     result = dd.from_pandas(df, npartitions=1)
@@ -528,7 +628,9 @@ class SqlAlchemyStrategy(BackendStrategy):
                     if request.diagnostics:
                         async_resource.logger.info(
                             "Partitioned SQL fast path: single partition "
-                            f"rows={len(df)} chunk_size={request.chunk_size} "
+                            f"rows={len(df)} ceiling={single_fetch_ceiling} "
+                            f"est_bytes_per_row={_estimate_bytes_per_row(meta_dtypes)} "
+                            f"chunk_size={request.chunk_size} "
                             f"total={t_end - started:.3f}s "
                             f"planner_init={t_prepare - t_planner_created:.3f}s "
                             f"prepare_stmt={t_fetch - t_prepare:.3f}s "
@@ -539,8 +641,10 @@ class SqlAlchemyStrategy(BackendStrategy):
                     return result
                 if request.diagnostics:
                     async_resource.logger.info(
-                        "Partitioned SQL fast path fallback: rows exceed chunk_size, "
-                        f"rows_fetched={len(df)} chunk_size={request.chunk_size} "
+                        "Partitioned SQL fast path fallback: rows exceed ceiling, "
+                        f"rows_fetched={len(df)} ceiling={single_fetch_ceiling} "
+                        f"est_bytes_per_row={_estimate_bytes_per_row(meta_dtypes)} "
+                        f"chunk_size={request.chunk_size} "
                         f"prepare_stmt={t_fetch - t_prepare:.3f}s "
                         f"db_fetch={perf_counter() - t_fetch:.3f}s"
                     )

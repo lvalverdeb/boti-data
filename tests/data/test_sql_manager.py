@@ -477,6 +477,75 @@ async def test_async_resource_aclose_is_safe_under_concurrency(monkeypatch):
     assert resource.closed is True
     assert len(release_calls) == 1
     assert resource._engine is None
+
+
+@pytest.mark.asyncio
+async def test_async_resource_aclose_race_does_not_leak_shared_engine(monkeypatch):
+    """Regression: the pre-LifecycleCore aclose() had a real TOCTOU race —
+    "if self._engine_key and self._engine" was checked, then awaited
+    EngineRegistry.release_async(), then only *afterward* reset self._engine.
+    Two concurrent aclose() calls on the same instance could both pass the
+    check before either reset state, each independently calling
+    release_async() for what should be one logical release.
+
+    This only manifests when release_async() actually suspends (a fake with
+    no real await point, like the one above, can't expose it — Python's
+    asyncio only switches tasks at genuine suspension points) and is only
+    harmful when the engine is *shared* (ref_count > 1): a double-release
+    disposes the engine while a sibling resource still holds a live
+    reference to it. Proven directly against EngineRegistry before this
+    fix; this test proves it stays fixed through AsyncSqlDatabaseResource's
+    public API, using LifecycleCore's aclose() barrier instead of a
+    hand-rolled idempotency check.
+    """
+    config = SqlDatabaseConfig(connection_url="mysql+asyncmy://user:pass@localhost/test_db", query_only=False)
+    resource = AsyncSqlDatabaseResource(config)
+
+    class _SlowDisposeEngine:
+        sync_engine = object()
+        dispose_calls = 0
+
+        async def dispose(self):
+            await asyncio.sleep(0.05)  # forces a real suspension point
+            _SlowDisposeEngine.dispose_calls += 1
+
+    engine_key = ("probe-shared-key",)
+    shared_engine = _SlowDisposeEngine()
+
+    async def fake_get_or_create_async(*_args, **_kwargs):
+        # Register this resource's own reference (ref_count=1), the way the
+        # real EngineRegistry.get_or_create_async would.
+        with EngineRegistry._lock:
+            EngineRegistry._registry[engine_key] = {"engine": shared_engine, "ref_count": 1}
+        return shared_engine, False
+
+    monkeypatch.setattr(EngineRegistry, "get_or_create_async", fake_get_or_create_async)
+    monkeypatch.setattr(resource, "_get_engine_key", lambda: engine_key)
+    monkeypatch.setattr("boti_data.db.sql_resource.ensure_greenlet_available", lambda: None)
+    monkeypatch.setattr("boti_data.db.sql_resource._validate_query_only_support", lambda _parsed: None)
+
+    await resource.__aenter__()
+
+    # Simulate a sibling resource independently holding a reference to the
+    # same engine: bump ref_count from 1 (this resource's own) to 2.
+    with EngineRegistry._lock:
+        EngineRegistry._registry[engine_key]["ref_count"] = 2
+
+    # Race this resource's own aclose() against itself.
+    await asyncio.gather(resource.aclose(), resource.aclose())
+
+    assert _SlowDisposeEngine.dispose_calls == 0, (
+        "engine was disposed while the simulated sibling still holds a reference"
+    )
+    remaining = EngineRegistry._registry.get(engine_key)
+    assert remaining is not None and remaining["ref_count"] == 1, (
+        "this resource's aclose() should decrement the shared refcount by "
+        "exactly 1 (one logical release), not more"
+    )
+
+    # Cleanup: release the simulated sibling's reference too.
+    with EngineRegistry._lock:
+        EngineRegistry._registry.pop(engine_key, None)
     assert resource._session_factory is None
 
 

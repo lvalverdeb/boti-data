@@ -14,6 +14,8 @@ import fsspec
 import pandas as pd
 import polars as pl
 import pyarrow as pa
+from boti.core.lifecycle import LifecycleCore
+from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 from boti_dask import async_safe_head, safe_head, safe_persist  # noqa: F401
 
 from boti_data.db import SqlDatabaseResource
@@ -58,7 +60,7 @@ from .sql_guard import validate_raw_sql_statement
 _log = logging.getLogger(__name__)
 
 
-class DataGateway:
+class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
     """Dask-first gateway that delegates to existing backend resources.
 
     There are two usage modes:
@@ -171,6 +173,10 @@ class DataGateway:
             get_configured_select_async=self._get_configured_select_async,
             configured_fieldnames=self._configured_loader._configured_fieldnames,
         )
+        # self.resource (set above) is what _logger/logger read through to, so
+        # LifecycleCore's GC finalizer captures a real logger where available
+        # instead of defaulting to None.
+        super().__init__()
 
     def _build_configured_loader(self) -> ConfiguredLoadService:
         return ConfiguredLoadService(
@@ -208,6 +214,16 @@ class DataGateway:
         if self.resource is not None:
             return getattr(self.resource, "logger", None)
         return None
+
+    @property
+    def logger(self) -> Any | None:
+        """LifecycleCore's error-logging and GC leak-warning read this.
+
+        Overrides LifecycleCore's plain `logger = None` class default to
+        reuse whichever backend resource's logger is already configured,
+        rather than defaulting to no logger at all.
+        """
+        return self._logger
 
 
     def _load_planner(self) -> LoadPlanner:
@@ -333,22 +349,25 @@ class DataGateway:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def close(self) -> None:
-        if self.resource is not None:
-            self.resource.close()
-
-    def __enter__(self) -> DataGateway:
-        return self
-
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        self.close()
-
     async def __aenter__(self) -> DataGateway:
+        await super().__aenter__()
         await self._strategy.setup_async_context(self)
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self.aclose()
+    def _cleanup(self) -> None:
+        if self.resource is not None:
+            self.resource.close()
+
+    async def _acleanup(self) -> None:
+        await self._strategy.teardown_async_context(self)
+        self._cleanup()
+
+    # __getstate__/__setstate__ (pickle support for LifecycleCore's
+    # non-picklable runtime state) come from PicklableLifecycleCoreMixin.
+    # Actual pickle-security gating (allow_pickle / trusted_unpickle_scope)
+    # is enforced by the wrapped `resource` (a ManagedResource), which is
+    # pickled recursively as part of __dict__ — DataGateway itself doesn't
+    # need its own gate on top of that.
 
     # ------------------------------------------------------------------
     # Load API — structured mode
@@ -822,10 +841,6 @@ class DataGateway:
             )
         kwargs[f"{on}__in"] = join_series
         return await self.aload(**kwargs)
-
-    async def aclose(self) -> None:
-        await self._strategy.teardown_async_context(self)
-        self.close()
 
 
 
