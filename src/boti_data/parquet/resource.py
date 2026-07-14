@@ -495,9 +495,9 @@ class ParquetDataResource(SecureResource):
         if modified_at is None:
             return False
 
-        now = dt.datetime.now(dt.timezone.utc)
+        now = dt.datetime.now(dt.UTC)
         if modified_at.tzinfo is None:
-            modified_at = modified_at.replace(tzinfo=dt.timezone.utc)
+            modified_at = modified_at.replace(tzinfo=dt.UTC)
         return (now - modified_at) <= dt.timedelta(minutes=self.config.parquet_max_age_minutes)
 
     def scan_summary(self, *, max_files: int) -> tuple[int | None, int | None]:
@@ -562,7 +562,7 @@ class ParquetDataResource(SecureResource):
         if isinstance(modified, dt.datetime):
             return modified
         if isinstance(modified, (int, float)):
-            return dt.datetime.fromtimestamp(modified, tz=dt.timezone.utc)
+            return dt.datetime.fromtimestamp(modified, tz=dt.UTC)
         if isinstance(modified, str):
             try:
                 return dt.datetime.fromisoformat(modified)

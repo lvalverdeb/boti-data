@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol, TypeAlias, Union, cast
+from typing import Any, Protocol, Union, cast
 from urllib.parse import urlparse
 
 import dask.dataframe as dd
@@ -19,8 +19,8 @@ from pydantic import Field, field_validator
 
 from boti_data.parquet import ParquetDataConfig, ParquetReader
 
-FrameResult: TypeAlias = Union[pd.DataFrame, dd.DataFrame, pa.Table, pl.DataFrame]
-ParquetDestination: TypeAlias = Union[ParquetReader, ParquetDataConfig, Mapping[str, Any]]
+type FrameResult = Union[pd.DataFrame, dd.DataFrame, pa.Table, pl.DataFrame]
+type ParquetDestination = Union[ParquetReader, ParquetDataConfig, Mapping[str, Any]]
 
 
 def to_dask_frame(frame: FrameResult) -> dd.DataFrame:

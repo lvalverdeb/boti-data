@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol, TypeAlias, Union, cast
+from typing import Any, Protocol, Union, cast
 
 from boti.core.lifecycle import LifecycleCore
 from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
@@ -24,8 +24,8 @@ from boti_data.watermark import (
     advance_watermark,
 )
 
-PipelineSource: TypeAlias = Union[DataHelper, HybridDataset]
-PipelineDestination: TypeAlias = ParquetDestination
+type PipelineSource = Union[DataHelper, HybridDataset]
+type PipelineDestination = ParquetDestination
 
 
 class FrameEnricher(Protocol):

@@ -3,7 +3,7 @@ name = "boti-data"
 version = "1.0.3"
 description = "Data infrastructure for the Boti ecosystem"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 license = "MIT"
 authors = [
     {name = "Luis Valverde"}
@@ -15,10 +15,8 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
@@ -54,7 +52,7 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP"]
@@ -77,10 +75,6 @@ filterwarnings = [
     'ignore:Distributed SQL task payloads will carry the raw DSN credential.*worker_connection_env_var.*:UserWarning',
     'ignore:Closing managed Dask session with 1 live persisted collection\(s\).*Missing dependency\.:RuntimeWarning',
 ]
-
-[tool.uv.sources]
-boti = { workspace = true }
-boti-dask = { workspace = true }
 
 [tool.setuptools]
 include-package-data = true
