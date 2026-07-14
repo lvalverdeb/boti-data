@@ -1,3 +1,9 @@
+# boti-data is its own git repo nested inside the uv workspace root, so
+# `git rev-parse --show-toplevel` would return boti-data's own root, not
+# the workspace root where `uv build` actually writes dist/ — derive it
+# from the Makefile's own location instead (always one level up).
+REPO_ROOT := $(shell realpath $(dir $(realpath $(lastword $(MAKEFILE_LIST))))..)
+
 .PHONY: help clean build check upload upload-test install-dev test test-security lint
 
 LOAD_ENV = if [ -f .env ]; then set -a; . ./.env; set +a; fi
@@ -16,19 +22,19 @@ help:
 	@echo "  lint           - Run ruff linter on src/ and tests/"
 
 clean:
-	rm -rf build/ dist/ *.egg-info src/*.egg-info
+	rm -rf $(REPO_ROOT)/dist/ $(REPO_ROOT)/build/ *.egg-info src/*.egg-info
 
 build: clean
 	uv build
 
 check: build
-	@$(LOAD_ENV); $(REQUIRE_PUBLISH_TOKEN); uv publish --dry-run --token "$$UV_PUBLISH_TOKEN" dist/*
+	@$(LOAD_ENV); $(REQUIRE_PUBLISH_TOKEN); uv publish --dry-run --token "$$UV_PUBLISH_TOKEN" $(REPO_ROOT)/dist/boti_data-*
 
 upload: build
-	@$(LOAD_ENV); $(REQUIRE_PUBLISH_TOKEN); uv publish --token "$$UV_PUBLISH_TOKEN" dist/*
+	@$(LOAD_ENV); $(REQUIRE_PUBLISH_TOKEN); uv publish --token "$$UV_PUBLISH_TOKEN" $(REPO_ROOT)/dist/boti_data-*
 
 upload-test: build
-	@$(LOAD_ENV); $(REQUIRE_PUBLISH_TOKEN); uv publish --publish-url https://test.pypi.org/legacy/ --token "$$UV_PUBLISH_TOKEN" dist/*
+	@$(LOAD_ENV); $(REQUIRE_PUBLISH_TOKEN); uv publish --publish-url https://test.pypi.org/legacy/ --token "$$UV_PUBLISH_TOKEN" $(REPO_ROOT)/dist/boti_data-*
 
 install-dev:
 	uv sync --group dev
