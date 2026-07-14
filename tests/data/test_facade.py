@@ -309,7 +309,8 @@ def test_facade_arrow_sql_uses_eager_fetch_by_default(tmp_path, monkeypatch):
     )
     eager_calls: list[str] = []
     lazy_calls: list[bool] = []
-    from boti_data.gateway.loaders import load_sql as _real_load_sql, load_sql_partitioned as _real_load_sql_partitioned
+    from boti_data.gateway.loaders import load_sql as _real_load_sql
+    from boti_data.gateway.loaders import load_sql_partitioned as _real_load_sql_partitioned
     real_load_sql = _real_load_sql
     real_load_sql_partitioned = _real_load_sql_partitioned
 
@@ -469,7 +470,8 @@ def test_facade_can_force_lazy_fetch_for_pandas_sql(tmp_path, monkeypatch):
     )
     eager_calls: list[bool] = []
     lazy_calls: list[bool] = []
-    from boti_data.gateway.loaders import load_sql as _real_load_sql, load_sql_partitioned as _real_load_sql_partitioned
+    from boti_data.gateway.loaders import load_sql as _real_load_sql
+    from boti_data.gateway.loaders import load_sql_partitioned as _real_load_sql_partitioned
     real_load_sql = _real_load_sql
     real_load_sql_partitioned = _real_load_sql_partitioned
 

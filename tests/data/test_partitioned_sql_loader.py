@@ -5,6 +5,7 @@ Tests for the partition-aware SQL -> Dask loader.
 from __future__ import annotations
 
 import datetime as dt
+from typing import Any
 
 import dask.dataframe as dd
 import pandas as pd
@@ -18,8 +19,8 @@ from boti_data.db import (
     SqlPartitionedLoader,
     SqlPartitionedLoadRequest,
 )
-from boti_data.db.partitioned_planner import SqlPartitionPlanner
 from boti_data.db.partitioned_execution import SqlPartitionExecutor
+from boti_data.db.partitioned_planner import SqlPartitionPlanner
 from boti_data.db.partitioned_types import MAX_PARTITION_FETCH_CONCURRENCY
 
 
