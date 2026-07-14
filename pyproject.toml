@@ -1,6 +1,6 @@
 [project]
 name = "boti-data"
-version = "1.0.2"
+version = "1.0.3"
 description = "Data infrastructure for the Boti ecosystem"
 readme = "README.md"
 requires-python = ">=3.10"
