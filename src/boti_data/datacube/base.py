@@ -110,6 +110,11 @@ class BaseDataCube(PicklableLifecycleCoreMixin, LifecycleCore):
         """Check if subclass provided its own ``fix_data``."""
         return self.__class__.fix_data is not BaseDataCube.fix_data
 
+    def _log_no_data(self) -> None:
+        self.logger.debug(
+            "No data was found by %s loader", self.__class__.__name__
+        )
+
     # ── public API ──────────────────────────────────────────────────────
 
     def load(self, **options: Any) -> DatacubeFrame:
@@ -118,9 +123,7 @@ class BaseDataCube(PicklableLifecycleCoreMixin, LifecycleCore):
         if self._has_data() and self._fix_data_is_overridden():
             self.fix_data()
         elif not self._has_data():
-            self.logger.debug(
-                "No data was found by %s loader", self.__class__.__name__
-            )
+            self._log_no_data()
         return self.df
 
     async def aload(self, **options: Any) -> DatacubeFrame:
@@ -132,9 +135,7 @@ class BaseDataCube(PicklableLifecycleCoreMixin, LifecycleCore):
             elif self._fix_data_is_overridden():
                 self.fix_data()
         else:
-            self.logger.debug(
-                "No data was found by %s loader", self.__class__.__name__
-            )
+            self._log_no_data()
         return self.df
 
     # ── lifecycle ───────────────────────────────────────────────────────

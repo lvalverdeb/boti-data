@@ -116,7 +116,9 @@ def prepare_period_filters(
     return kwargs
 
 
-def resolve_series_filters(options: dict[str, Any]) -> dict[str, Any]:
+def _classify_series_keys(options: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Returns (dask_keys, pandas_keys): the ``__in`` filter keys backed by a
+    Dask or pandas Series, respectively (mutually exclusive)."""
     dask_keys = [
         k for k, v in options.items()
         if k.endswith("__in") and isinstance(v, dd.Series)
@@ -125,6 +127,26 @@ def resolve_series_filters(options: dict[str, Any]) -> dict[str, Any]:
         k for k, v in options.items()
         if k.endswith("__in") and isinstance(v, pd.Series) and not isinstance(v, dd.Series)
     ]
+    return dask_keys, pandas_keys
+
+
+def _apply_computed_dask_series(
+    resolved: dict[str, Any], dask_keys: list[str], computed: tuple[Any, ...]
+) -> None:
+    for key, series in zip(dask_keys, computed):
+        resolved[key] = series.dropna().unique().tolist()
+
+
+def _resolve_pandas_series_keys(
+    resolved: dict[str, Any], options: dict[str, Any], pandas_keys: list[str]
+) -> None:
+    # pandas Series: no I/O, resolve directly.
+    for key in pandas_keys:
+        resolved[key] = options[key].dropna().unique().tolist()
+
+
+def resolve_series_filters(options: dict[str, Any]) -> dict[str, Any]:
+    dask_keys, pandas_keys = _classify_series_keys(options)
     if not dask_keys and not pandas_keys:
         return options
 
@@ -133,26 +155,14 @@ def resolve_series_filters(options: dict[str, Any]) -> dict[str, Any]:
     # Batch all Dask series into a single dask.compute() call to share the scheduler pass.
     if dask_keys:
         computed = dask.compute(*[options[k] for k in dask_keys])
-        for key, series in zip(dask_keys, computed):
-            resolved[key] = series.dropna().unique().tolist()
+        _apply_computed_dask_series(resolved, dask_keys, computed)
 
-    for key in pandas_keys:
-        resolved[key] = options[key].dropna().unique().tolist()
-
+    _resolve_pandas_series_keys(resolved, options, pandas_keys)
     return resolved
 
 
 async def resolve_series_filters_async(options: dict[str, Any]) -> dict[str, Any]:
-    dask_keys = [
-        k
-        for k, v in options.items()
-        if k.endswith("__in") and isinstance(v, dd.Series)
-    ]
-    pandas_keys = [
-        k
-        for k, v in options.items()
-        if k.endswith("__in") and isinstance(v, pd.Series) and not isinstance(v, dd.Series)
-    ]
+    dask_keys, pandas_keys = _classify_series_keys(options)
     if not dask_keys and not pandas_keys:
         return options
 
@@ -164,11 +174,7 @@ async def resolve_series_filters_async(options: dict[str, Any]) -> dict[str, Any
             dask.compute,
             *[options[k] for k in dask_keys],
         )
-        for key, series in zip(dask_keys, computed):
-            resolved[key] = series.dropna().unique().tolist()
+        _apply_computed_dask_series(resolved, dask_keys, computed)
 
-    # pandas Series: no I/O, resolve directly.
-    for key in pandas_keys:
-        resolved[key] = options[key].dropna().unique().tolist()
-
+    _resolve_pandas_series_keys(resolved, options, pandas_keys)
     return resolved

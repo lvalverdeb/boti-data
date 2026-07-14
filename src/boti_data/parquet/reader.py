@@ -60,21 +60,19 @@ class ParquetReader(DataHelper):
         self._default_return_type = self.gateway.default_return_type
         self._default_execution_mode = self.gateway.default_execution_mode
 
-    def load(self, **options: Any) -> Any:
+    def _resolve_default_load_options(self, options: dict[str, Any]) -> dict[str, Any]:
         resolved_options = self._normalize_filter_options(options)
         if "return_type" not in resolved_options and "as_pandas" not in resolved_options:
             resolved_options["return_type"] = self._default_return_type
         if "execution_mode" not in resolved_options:
             resolved_options["execution_mode"] = self._default_execution_mode
-        return super().load(**resolved_options)
+        return resolved_options
+
+    def load(self, **options: Any) -> Any:
+        return super().load(**self._resolve_default_load_options(options))
 
     async def aload(self, **options: Any) -> Any:
-        resolved_options = self._normalize_filter_options(options)
-        if "return_type" not in resolved_options and "as_pandas" not in resolved_options:
-            resolved_options["return_type"] = self._default_return_type
-        if "execution_mode" not in resolved_options:
-            resolved_options["execution_mode"] = self._default_execution_mode
-        return await super().aload(**resolved_options)
+        return await super().aload(**self._resolve_default_load_options(options))
 
     @staticmethod
     def _normalize_filter_options(options: Mapping[str, Any]) -> dict[str, Any]:

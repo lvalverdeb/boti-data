@@ -135,6 +135,14 @@ class SinkPipeline(PicklableLifecycleCoreMixin, LifecycleCore):
     async def aload(self, **options: Any) -> FrameResult:
         return await self.source.aload(**options)
 
+    @staticmethod
+    def _prepare_write_options(
+        load_options: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], Sequence[str] | None]:
+        resolved_options = dict(load_options)
+        enrich_cols = resolved_options.pop("enrich_cols", None)
+        return resolved_options, enrich_cols
+
     def write(
         self,
         *,
@@ -143,8 +151,7 @@ class SinkPipeline(PicklableLifecycleCoreMixin, LifecycleCore):
         persist: bool = False,
         **load_options: Any,
     ) -> SinkWriteResult:
-        resolved_options = dict(load_options)
-        enrich_cols = resolved_options.pop("enrich_cols", None)
+        resolved_options, enrich_cols = self._prepare_write_options(load_options)
         frame = self.load(**self._materialization_load_options(resolved_options))
         frame = self._maybe_enrich_sync(frame, cols=enrich_cols)
         return self.sink.write(
@@ -163,8 +170,7 @@ class SinkPipeline(PicklableLifecycleCoreMixin, LifecycleCore):
         persist: bool = False,
         **load_options: Any,
     ) -> SinkWriteResult:
-        resolved_options = dict(load_options)
-        enrich_cols = resolved_options.pop("enrich_cols", None)
+        resolved_options, enrich_cols = self._prepare_write_options(load_options)
         frame = await self.aload(**self._materialization_load_options(resolved_options))
         frame = await self._maybe_enrich_async(frame, cols=enrich_cols)
         return await self.sink.awrite(

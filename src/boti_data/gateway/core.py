@@ -239,20 +239,39 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
     def _configured_select_cache_key(db_columns: list[str] | None) -> tuple[str, ...]:
         return tuple(db_columns or ())
 
+    @classmethod
+    def _lru_get(
+        cls, cache: OrderedDict[tuple[str, ...], tuple[Any, Any]], cache_key: tuple[str, ...]
+    ) -> tuple[Any, Any] | None:
+        """LRU touch-on-read: bumps *cache_key* to most-recently-used if present."""
+        cached = cache.get(cache_key)
+        if cached is not None:
+            cache.move_to_end(cache_key)
+        return cached
+
+    @classmethod
+    def _lru_put(
+        cls,
+        cache: OrderedDict[tuple[str, ...], tuple[Any, Any]],
+        cache_key: tuple[str, ...],
+        value: tuple[Any, Any],
+    ) -> None:
+        """Inserts *value*, evicting the least-recently-used entry over ``_CACHE_MAXSIZE``."""
+        cache[cache_key] = value
+        if len(cache) > cls._CACHE_MAXSIZE:
+            cache.popitem(last=False)
+
     def _get_configured_select(
         self,
         db_columns: list[str] | None,
     ) -> tuple[Any, Any]:
         cache_key = self._configured_select_cache_key(db_columns)
-        cached = self._configured_select_cache.get(cache_key)
+        cached = self._lru_get(self._configured_select_cache, cache_key)
         if cached is not None:
-            self._configured_select_cache.move_to_end(cache_key)
             return cached
         assert isinstance(self.resource, SqlDatabaseResource)
         result = reflect_and_select(self.resource, self._table, db_columns)  # type: ignore[arg-type]
-        self._configured_select_cache[cache_key] = result
-        if len(self._configured_select_cache) > self._CACHE_MAXSIZE:
-            self._configured_select_cache.popitem(last=False)
+        self._lru_put(self._configured_select_cache, cache_key, result)
         return result
 
     async def _get_configured_select_async(
@@ -261,14 +280,11 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
         db_columns: list[str] | None,
     ) -> tuple[Any, Any]:
         cache_key = self._configured_select_cache_key(db_columns)
-        cached = self._configured_async_select_cache.get(cache_key)
+        cached = self._lru_get(self._configured_async_select_cache, cache_key)
         if cached is not None:
-            self._configured_async_select_cache.move_to_end(cache_key)
             return cached
         result = await reflect_and_select_async(resource, self._table, db_columns)
-        self._configured_async_select_cache[cache_key] = result
-        if len(self._configured_async_select_cache) > self._CACHE_MAXSIZE:
-            self._configured_async_select_cache.popitem(last=False)
+        self._lru_put(self._configured_async_select_cache, cache_key, result)
         return result
 
     def _prepare_structured_loader_options(self, options: dict[str, Any]) -> dict[str, Any]:
@@ -421,6 +437,40 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
                     )
 
 
+    @staticmethod
+    def _perform_load_kwargs(*, request: GatewayLoadRequest | None, plan: Any) -> dict[str, Any]:
+        """Shared kwargs for _perform_load_sync/_perform_load_async, derived
+        from a resolved LoadPlan. Callers add their own sync/async-specific
+        kwargs on top (e.g. async adds ``timeout``)."""
+        return dict(
+            request=request,
+            resolved_return_type=plan.resolved_return_type,
+            resolved_execution_mode=plan.resolved_execution_mode,
+            loader_return_type=plan.loader_return_type,
+            loader_as_pandas=plan.loader_as_pandas,
+        )
+
+    def _build_structured_load_context(
+        self,
+        *,
+        request: GatewayLoadRequest | None,
+        opts: dict[str, Any],
+        loader_return_type: Literal["pandas", "arrow", "dask"],
+        resolved_execution_mode: ResolvedExecutionMode,
+        timeout: float | None = None,
+    ) -> StructuredLoadContext:
+        return StructuredLoadContext(
+            resource=self.resource,
+            config=self.config,
+            request=request,
+            opts=opts,
+            loader_return_type=loader_return_type,
+            resolved_execution_mode=resolved_execution_mode,
+            timeout=timeout,
+            post_processor=self._post_processor,
+            async_sql_resource=self._async_sql_resource,
+        )
+
     def _perform_load_sync(
         self,
         opts: dict[str, Any],
@@ -439,15 +489,11 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
                 loader_return_type=loader_return_type,
                 loader_as_pandas=loader_as_pandas,
             )
-        ctx = StructuredLoadContext(
-            resource=self.resource,
-            config=self.config,
+        ctx = self._build_structured_load_context(
             request=request,
             opts=opts,
             loader_return_type=loader_return_type,
             resolved_execution_mode=resolved_execution_mode,
-            post_processor=self._post_processor,
-            async_sql_resource=self._async_sql_resource,
         )
         return self._strategy.load_structured_sync(ctx)
 
@@ -471,16 +517,12 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
                 loader_as_pandas=loader_as_pandas,
             )
         else:
-            ctx = StructuredLoadContext(
-                resource=self.resource,
-                config=self.config,
+            ctx = self._build_structured_load_context(
                 request=request,
                 opts=opts,
                 loader_return_type=loader_return_type,
                 resolved_execution_mode=resolved_execution_mode,
                 timeout=timeout,
-                post_processor=self._post_processor,
-                async_sql_resource=self._async_sql_resource,
             )
             coro = self._strategy.load_structured_async(ctx)
 
@@ -573,12 +615,7 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
 
         def _execute_sync(**opts: Any) -> pd.DataFrame | dd.DataFrame | pa.Table:
             return self._perform_load_sync(
-                opts,
-                request=request,
-                resolved_return_type=plan.resolved_return_type,
-                resolved_execution_mode=plan.resolved_execution_mode,
-                loader_return_type=plan.loader_return_type,
-                loader_as_pandas=plan.loader_as_pandas,
+                opts, **self._perform_load_kwargs(request=request, plan=plan)
             )
 
         df = self._chunked_in_load_sync(
@@ -621,11 +658,7 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
         async def _execute(**opts: Any) -> pd.DataFrame | dd.DataFrame | pa.Table:
             return await self._perform_load_async(
                 opts,
-                request=request,
-                resolved_return_type=plan.resolved_return_type,
-                resolved_execution_mode=plan.resolved_execution_mode,
-                loader_return_type=plan.loader_return_type,
-                loader_as_pandas=plan.loader_as_pandas,
+                **self._perform_load_kwargs(request=request, plan=plan),
                 timeout=controls.timeout,
             )
 

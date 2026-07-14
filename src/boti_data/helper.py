@@ -204,19 +204,23 @@ class DataHelper(PicklableLifecycleCoreMixin, LifecycleCore):
     def polars(self) -> _EngineBoundHelper:
         return _EngineBoundHelper(self, return_type="polars", execution_mode="eager")
 
-    def preview(self, statement: Any, model: Any, n: int = 5, **options: Any) -> Any:
+    @staticmethod
+    def _build_preview_options(
+        statement: Any, model: Any, n: int, options: dict[str, Any]
+    ) -> dict[str, Any]:
         options["statement"] = statement
         options["model"] = model
         options["as_pandas"] = True
         options["limit"] = n
-        return self.gateway.load(**options)
+        return options
+
+    def preview(self, statement: Any, model: Any, n: int = 5, **options: Any) -> Any:
+        return self.gateway.load(**self._build_preview_options(statement, model, n, options))
 
     async def apreview(self, statement: Any, model: Any, n: int = 5, **options: Any) -> Any:
-        options["statement"] = statement
-        options["model"] = model
-        options["as_pandas"] = True
-        options["limit"] = n
-        return await self.gateway.aload(**options)
+        return await self.gateway.aload(
+            **self._build_preview_options(statement, model, n, options)
+        )
 
     def load_period(self, dt_field: str, start: str, end: str, **kwargs: Any) -> Any:
         return self.gateway.load_period(dt_field, start, end, **kwargs)

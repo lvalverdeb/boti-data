@@ -1120,46 +1120,45 @@ class ParquetStrategy(BackendStrategy):
 
     # -- Structured mode loads -----------------------------------------------
 
-    def load_structured_sync(self, ctx: StructuredLoadContext) -> FrameResult:
+    @staticmethod
+    def _build_structured_parquet_request(ctx: StructuredLoadContext) -> ParquetLoadRequest:
         # Use ctx.opts (which still carries bare runtime filter kwargs) rather
         # than ctx.request: GatewayLoadRequest forbids extra fields, so bare
         # kwargs never land on request.filters and would be silently dropped.
         payload_source: Any = ctx.opts if ctx.opts is not None else ctx.request
-        request = ParquetLoadRequest.model_validate(
+        return ParquetLoadRequest.model_validate(
             _payloads.structured_parquet_request_payload(
                 payload_source,
                 return_type=ctx.loader_return_type,
             )
         )
+
+    def load_structured_sync(self, ctx: StructuredLoadContext) -> FrameResult:
+        request = self._build_structured_parquet_request(ctx)
         return load_parquet(ctx.resource, request)
 
     async def load_structured_async(self, ctx: StructuredLoadContext) -> FrameResult:
-        # See load_structured_sync: ctx.opts preserves runtime filter values.
-        payload_source: Any = ctx.opts if ctx.opts is not None else ctx.request
-        request = ParquetLoadRequest.model_validate(
-            _payloads.structured_parquet_request_payload(
-                payload_source,
-                return_type=ctx.loader_return_type,
-            )
-        )
+        request = self._build_structured_parquet_request(ctx)
         return await asyncio.to_thread(load_parquet, ctx.resource, request)
 
     # -- Configured mode loads -----------------------------------------------
 
-    def load_configured_sync(self, ctx: ConfiguredLoadContext) -> FrameResult:
-        assert isinstance(ctx.resource, ParquetDataResource)
-        df = load_parquet(
-            ctx.resource,
-            ParquetLoadRequest.model_construct(
-                filters=ctx.combined_filters,
-                raw_filters=ctx.control.raw_filters,
-                limit=ctx.control.limit,
-                columns=(list(ctx.configured_fieldnames) if ctx.configured_fieldnames else None),
-                as_pandas=ctx.loader_as_pandas,
-                diagnostics=ctx.control.diagnostics,
-                return_type=ctx.loader_return_type,
-            ),
+    @staticmethod
+    def _build_configured_parquet_request(ctx: ConfiguredLoadContext) -> ParquetLoadRequest:
+        return ParquetLoadRequest.model_construct(
+            filters=ctx.combined_filters,
+            raw_filters=ctx.control.raw_filters,
+            limit=ctx.control.limit,
+            columns=(list(ctx.configured_fieldnames) if ctx.configured_fieldnames else None),
+            as_pandas=ctx.loader_as_pandas,
+            diagnostics=ctx.control.diagnostics,
+            return_type=ctx.loader_return_type,
         )
+
+    @staticmethod
+    def _finalize_configured_parquet_result(
+        ctx: ConfiguredLoadContext, df: FrameResult
+    ) -> FrameResult:
         return ctx.post_processor.finalize_configured_result(
             df,
             return_type=ctx.return_type,
@@ -1167,27 +1166,17 @@ class ParquetStrategy(BackendStrategy):
             fieldnames=ctx.configured_fieldnames,
         )
 
+    def load_configured_sync(self, ctx: ConfiguredLoadContext) -> FrameResult:
+        assert isinstance(ctx.resource, ParquetDataResource)
+        df = load_parquet(ctx.resource, self._build_configured_parquet_request(ctx))
+        return self._finalize_configured_parquet_result(ctx, df)
+
     async def load_configured_async(self, ctx: ConfiguredLoadContext) -> FrameResult:
         assert isinstance(ctx.resource, ParquetDataResource)
         df = await asyncio.to_thread(
-            load_parquet,
-            ctx.resource,
-            ParquetLoadRequest.model_construct(
-                filters=ctx.combined_filters,
-                raw_filters=ctx.control.raw_filters,
-                limit=ctx.control.limit,
-                columns=(list(ctx.configured_fieldnames) if ctx.configured_fieldnames else None),
-                as_pandas=ctx.loader_as_pandas,
-                diagnostics=ctx.control.diagnostics,
-                return_type=ctx.loader_return_type,
-            ),
+            load_parquet, ctx.resource, self._build_configured_parquet_request(ctx)
         )
-        return ctx.post_processor.finalize_configured_result(
-            df,
-            return_type=ctx.return_type,
-            apply_field_map=False,
-            fieldnames=ctx.configured_fieldnames,
-        )
+        return self._finalize_configured_parquet_result(ctx, df)
 
     # -- Auto return type ----------------------------------------------------
 
@@ -1295,23 +1284,22 @@ class DatacubeStrategy(BackendStrategy):
 
     # -- Configured mode loads -----------------------------------------------
 
-    def load_configured_sync(self, ctx: ConfiguredLoadContext) -> FrameResult:
+    @staticmethod
+    def _build_configured_datacube_request(ctx: ConfiguredLoadContext) -> Any:
         from boti_data.datacube.contract import DatacubeRequest
 
-        request = DatacubeRequest(
+        return DatacubeRequest(
             filters=ctx.combined_filters,
             cube=ctx.control.cube,
         )
+
+    def load_configured_sync(self, ctx: ConfiguredLoadContext) -> FrameResult:
+        request = self._build_configured_datacube_request(ctx)
         df = ctx.resource.load(request)
         return get_frame_strategy(ctx.return_type).normalize(df)
 
     async def load_configured_async(self, ctx: ConfiguredLoadContext) -> FrameResult:
-        from boti_data.datacube.contract import DatacubeRequest
-
-        request = DatacubeRequest(
-            filters=ctx.combined_filters,
-            cube=ctx.control.cube,
-        )
+        request = self._build_configured_datacube_request(ctx)
         df = await ctx.resource.aload(request)
         return get_frame_strategy(ctx.return_type).normalize(df)
 

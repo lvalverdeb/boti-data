@@ -71,7 +71,14 @@ class EngineRegistry:
         engine = create_async_engine(url, **kwargs)
         result_engine, was_cached, duplicate = cls._register_or_flag_duplicate(key, engine, is_async=True)
         if duplicate is not None:
-            await duplicate.dispose()
+            # Guarded the same way as the sync path's duplicate.dispose() a
+            # few lines up: a disposal failure here must not propagate and
+            # fail an otherwise-successful get_or_create_async() call. This
+            # was previously unguarded — the sync/async twins had drifted.
+            try:
+                await duplicate.dispose()
+            except Exception:
+                _log.debug("Error disposing duplicate engine for key %s", key, exc_info=True)
         return result_engine, was_cached
 
     @classmethod
@@ -122,11 +129,14 @@ class EngineRegistry:
         try:
             engine = cls._decrement_and_maybe_pop(key, logger)
             if engine is not None:
-                await engine.dispose()
-                if logger:
-                    try:
-                        logger.debug("Disposed DB Engine for key %s", key)
-                    except Exception:
-                        _log.debug("Failed to log engine disposal for key %s", key, exc_info=True)
+                try:
+                    await engine.dispose()
+                    if logger:
+                        try:
+                            logger.debug("Disposed DB Engine for key %s", key)
+                        except Exception:
+                            _log.debug("Failed to log engine disposal for key %s", key, exc_info=True)
+                except Exception:
+                    _log.debug("Error disposing engine for key %s", key, exc_info=True)
         except Exception:
             _log.debug("Error during async engine registry release for key %s", key, exc_info=True)
