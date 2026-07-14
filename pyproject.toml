@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
+    {name = "Luis Valverde"}
+]
+maintainers = [
     {name = "Luis Valverde", email = "lvalverdeb@gmail.com"}
 ]
 classifiers = [
