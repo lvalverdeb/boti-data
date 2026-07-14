@@ -10,6 +10,29 @@ from __future__ import annotations
 from typing import Any
 
 import pandas as pd
+from boti.core.security import has_dunder_identifier
+
+# ``pd.DataFrame.eval()``/``query()`` evaluate the expression via Python's own
+# eval machinery (CVE-2024-9880 documents attribute-chain escapes reaching
+# ``os.system`` through it). Expressions passed to RowFilter/DerivedColumn
+# must come from trusted, developer-authored pipeline configuration — never
+# from request bodies, tenant-supplied config, or any other untrusted source.
+# As defense in depth, reject dunder attribute chains (``__class__``,
+# ``__globals__``, ``__subclasses__``, etc.), the building blocks of every
+# publicly documented eval sandbox-escape technique. has_dunder_identifier
+# matches whole identifier tokens (not a raw "__" substring test), so a
+# legitimate column merely containing "__" in the middle — e.g. "a__b" — is
+# not rejected; see boti.core.security for the shared implementation used
+# everywhere else in this codebase that validates untrusted-shaped strings.
+
+
+def _reject_dunder_expr(expr: str) -> None:
+    if has_dunder_identifier(expr):
+        raise ValueError(
+            f"Refusing to evaluate expression containing a dunder identifier: {expr!r} — "
+            "dunder attribute access is disallowed as a defense against "
+            "eval sandbox-escape techniques (see CVE-2024-9880)."
+        )
 
 
 class TypeCaster:
@@ -43,6 +66,14 @@ class RowFilter:
     predicates:
         List of pandas query expressions (e.g. ``["active == True", "value > 0"]``).
         All predicates are applied in sequence (AND semantics).
+
+    Security
+    --------
+    Predicates are evaluated via :meth:`pd.DataFrame.eval`, which runs
+    through Python's own eval machinery. Only pass trusted, developer-authored
+    expressions — e.g. from a pipeline definition committed to source control
+    — never strings sourced from request bodies, tenant-supplied config, or
+    any other untrusted input. See CVE-2024-9880.
     """
 
     def __init__(self, predicates: list[str]) -> None:
@@ -50,6 +81,7 @@ class RowFilter:
 
     async def transform(self, df: pd.DataFrame, **kwargs: Any) -> pd.DataFrame:
         for expr in self._predicates:
+            _reject_dunder_expr(expr)
             mask = df.eval(expr)
             df = df.loc[mask].reset_index(drop=True)
         return df
@@ -68,6 +100,14 @@ class DerivedColumn:
     Example::
 
         DerivedColumn({"sla_end": "arrival_date + pd.Timedelta(days=7)"})
+
+    Security
+    --------
+    Expressions are evaluated via :meth:`pd.DataFrame.eval`, which runs
+    through Python's own eval machinery. Only pass trusted, developer-authored
+    expressions — e.g. from a pipeline definition committed to source control
+    — never strings sourced from request bodies, tenant-supplied config, or
+    any other untrusted input. See CVE-2024-9880.
     """
 
     def __init__(self, columns: dict[str, str]) -> None:
@@ -75,6 +115,7 @@ class DerivedColumn:
 
     async def transform(self, df: pd.DataFrame, **kwargs: Any) -> pd.DataFrame:
         for name, expr in self._columns.items():
+            _reject_dunder_expr(expr)
             df[name] = df.eval(expr)
         return df
 

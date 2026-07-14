@@ -86,6 +86,30 @@ async def test_row_filter_empty_result():
     assert len(result) == 0
 
 
+@pytest.mark.asyncio
+async def test_row_filter_rejects_dunder_expression():
+    """Defense against eval sandbox-escape techniques (CVE-2024-9880): dunder
+    attribute chains are the building block of every documented escape, so
+    predicates containing a dunder-wrapped identifier are refused before
+    reaching df.eval()."""
+    df = _sample_df()
+    t = RowFilter(["active.__class__.__bases__"])
+    with pytest.raises(ValueError, match="__"):
+        await t.transform(df)
+
+
+@pytest.mark.asyncio
+async def test_row_filter_allows_column_with_embedded_double_underscore():
+    """The guard uses has_dunder_identifier (whole-token match), not a raw
+    substring test for "__", so a legitimate column name that merely
+    contains "__" in the middle — a realistic dbt/warehouse-style naming
+    convention — is not rejected."""
+    df = pd.DataFrame({"a__b": [1, 2, 3], "active": [1, 0, 1]})
+    t = RowFilter(["a__b > 1"])
+    result = await t.transform(df)
+    assert list(result["a__b"]) == [2, 3]
+
+
 # ── DerivedColumn ────────────────────────────────────────────────────────────
 
 
@@ -105,6 +129,29 @@ async def test_derived_column_multiple():
     result = await t.transform(df)
     assert list(result["sum"]) == [5, 7, 9]
     assert list(result["product"]) == [4, 10, 18]
+
+
+@pytest.mark.asyncio
+async def test_derived_column_rejects_dunder_expression():
+    """Defense against eval sandbox-escape techniques (CVE-2024-9880): dunder
+    attribute chains are the building block of every documented escape, so
+    expressions containing a dunder-wrapped identifier are refused before
+    reaching df.eval()."""
+    df = pd.DataFrame({"a": [1, 2, 3]})
+    t = DerivedColumn({"pwned": "a.__class__.__mro__"})
+    with pytest.raises(ValueError, match="__"):
+        await t.transform(df)
+
+
+@pytest.mark.asyncio
+async def test_derived_column_allows_column_with_embedded_double_underscore():
+    """Same has_dunder_identifier whole-token guard as RowFilter — a column
+    referencing "a__b" is not a dunder attribute chain and must not be
+    rejected."""
+    df = pd.DataFrame({"a__b": [1, 2, 3]})
+    t = DerivedColumn({"doubled": "a__b * 2"})
+    result = await t.transform(df)
+    assert list(result["doubled"]) == [2, 4, 6]
 
 
 # ── Deduplicator ─────────────────────────────────────────────────────────────

@@ -19,14 +19,14 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "asyncmy>=0.2.11",
+    "asyncmy>=0.2.11,<0.3.0",
     "boti>=1.0.2,<2.0.0",
     "boti-dask>=1.0.0,<2.0.0",
-    "dask[dataframe,distributed]>=2026.3.0",
-    "pandas>=3.0.2",
-    "polars>=1.29.0",
-    "pymysql>=1.1.2",
-    "sqlalchemy[asyncio]>=2.0.49",
+    "dask[dataframe,distributed]>=2026.3.0,<2027.0.0",
+    "pandas>=3.0.2,<4.0.0",
+    "polars>=1.29.0,<2.0.0",
+    "pymysql>=1.1.2,<2.0.0",
+    "sqlalchemy[asyncio]>=2.0.49,<3.0.0",
 ]
 
 [project.urls]
