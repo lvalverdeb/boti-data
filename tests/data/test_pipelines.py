@@ -387,8 +387,6 @@ def test_sink_pipeline_applies_enricher_before_write(temp_project_root):
     assert "label" in sample.columns
 
 
-
-
 def test_csv_sink_overwrite_preserves_previous_output_when_write_fails(temp_project_root):
     """A failing compute during overwrite must not destroy the existing dataset."""
     target = temp_project_root / "csv_staging_output"
@@ -432,3 +430,37 @@ def test_csv_sink_overwrite_preserves_previous_output_when_write_fails(temp_proj
         assert not (temp_project_root / "csv_staging_output.staging").exists()
     finally:
         sink.close()
+
+
+def test_prepare_partitioned_frame_preserves_explicit_bool_meta_after_assign():
+    """A partition_date derivation must not corrupt unrelated bool column meta.
+
+    Regression test for a dask-expr defect where .assign() re-derives _meta for
+    the whole frame, silently dropping an explicit per-column dtype hint set by
+    an upstream map_partitions(meta=(col, bool)) cast and falling back to
+    generic `object` dtype -- which later crashes to_parquet's schema inference.
+    """
+    from boti_data.pipelines.sinks import prepare_partitioned_frame
+
+    pdf = pd.DataFrame(
+        {
+            "confirmation_dt": pd.to_datetime(["2024-01-01", "2024-01-02"]),
+            "dispatched": [True, False],
+        }
+    )
+    ddf = dd.from_pandas(pdf, npartitions=1)
+    # Simulate the upstream fix_data() cast that pins an explicit bool meta hint.
+    ddf["dispatched"] = ddf["dispatched"].map_partitions(
+        lambda s: s.astype(bool), meta=("dispatched", bool)
+    )
+    assert ddf.dtypes["dispatched"] == bool  # noqa: E721 -- numpy dtype equality, not type identity
+
+    result = prepare_partitioned_frame(
+        ddf,
+        partition_on=["partition_date"],
+        date_field="confirmation_dt",
+        sink_name="TestSink",
+    )
+
+    assert result.dtypes["dispatched"] == bool  # noqa: E721
+    assert type(result._meta_nonempty["dispatched"].iloc[0]) is not object

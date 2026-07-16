@@ -116,8 +116,7 @@ _FALLBACK_DTYPE_BYTES: int = 16
 def _estimate_bytes_per_row(meta_dtypes: dict[str, str]) -> int:
     """Estimate the in-memory footprint of one result row from its column dtypes."""
     total = sum(
-        _DTYPE_BYTE_WEIGHTS.get(dtype, _FALLBACK_DTYPE_BYTES)
-        for dtype in meta_dtypes.values()
+        _DTYPE_BYTE_WEIGHTS.get(dtype, _FALLBACK_DTYPE_BYTES) for dtype in meta_dtypes.values()
     )
     return max(1, total)
 
@@ -388,7 +387,12 @@ class SqlAlchemyStrategy(BackendStrategy):
         cfg = dict(cfg)
         raw_url = cfg.pop("connection_url", None)
         if raw_url is None:
-            raise ValueError("from_config requires 'connection_url'.")
+            raise ValueError(
+                "from_config requires 'connection_url' for the 'sqlalchemy' backend "
+                "(the default used when no 'backend' key is present in config). "
+                "If you intended a different backend, pass an explicit 'backend' key "
+                "(e.g. 'parquet', 'datacube')."
+            )
         connection_url = SecretStr(raw_url) if isinstance(raw_url, str) else raw_url
         return SqlDatabaseConfig(connection_url=connection_url, **cfg)
 
@@ -620,7 +624,8 @@ class SqlAlchemyStrategy(BackendStrategy):
                 t_coerce = perf_counter()
                 if len(df) <= single_fetch_ceiling:
                     df = SqlPartitionExecutor.align_and_coerce_partition(
-                        df, meta_dtypes,
+                        df,
+                        meta_dtypes,
                     )
                     t_dask = perf_counter()
                     result = dd.from_pandas(df, npartitions=1)
@@ -808,10 +813,7 @@ class SqlAlchemyStrategy(BackendStrategy):
         )
         t1 = perf_counter()
         if diagnostics:
-            resource.logger.info(
-                "Configured async select "
-                f"reflect_select={t1 - t0:.3f}s"
-            )
+            resource.logger.info(f"Configured async select reflect_select={t1 - t0:.3f}s")
         if ctx.execution_mode == "lazy":
             t2 = perf_counter()
             partitioned_options = build_partitioned_load_options(
@@ -826,10 +828,7 @@ class SqlAlchemyStrategy(BackendStrategy):
             request = build_sql_partitioned_request(options_dict)
             t3 = perf_counter()
             if diagnostics:
-                resource.logger.info(
-                    "Build partitioned request "
-                    f"elapsed={t3 - t2:.3f}s"
-                )
+                resource.logger.info(f"Build partitioned request elapsed={t3 - t2:.3f}s")
             return await self._run_async_partitioned_request(ctx, resource, request)
 
         df = await read_sql_async(

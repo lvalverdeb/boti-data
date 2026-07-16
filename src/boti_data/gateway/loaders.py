@@ -27,7 +27,9 @@ from .requests import (
 )
 
 
-def _prepare_sql_statement(request: SqlLoadRequest, *, logger: Any, debug: bool) -> tuple[Any, dict[str, Any] | None]:
+def _prepare_sql_statement(
+    request: SqlLoadRequest, *, logger: Any, debug: bool
+) -> tuple[Any, dict[str, Any] | None]:
     if request.statement is not None:
         statement = request.statement
         if request.columns:
@@ -61,9 +63,7 @@ def _arrow_table_from_sql_result(
     if statement is None:
         if not rows:
             return pa.table({name: [] for name in columns})
-        return pa.Table.from_pylist(
-            [dict(zip(columns, row)) for row in rows]
-        )
+        return pa.Table.from_pylist([dict(zip(columns, row)) for row in rows])
 
     sql_types = [getattr(selected, "type", None) for selected in statement.selected_columns]
     schema = build_arrow_schema_from_sqlalchemy_types(columns, sql_types)
@@ -106,9 +106,7 @@ def build_sql_partitioned_request(options: dict[str, Any]) -> SqlPartitionedLoad
     # Discard any extra fields that SqlPartitionedLoadRequest does not accept
     # (e.g. dry_run, resilient — control keys passed through from the gateway).
     partitioned_options = {
-        k: v
-        for k, v in partitioned_options.items()
-        if k in SqlPartitionedLoadRequest.model_fields
+        k: v for k, v in partitioned_options.items() if k in SqlPartitionedLoadRequest.model_fields
     }
     partitioned_options.setdefault("as_pandas", False)
     partitioned_options.setdefault("partitioned", True)
@@ -164,8 +162,11 @@ def load_sql_partitioned(
     resource: SqlDatabaseResource,
     request: SqlPartitionedLoadRequest,
 ):
-    loader = SqlPartitionedLoader(config, resource=resource, use_arrow=request.use_arrow)
-    return loader.load_request(request)
+    # resource is caller-owned (SqlPartitionedLoader._owns_resource is False here),
+    # so closing the loader only releases its own planner/executor state and does
+    # not touch resource — safe to close deterministically instead of relying on GC.
+    with SqlPartitionedLoader(config, resource=resource, use_arrow=request.use_arrow) as loader:
+        return loader.load_request(request)
 
 
 async def read_sql_async(

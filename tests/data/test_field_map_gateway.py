@@ -15,6 +15,7 @@ field_map absent   → DB already uses semantic column names.  No translation or
 Parquet            → Files already carry semantic column names; translation and
                      rename are never applied.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -90,11 +91,13 @@ def test_fieldmap_select_db_columns(fmap):
 
 
 def test_fieldmap_rename_dataframe(fmap):
-    df = pd.DataFrame({
-        "id_tipo_produto": [1],
-        "codigo_barra": ["X"],
-        "extra_col": [99],  # not in map → stays
-    })
+    df = pd.DataFrame(
+        {
+            "id_tipo_produto": [1],
+            "codigo_barra": ["X"],
+            "extra_col": [99],  # not in map → stays
+        }
+    )
     renamed = fmap.rename_dataframe(df)
     assert "product_type_id" in renamed.columns
     assert "barcode" in renamed.columns
@@ -118,9 +121,7 @@ class TestTranslateFiltersToDB:
     """semantic→DB translation used internally by _build_configured_request."""
 
     def test_simple_semantic(self, fmap):
-        result = fmap.translate_filters_to_db(
-            {"product_type_id": 1}, input_keys_are="semantic"
-        )
+        result = fmap.translate_filters_to_db({"product_type_id": 1}, input_keys_are="semantic")
         assert result == {"id_tipo_produto": 1}
 
     def test_with_op_suffix(self, fmap):
@@ -200,6 +201,7 @@ class LegacyBase(DeclarativeBase):
 
 class LegacyProduct(LegacyBase):
     """Table whose DB column names are the legacy (non-semantic) names."""
+
     __tablename__ = "legacy_products"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -216,6 +218,7 @@ class SemanticBase(DeclarativeBase):
 
 class SemanticProduct(SemanticBase):
     """Table whose DB column names are already the semantic names."""
+
     __tablename__ = "semantic_products"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -240,13 +243,18 @@ def legacy_dsn(tmp_path_factory):
     engine = create_engine(f"sqlite:///{db_path}")
     LegacyBase.metadata.create_all(engine)
     with Session(engine) as s:
-        s.add_all([
-            LegacyProduct(
-                id_tipo_produto=t, id_track_global=g, id_track_proceso=p,
-                codigo_barra=b, nombre_th=n
-            )
-            for t, g, p, b, n in ROWS
-        ])
+        s.add_all(
+            [
+                LegacyProduct(
+                    id_tipo_produto=t,
+                    id_track_global=g,
+                    id_track_proceso=p,
+                    codigo_barra=b,
+                    nombre_th=n,
+                )
+                for t, g, p, b, n in ROWS
+            ]
+        )
         s.commit()
     engine.dispose()
     return f"sqlite:///{db_path}"
@@ -258,13 +266,18 @@ def semantic_dsn(tmp_path_factory):
     engine = create_engine(f"sqlite:///{db_path}")
     SemanticBase.metadata.create_all(engine)
     with Session(engine) as s:
-        s.add_all([
-            SemanticProduct(
-                product_type_id=t, global_track_id=g, process_track_id=p,
-                barcode=b, first_name=n
-            )
-            for t, g, p, b, n in ROWS
-        ])
+        s.add_all(
+            [
+                SemanticProduct(
+                    product_type_id=t,
+                    global_track_id=g,
+                    process_track_id=p,
+                    barcode=b,
+                    first_name=n,
+                )
+                for t, g, p, b, n in ROWS
+            ]
+        )
         s.commit()
     engine.dispose()
     return f"sqlite:///{db_path}"
@@ -486,9 +499,9 @@ def test_from_config_mirrors_dfhelper(legacy_dsn):
             "connection_url": legacy_dsn,
             "table": "legacy_products",
             "field_map": PRODUCT_MAP,
-            "sticky_filters": {"product_type_id": 2},   # semantic name
+            "sticky_filters": {"product_type_id": 2},  # semantic name
             "df_params": {
-                "fieldnames": ("global_track_id",),      # semantic name
+                "fieldnames": ("global_track_id",),  # semantic name
             },
         },
         query_only=False,
@@ -500,6 +513,34 @@ def test_from_config_mirrors_dfhelper(legacy_dsn):
         assert df.iloc[0]["global_track_id"] == 30
     finally:
         gw.close()
+
+
+def test_from_config_preserves_embedded_fs_when_override_is_none(tmp_path):
+    """A blind cfg.update(overrides) must not let an incidental fs=None from a
+    wrapper (e.g. ParquetReader forwarding fs=None when the caller never set it)
+    clobber a real fs embedded directly in the config mapping."""
+    import fsspec
+
+    real_fs = fsspec.filesystem("memory")
+    gw = DataGateway.from_config(
+        {
+            "backend": "parquet",
+            "parquet_storage_path": str(tmp_path / "data"),
+            "fs": real_fs,
+        },
+        fs=None,
+    )
+    try:
+        assert gw.resource.fs is real_fs
+    finally:
+        gw.close()
+
+
+def test_from_config_sqlalchemy_default_backend_error_names_the_fallback():
+    """Omitting 'backend' silently defaults to sqlalchemy; the connection_url
+    error should say so instead of looking like an unrelated validation bug."""
+    with pytest.raises(ValueError, match="default used when no 'backend' key"):
+        DataGateway.from_config({"parquet_storage_path": "/tmp/whatever"})
 
 
 # ---------------------------------------------------------------------------
@@ -544,6 +585,7 @@ def test_df_params_chunk_size_from_config(legacy_dsn):
 def test_df_options_sort_field(legacy_dsn):
     """sort_field produces a DataFrame sorted by that column."""
     from boti_data.gateway import DataFrameOptions
+
     gw = _legacy_gw(
         legacy_dsn,
         df_options=DataFrameOptions(sort_field="global_track_id"),
@@ -558,6 +600,7 @@ def test_df_options_sort_field(legacy_dsn):
 def test_df_options_dedup(legacy_dsn):
     """duplicate_expr + duplicate_keep drops duplicates by the given column."""
     from boti_data.gateway import DataFrameOptions
+
     gw = _legacy_gw(
         legacy_dsn,
         sticky_filters={"product_type_id": 1},
@@ -743,11 +786,10 @@ def test_load_persist_kwarg_accepted_and_returns_df(legacy_dsn):
 
 def test_aload_timeout_not_exceeded(legacy_dsn):
     import asyncio
+
     gw = _legacy_gw(legacy_dsn)
     try:
-        df = asyncio.run(
-            gw.aload(timeout=30, as_pandas=True)
-        )
+        df = asyncio.run(gw.aload(timeout=30, as_pandas=True))
         assert len(df) == 3
     finally:
         gw.close()
@@ -769,9 +811,7 @@ def test_aload_timeout_raises_when_exceeded(legacy_dsn, monkeypatch):
     gw = _legacy_gw(legacy_dsn)
     try:
         with pytest.raises(asyncio.TimeoutError):
-            asyncio.run(
-                gw.aload(timeout=0.01, as_pandas=True)
-            )
+            asyncio.run(gw.aload(timeout=0.01, as_pandas=True))
     finally:
         gw.close()
 
@@ -806,11 +846,13 @@ def events_dsn(tmp_path_factory):
     engine = create_engine(f"sqlite:///{db_path}")
     DateBase.metadata.create_all(engine)
     with Session(engine) as s:
-        s.add_all([
-            EventRow(name="alpha", event_date=_dt.date(2024, 1, 10)),
-            EventRow(name="beta",  event_date=_dt.date(2024, 2, 15)),
-            EventRow(name="gamma", event_date=_dt.date(2024, 3, 20)),
-        ])
+        s.add_all(
+            [
+                EventRow(name="alpha", event_date=_dt.date(2024, 1, 10)),
+                EventRow(name="beta", event_date=_dt.date(2024, 2, 15)),
+                EventRow(name="gamma", event_date=_dt.date(2024, 3, 20)),
+            ]
+        )
         s.commit()
     engine.dispose()
     return f"sqlite:///{db_path}"
@@ -855,11 +897,10 @@ def test_load_period_invalid_range_raises(events_dsn):
 
 def test_aload_period_range(events_dsn):
     import asyncio
+
     gw = _event_gw(events_dsn)
     try:
-        df = asyncio.run(
-            gw.aload_period("event_date", "2024-01-01", "2024-03-31", as_pandas=True)
-        )
+        df = asyncio.run(gw.aload_period("event_date", "2024-01-01", "2024-03-31", as_pandas=True))
         assert len(df) == 3
     finally:
         gw.close()
@@ -1177,9 +1218,7 @@ def test_load_chunked_in_explicit_values_override_auto_hint(legacy_dsn, monkeypa
 def test_aload_chunked_in_supports_nested_filter_payloads(legacy_dsn):
     import asyncio
 
-    gw = DataGateway(
-        SqlDatabaseConfig(connection_url=SecretStr(legacy_dsn), query_only=False)
-    )
+    gw = DataGateway(SqlDatabaseConfig(connection_url=SecretStr(legacy_dsn), query_only=False))
     try:
         statement = select(LegacyProduct)
         df = asyncio.run(
@@ -1427,7 +1466,9 @@ def test_configured_gateway_auto_uses_eager_fetch_for_small_sql(legacy_dsn, monk
         return real_load_sql_partitioned(config, resource, request)
 
     monkeypatch.setattr("boti_data.gateway._backend_strategies.load_sql", tracking_load_sql)
-    monkeypatch.setattr("boti_data.gateway._backend_strategies.load_sql_partitioned", tracking_load_sql_partitioned)
+    monkeypatch.setattr(
+        "boti_data.gateway._backend_strategies.load_sql_partitioned", tracking_load_sql_partitioned
+    )
     gw = _legacy_gw(legacy_dsn, df_params=DataFrameParams(return_type="auto"))
     try:
         result = gw.load()
@@ -1458,7 +1499,9 @@ def test_configured_gateway_reflects_table_once(legacy_dsn, monkeypatch):
         gw.close()
 
 
-def test_configured_gateway_eager_sql_bypasses_internal_request_revalidation(legacy_dsn, monkeypatch):
+def test_configured_gateway_eager_sql_bypasses_internal_request_revalidation(
+    legacy_dsn, monkeypatch
+):
     gw = _legacy_gw(
         legacy_dsn,
         df_params=DataFrameParams(return_type="pandas", execution_mode="eager"),
@@ -1609,7 +1652,9 @@ def test_lazy_semi_join_avoids_series_list_resolution(legacy_dsn, monkeypatch):
 
     def forbid_series_resolution(options):
         if any(isinstance(value, (pd.Series, dd.Series)) for value in options.values()):
-            raise AssertionError("series should not reach generic filter resolution in lazy semi_join")
+            raise AssertionError(
+                "series should not reach generic filter resolution in lazy semi_join"
+            )
         return options
 
     monkeypatch.setattr(gateway_series_filters, "resolve_series_filters", forbid_series_resolution)

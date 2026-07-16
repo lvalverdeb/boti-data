@@ -34,11 +34,23 @@ def _parse_connection_url(
     normalized_url = _normalize_connection_url(connection_url)
     parsed = sqlalchemy_url.make_url(normalized_url)
     try:
-        parsed.get_dialect()
+        dialect_cls = parsed.get_dialect()
     except NoSuchModuleError as exc:
         raise SQLAlchemyError(
             f"{consumer_name} received unsupported SQLAlchemy dialect '{parsed.drivername}'. "
             "Check the driver name in the connection URL."
+        ) from exc
+    # get_dialect() only resolves the SQLAlchemy dialect class; the DBAPI driver
+    # package itself (e.g. psycopg2, pymysql) is imported lazily and would
+    # otherwise only fail deep inside create_engine()/first connect().
+    try:
+        dialect_cls.import_dbapi()
+    except (ModuleNotFoundError, ImportError) as exc:
+        raise SQLAlchemyError(
+            f"{consumer_name} connection_url uses dialect '{parsed.drivername}' but its DBAPI "
+            f"driver package is not installed ({exc}). Install the driver package for this "
+            "dialect (e.g. 'psycopg2-binary' for 'postgresql+psycopg2', 'pymysql' for "
+            "'mysql+pymysql') before constructing this resource."
         ) from exc
     return parsed
 

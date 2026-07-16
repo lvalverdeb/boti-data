@@ -5,6 +5,7 @@ Tests for the partition-aware SQL -> Dask loader.
 from __future__ import annotations
 
 import datetime as dt
+import gc
 from typing import Any
 
 import dask.dataframe as dd
@@ -16,12 +17,14 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from boti_data.db import (
     SqlDatabaseConfig,
+    SqlDatabaseResource,
     SqlPartitionedLoader,
     SqlPartitionedLoadRequest,
 )
 from boti_data.db.partitioned_execution import SqlPartitionExecutor
 from boti_data.db.partitioned_planner import SqlPartitionPlanner
 from boti_data.db.partitioned_types import MAX_PARTITION_FETCH_CONCURRENCY
+from boti_data.gateway.loaders import load_sql_partitioned
 
 
 class Base(DeclarativeBase):
@@ -128,6 +131,30 @@ def test_partitioned_loader_returns_lazy_dask_frame(tmp_path):
     assert plan.total_rows == 5
     assert len(plan.partitions) == 3
     assert frame.compute()["id"].tolist() == [1, 2, 3, 4, 5]
+
+
+def test_load_sql_partitioned_closes_loader_without_leak_warning(tmp_path):
+    """The internal SqlPartitionedLoader built by load_sql_partitioned() must be
+    closed deterministically rather than relying on GC -- previously it was
+    constructed and never closed, logging "garbage collected without being
+    closed" under load. resource is caller-owned here, so closing the loader
+    must not close resource out from under the caller."""
+    config = _create_user_db(tmp_path, [{"id": 1, "status": "active", "description": "a"}])
+    resource = SqlDatabaseResource(config)
+    warnings_seen: list[str] = []
+    resource.logger.warning = lambda msg, *a, **kw: warnings_seen.append(msg)
+    try:
+        request = SqlPartitionedLoadRequest.model_validate(
+            {"statement": select(User), "model": User}
+        )
+        frame = load_sql_partitioned(config, resource, request)
+        gc.collect()
+
+        assert not any("garbage collected" in msg for msg in warnings_seen)
+        assert frame.compute()["id"].tolist() == [1]
+        assert not resource.closed
+    finally:
+        resource.close()
 
 
 def test_partitioned_loader_uses_filtered_bounds_for_range_planning(tmp_path):
@@ -343,6 +370,7 @@ def test_estimated_rows_skips_count_query(tmp_path, monkeypatch):
 
     count_calls = 0
     original_count = SqlPartitionPlanner.count_rows
+
     def _counting(*args: Any, **_kwargs: Any) -> int:
         nonlocal count_calls
         count_calls += 1
@@ -372,6 +400,7 @@ def test_estimated_rows_zero_returns_empty_plan(tmp_path, monkeypatch):
 
     count_calls = 0
     original_count = SqlPartitionPlanner.count_rows
+
     def _counting(*args: Any, **_kwargs: Any) -> int:
         nonlocal count_calls
         count_calls += 1
@@ -402,6 +431,7 @@ def test_estimated_rows_greater_than_chunk_still_counts(tmp_path, monkeypatch):
 
     count_calls = 0
     original_count = SqlPartitionPlanner.count_rows
+
     def _counting(*args: Any, **_kwargs: Any) -> int:
         nonlocal count_calls
         count_calls += 1

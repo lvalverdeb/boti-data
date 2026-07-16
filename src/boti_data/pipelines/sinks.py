@@ -57,9 +57,21 @@ def prepare_partitioned_frame(
                 f"{sink_name} expected date_field={date_field!r} in loaded frame columns "
                 f"but only found {list(frame.columns)!r}."
             )
+        pre_assign_dtypes = frame.dtypes
         frame = frame.assign(
             partition_date=dd.to_datetime(frame[date_field], errors="coerce").dt.date.astype(str)
         )
+        # dask-expr's query optimizer can re-derive _meta for the whole frame when
+        # .assign() adds a column, silently dropping explicit per-column dtype hints
+        # (e.g. bool cast via map_partitions upstream) in favor of generic `object`.
+        # Restore any dtype that changed as an unintended side effect of the assign.
+        changed_dtypes = {
+            column: dtype
+            for column, dtype in pre_assign_dtypes.items()
+            if column in frame.columns and frame.dtypes[column] != dtype
+        }
+        if changed_dtypes:
+            frame = frame.astype(changed_dtypes)
         missing = [name for name in partition_columns if name not in frame.columns]
 
     if missing:
@@ -217,6 +229,13 @@ class CsvSink(SecureResource):
         overwrite: bool = True,
         persist: bool = False,
     ) -> SinkWriteResult:
+        """Write *frame* to the configured CSV destination.
+
+        ``overwrite=True`` replaces the *entire* target directory (all
+        partitions/dates), not just the partition(s) present in *frame* — see
+        :func:`_write_with_staging`. For incremental per-date writes, do not
+        rely on ``overwrite=True`` to mean "overwrite this date only".
+        """
         ddf = to_dask_frame(frame)
         ddf = prepare_partitioned_frame(
             ddf,
@@ -381,6 +400,13 @@ class JsonlSink(SecureResource):
         overwrite: bool = True,
         persist: bool = False,
     ) -> SinkWriteResult:
+        """Write *frame* to the configured JSONL destination.
+
+        ``overwrite=True`` replaces the *entire* target directory (all
+        partitions/dates), not just the partition(s) present in *frame* — see
+        :func:`_write_with_staging`. For incremental per-date writes, do not
+        rely on ``overwrite=True`` to mean "overwrite this date only".
+        """
         ddf = to_dask_frame(frame)
         ddf = prepare_partitioned_frame(
             ddf,
@@ -558,6 +584,13 @@ class ParquetSink(PicklableLifecycleCoreMixin, LifecycleCore):
         overwrite: bool = True,
         persist: bool = False,
     ) -> SinkWriteResult:
+        """Write *frame* to the configured parquet destination.
+
+        ``overwrite=True`` replaces the *entire* target directory (all
+        partitions/dates), not just the partition(s) present in *frame* — see
+        :func:`_write_with_staging`. For incremental per-date writes, do not
+        rely on ``overwrite=True`` to mean "overwrite this date only".
+        """
         ddf = to_dask_frame(frame)
         ddf = prepare_partitioned_frame(
             ddf,

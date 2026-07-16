@@ -139,7 +139,9 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
         self._return_type: ReturnType = self._df_params.return_type
         self._execution_mode: ExecutionMode = self._df_params.execution_mode
         self._configured_select_cache: OrderedDict[tuple[str, ...], tuple[Any, Any]] = OrderedDict()
-        self._configured_async_select_cache: OrderedDict[tuple[str, ...], tuple[Any, Any]] = OrderedDict()
+        self._configured_async_select_cache: OrderedDict[tuple[str, ...], tuple[Any, Any]] = (
+            OrderedDict()
+        )
         self._raw_sql_policy = raw_sql_policy
         self._policies = policies or GatewayPolicies()
         self._strict_filter_validation = strict_filter_validation
@@ -224,7 +226,6 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
         rather than defaulting to no logger at all.
         """
         return self._logger
-
 
     def _load_planner(self) -> LoadPlanner:
         return LoadPlanner(
@@ -354,7 +355,12 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
         provided.
         """
         cfg = dict(config)
-        cfg.update(overrides)
+        # Wrapper classes (e.g. ParquetReader -> DataHelper) always forward
+        # fs=None/fs_factory=None when the caller didn't explicitly pass them,
+        # rather than omitting the keys. A blind cfg.update(overrides) would let
+        # that incidental None clobber a real fs embedded directly in the config
+        # mapping, so only non-None overrides are allowed to win.
+        cfg.update({key: value for key, value in overrides.items() if value is not None})
 
         backend, common = _factory.extract_config_common_options(cfg)
         strategy = get_strategy(backend)
@@ -389,7 +395,9 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
     # Load API — structured mode
     # ------------------------------------------------------------------
 
-    def preview(self, statement: Any, model: Any, n: int = 5, npartitions: int = 1, **options: Any) -> pd.DataFrame:
+    def preview(
+        self, statement: Any, model: Any, n: int = 5, npartitions: int = 1, **options: Any
+    ) -> pd.DataFrame:
         """Load a preview (first *n* rows) as a pandas DataFrame.
 
         Leverages lazy loading + ``safe_head`` so a distributed client is used
@@ -404,7 +412,9 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
         )
         return safe_head(frame, n=n, npartitions=npartitions)
 
-    async def apreview(self, statement: Any, model: Any, n: int = 5, npartitions: int = 1, **options: Any) -> pd.DataFrame:
+    async def apreview(
+        self, statement: Any, model: Any, n: int = 5, npartitions: int = 1, **options: Any
+    ) -> pd.DataFrame:
         """Async version of :meth:`preview`."""
         frame = await self.aload(
             statement=statement,
@@ -435,7 +445,6 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
                         f"Filter field '{field}' is not allowed. "
                         f"Allowed fields: {sorted(self._allowed_filter_fields)}"
                     )
-
 
     @staticmethod
     def _perform_load_kwargs(*, request: GatewayLoadRequest | None, plan: Any) -> dict[str, Any]:
@@ -648,9 +657,7 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
 
         # Resolve any Series values before chunked dispatch so the chunker
         # sees plain lists (which it already knows how to split).
-        loader_options = await _series_filters.resolve_series_filters_async(
-            loader_options
-        )
+        loader_options = await _series_filters.resolve_series_filters_async(loader_options)
         in_chunk_size, in_chunk_concurrency = self._resolve_in_chunk_controls_for_plan(
             loader_options, plan
         )
@@ -874,7 +881,3 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
             )
         kwargs[f"{on}__in"] = join_series
         return await self.aload(**kwargs)
-
-
-
-

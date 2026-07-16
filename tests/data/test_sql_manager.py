@@ -1,6 +1,7 @@
 """
 Tests for the SQLAlchemy connection manager and engine registry.
 """
+
 import asyncio
 import pickle
 
@@ -179,7 +180,9 @@ async def test_engine_registry_creates_async_engine_outside_registry_lock(monkey
         return DummyAsyncEngine()
 
     key = ("async-lock-test",)
-    monkeypatch.setattr("boti_data.db.engine_registry.create_async_engine", fake_create_async_engine)
+    monkeypatch.setattr(
+        "boti_data.db.engine_registry.create_async_engine", fake_create_async_engine
+    )
 
     try:
         _engine, reused = await EngineRegistry.get_or_create_async(key, "sqlite+aiosqlite://")
@@ -207,6 +210,17 @@ def test_sync_resource_rejects_async_dsn_with_actionable_error():
     config = SqlDatabaseConfig(connection_url="mysql+asyncmy://user:pass@localhost/test_db")
 
     with pytest.raises(SQLAlchemyError, match="only supports synchronous SQLAlchemy drivers"):
+        SqlDatabaseResource(config)
+
+
+def test_sync_resource_rejects_missing_driver_with_actionable_error():
+    """A syntactically valid DSN whose DBAPI driver package isn't installed must
+    fail fast with a clear message naming the missing package, instead of only
+    surfacing deep inside create_engine()/first connect(). boti-data does not
+    declare a Postgres driver dependency, so psycopg2 is reliably absent here."""
+    config = SqlDatabaseConfig(connection_url="postgresql+psycopg2://user:pass@localhost/test_db")
+
+    with pytest.raises(SQLAlchemyError, match="driver package is not installed"):
         SqlDatabaseResource(config)
 
 
@@ -264,7 +278,9 @@ def test_sync_resource_defaults_to_query_only():
         db_path = Path(tmp_dir) / "readonly.db"
         create_db(db_path)
         read_only_url = f"sqlite:///file:{db_path}?mode=ro&uri=true"
-        config = SqlDatabaseConfig(connection_url=read_only_url, poolclass="sqlalchemy.pool.NullPool")
+        config = SqlDatabaseConfig(
+            connection_url=read_only_url, poolclass="sqlalchemy.pool.NullPool"
+        )
 
         with SqlDatabaseResource(config) as db, db.session() as session:
             with db.engine.connect() as conn:
@@ -284,7 +300,9 @@ def test_sync_resource_defaults_to_query_only():
 
 def test_query_only_rejects_sqlite_memory_without_native_read_only():
     """Verify query_only=True rejects SQLite DSNs that cannot enforce read-only mode."""
-    config = SqlDatabaseConfig(connection_url="sqlite:///:memory:", poolclass="sqlalchemy.pool.StaticPool")
+    config = SqlDatabaseConfig(
+        connection_url="sqlite:///:memory:", poolclass="sqlalchemy.pool.StaticPool"
+    )
 
     with pytest.raises(SQLAlchemyError, match="cannot enforce read-only mode"):
         SqlDatabaseResource(config)
@@ -332,12 +350,8 @@ def test_worker_sync_engine_preserves_query_only(tmp_path):
     bootstrap_engine = create_engine(f"sqlite:///{db_path}")
     try:
         with bootstrap_engine.begin() as conn:
-            conn.exec_driver_sql(
-                "CREATE TABLE readonly_table (id INTEGER PRIMARY KEY, name TEXT)"
-            )
-            conn.exec_driver_sql(
-                "INSERT INTO readonly_table (id, name) VALUES (1, 'Alice')"
-            )
+            conn.exec_driver_sql("CREATE TABLE readonly_table (id INTEGER PRIMARY KEY, name TEXT)")
+            conn.exec_driver_sql("INSERT INTO readonly_table (id, name) VALUES (1, 'Alice')")
     finally:
         bootstrap_engine.dispose()
 
@@ -351,9 +365,7 @@ def test_worker_sync_engine_preserves_query_only(tmp_path):
         with engine.connect() as conn:
             assert conn.execute(text("SELECT name FROM readonly_table")).scalar() == "Alice"
             with pytest.raises(OperationalError, match="readonly"):
-                conn.exec_driver_sql(
-                    "INSERT INTO readonly_table (id, name) VALUES (2, 'Bob')"
-                )
+                conn.exec_driver_sql("INSERT INTO readonly_table (id, name) VALUES (2, 'Bob')")
     finally:
         engine.dispose()
 
@@ -405,13 +417,13 @@ def test_worker_sql_config_can_resolve_connection_from_env(monkeypatch, tmp_path
     monkeypatch.setenv("BOTI_WORKER_DSN", f"sqlite:///{db_path}")
 
     engine = _create_worker_sync_engine(
-        payload.model_copy(
-            update={"connection_env_var": "BOTI_WORKER_DSN"}
-        )
+        payload.model_copy(update={"connection_env_var": "BOTI_WORKER_DSN"})
     )
     try:
         with engine.begin() as conn:
-            conn.exec_driver_sql("CREATE TABLE env_worker_table (id INTEGER PRIMARY KEY, name TEXT)")
+            conn.exec_driver_sql(
+                "CREATE TABLE env_worker_table (id INTEGER PRIMARY KEY, name TEXT)"
+            )
             conn.exec_driver_sql("INSERT INTO env_worker_table (id, name) VALUES (1, 'Alice')")
         with engine.connect() as conn:
             assert conn.execute(text("SELECT name FROM env_worker_table")).scalar() == "Alice"
@@ -436,7 +448,9 @@ async def test_query_only_false_disables_async_session_guard():
 
 @pytest.mark.asyncio
 async def test_async_resource_aclose_is_idempotent():
-    config = SqlDatabaseConfig(connection_url="mysql+asyncmy://user:pass@localhost/test_db", query_only=False)
+    config = SqlDatabaseConfig(
+        connection_url="mysql+asyncmy://user:pass@localhost/test_db", query_only=False
+    )
 
     resource = AsyncSqlDatabaseResource(config)
     await resource.__aenter__()
@@ -452,7 +466,9 @@ async def test_async_resource_aclose_is_idempotent():
 
 @pytest.mark.asyncio
 async def test_async_resource_aclose_is_safe_under_concurrency(monkeypatch):
-    config = SqlDatabaseConfig(connection_url="mysql+asyncmy://user:pass@localhost/test_db", query_only=False)
+    config = SqlDatabaseConfig(
+        connection_url="mysql+asyncmy://user:pass@localhost/test_db", query_only=False
+    )
     resource = AsyncSqlDatabaseResource(config)
 
     class _DummyEngine:
@@ -469,7 +485,9 @@ async def test_async_resource_aclose_is_safe_under_concurrency(monkeypatch):
     monkeypatch.setattr(EngineRegistry, "get_or_create_async", fake_get_or_create_async)
     monkeypatch.setattr(EngineRegistry, "release_async", fake_release_async)
     monkeypatch.setattr("boti_data.db.sql_resource.ensure_greenlet_available", lambda: None)
-    monkeypatch.setattr("boti_data.db.sql_resource._validate_query_only_support", lambda _parsed: None)
+    monkeypatch.setattr(
+        "boti_data.db.sql_resource._validate_query_only_support", lambda _parsed: None
+    )
 
     await resource.__aenter__()
     await asyncio.gather(resource.aclose(), resource.aclose(), resource.aclose())
@@ -498,7 +516,9 @@ async def test_async_resource_aclose_race_does_not_leak_shared_engine(monkeypatc
     public API, using LifecycleCore's aclose() barrier instead of a
     hand-rolled idempotency check.
     """
-    config = SqlDatabaseConfig(connection_url="mysql+asyncmy://user:pass@localhost/test_db", query_only=False)
+    config = SqlDatabaseConfig(
+        connection_url="mysql+asyncmy://user:pass@localhost/test_db", query_only=False
+    )
     resource = AsyncSqlDatabaseResource(config)
 
     class _SlowDisposeEngine:
@@ -522,7 +542,9 @@ async def test_async_resource_aclose_race_does_not_leak_shared_engine(monkeypatc
     monkeypatch.setattr(EngineRegistry, "get_or_create_async", fake_get_or_create_async)
     monkeypatch.setattr(resource, "_get_engine_key", lambda: engine_key)
     monkeypatch.setattr("boti_data.db.sql_resource.ensure_greenlet_available", lambda: None)
-    monkeypatch.setattr("boti_data.db.sql_resource._validate_query_only_support", lambda _parsed: None)
+    monkeypatch.setattr(
+        "boti_data.db.sql_resource._validate_query_only_support", lambda _parsed: None
+    )
 
     await resource.__aenter__()
 
@@ -547,5 +569,3 @@ async def test_async_resource_aclose_race_does_not_leak_shared_engine(monkeypatc
     with EngineRegistry._lock:
         EngineRegistry._registry.pop(engine_key, None)
     assert resource._session_factory is None
-
-
