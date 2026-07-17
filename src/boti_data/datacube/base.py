@@ -60,7 +60,9 @@ class BaseDataCube(PicklableLifecycleCoreMixin, LifecycleCore):
 
         merged = {**self.config, **kwargs}
         self._helper: DataHelper = DataHelper(merged)
-        self.logger = Logger.default_logger(logger_name=self.__class__.__name__)
+        self.logger = kwargs.get("logger") or Logger.default_logger(
+            logger_name=self.__class__.__name__
+        )
         super().__init__()
 
     @classmethod
@@ -70,7 +72,7 @@ class BaseDataCube(PicklableLifecycleCoreMixin, LifecycleCore):
         instance.df = None
         instance._helper = helper
         instance.config = {**cls.config, **overrides}
-        instance.logger = Logger.default_logger(logger_name=cls.__name__)
+        instance.logger = overrides.get("logger") or Logger.default_logger(logger_name=cls.__name__)
         # __new__() bypasses __init__(), so LifecycleCore's state (_state_lock,
         # _is_closed, the GC finalizer, etc.) must be wired up explicitly here.
         LifecycleCore.__init__(instance)
@@ -111,9 +113,7 @@ class BaseDataCube(PicklableLifecycleCoreMixin, LifecycleCore):
         return self.__class__.fix_data is not BaseDataCube.fix_data
 
     def _log_no_data(self) -> None:
-        self.logger.debug(
-            "No data was found by %s loader", self.__class__.__name__
-        )
+        self.logger.debug("No data was found by %s loader", self.__class__.__name__)
 
     # ── public API ──────────────────────────────────────────────────────
 

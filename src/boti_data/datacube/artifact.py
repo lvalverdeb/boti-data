@@ -84,13 +84,17 @@ class BaseArtifact(PicklableLifecycleCoreMixin, LifecycleCore):
 
         merged = {**self.config, **kwargs}
         self._helper: DataHelper = DataHelper(merged)
-        self.logger = Logger.default_logger(logger_name=self.__class__.__name__)
+        self.logger = kwargs.get("logger") or Logger.default_logger(
+            logger_name=self.__class__.__name__
+        )
 
         self.parquet_start_date: str | None = _validate_and_format_date(
-            "parquet_start_date", merged.get("parquet_start_date"),
+            "parquet_start_date",
+            merged.get("parquet_start_date"),
         )
         self.parquet_end_date: str | None = _validate_and_format_date(
-            "parquet_end_date", merged.get("parquet_end_date"),
+            "parquet_end_date",
+            merged.get("parquet_end_date"),
         )
         self.data_wrapper_class: type[Any] | None = merged.get("data_wrapper_class")
         self.class_params: dict[str, Any] = merged.get("class_params") or {
@@ -106,14 +110,16 @@ class BaseArtifact(PicklableLifecycleCoreMixin, LifecycleCore):
         instance.df = None
         instance._helper = helper
         instance.config = {**cls.config, **overrides}
-        instance.logger = Logger.default_logger(logger_name=cls.__name__)
+        instance.logger = overrides.get("logger") or Logger.default_logger(logger_name=cls.__name__)
 
         merged = {**cls.config, **overrides}
         instance.parquet_start_date = _validate_and_format_date(
-            "parquet_start_date", merged.get("parquet_start_date"),
+            "parquet_start_date",
+            merged.get("parquet_start_date"),
         )
         instance.parquet_end_date = _validate_and_format_date(
-            "parquet_end_date", merged.get("parquet_end_date"),
+            "parquet_end_date",
+            merged.get("parquet_end_date"),
         )
         instance.data_wrapper_class = merged.get("data_wrapper_class")
         instance.class_params = merged.get("class_params") or {

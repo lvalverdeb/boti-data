@@ -188,6 +188,35 @@ class TestFromHelper:
         assert cube.config["custom"] == "value"
 
 
+# ── logger kwarg is honored, not always overwritten ──────────────────────────
+
+
+class TestLoggerKwarg:
+    def test_init_honors_passed_in_logger(self, monkeypatch: Any) -> None:
+        sentinel = object()
+        monkeypatch.setattr("boti_data.helper.DataHelper.__init__", lambda self, *a, **kw: None)
+        cube = BaseDataCube(logger=sentinel)
+        assert cube.logger is sentinel
+
+    def test_init_defaults_logger_when_not_passed(self, monkeypatch: Any) -> None:
+        monkeypatch.setattr("boti_data.helper.DataHelper.__init__", lambda self, *a, **kw: None)
+        cube = BaseDataCube()
+        assert cube.logger is not None
+        assert cube.logger.__class__.__name__ == "Logger"
+
+    def test_from_helper_honors_passed_in_logger(self) -> None:
+        sentinel = object()
+        helper = _make_helper(_pandas_loader)
+        cube = BaseDataCube.from_helper(helper, logger=sentinel)
+        assert cube.logger is sentinel
+
+    def test_from_helper_defaults_logger_when_not_passed(self) -> None:
+        helper = _make_helper(_pandas_loader)
+        cube = BaseDataCube.from_helper(helper)
+        assert cube.logger is not None
+        assert cube.logger.__class__.__name__ == "Logger"
+
+
 # ── context manager ──────────────────────────────────────────────────────────
 
 
