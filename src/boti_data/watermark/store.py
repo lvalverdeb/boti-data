@@ -90,13 +90,18 @@ class FsspecWatermarkStore(_JsonWatermarkStoreBase):
     def _ensure_parent(self) -> None:
         self._fs.makedirs(os.path.dirname(self._path), exist_ok=True)
 
-    def _read_payload(self) -> dict[str, Any] | None:
+    def _read_raw_text(self) -> str | None:
         try:
-            raw = self._fs.read_text(self._path)
+            return self._fs.read_text(self._path)
         except FileNotFoundError:
             return None
         except Exception:
             _log.debug("Failed to read watermark file %s", self._path, exc_info=True)
+            return None
+
+    def _read_payload(self) -> dict[str, Any] | None:
+        raw = self._read_raw_text()
+        if raw is None:
             return None
         try:
             return json.loads(raw)

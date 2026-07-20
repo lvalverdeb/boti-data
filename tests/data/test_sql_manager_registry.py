@@ -1,0 +1,221 @@
+"""
+Tests for SQL configuration loading, engine registry caching/locking, and
+DSN/driver validation.
+
+Split out of test_sql_manager.py purely for god-module/long-file headroom.
+"""
+
+import pytest
+from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
+
+from boti_data.db.sql_config import SqlDatabaseConfig
+from boti_data.db.sql_manager import (
+    AsyncSqlDatabaseResource,
+    EngineRegistry,
+    SqlDatabaseResource,
+)
+from boti_data.db.sqlalchemy_async import ensure_greenlet_available
+
+
+def test_config_validation() -> None:
+    """Verify DSN and initialization constraints are respected."""
+    # Invalid: missing URL
+    with pytest.raises(ValidationError):
+        SqlDatabaseConfig()
+
+    # Valid config
+    config = SqlDatabaseConfig(connection_url="sqlite:///:memory:")
+    assert config.pool_pre_ping is True
+    assert config.query_only is True
+
+
+def test_config_from_env_uses_pydantic_settings(monkeypatch) -> None:
+    """Verify env-backed DB settings load through pydantic-settings."""
+    monkeypatch.setenv("DB_CONNECTION_URL", "sqlite:///:memory:")
+    monkeypatch.setenv("DB_POOL_SIZE", "9")
+    monkeypatch.setenv("DB_QUERY_ONLY", "false")
+
+    config = SqlDatabaseConfig.from_env()
+
+    assert config.connection_url.get_secret_value() == "sqlite:///:memory:"
+    assert config.pool_size == 9
+    assert config.query_only is False
+
+
+def test_config_from_env_file_uses_pydantic_settings(tmp_path) -> None:
+    """Verify dotenv-backed DB settings load through pydantic-settings."""
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "DB_CONNECTION_URL='sqlite:///:memory:'\nDB_POOL_TIMEOUT=41\n",
+        encoding="utf-8",
+    )
+
+    config = SqlDatabaseConfig.from_env(env_file=env_file)
+
+    assert config.connection_url.get_secret_value() == "sqlite:///:memory:"
+    assert config.pool_timeout == 41
+
+
+def test_config_from_named_env_prefix(tmp_path) -> None:
+    """Verify multiple DB profiles can be loaded from explicit prefixes."""
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "PRIMARY_DB_CONNECTION_URL='sqlite:///:memory:'",
+                "PRIMARY_DB_QUERY_ONLY=false",
+                "PRIMARY_DB_POOL_SIZE=7",
+                "ANALYTICS_DB_CONNECTION_URL='sqlite:///:memory:'",
+                "ANALYTICS_DB_QUERY_ONLY=true",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    primary = SqlDatabaseConfig.from_env_prefix("PRIMARY_DB_", env_file=env_file)
+    analytics = SqlDatabaseConfig.from_env_prefix("ANALYTICS_DB_", env_file=env_file)
+
+    assert primary.pool_size == 7
+    assert primary.query_only is False
+    assert analytics.query_only is True
+
+
+def test_config_rejects_non_allowlisted_poolclass_import() -> None:
+    """Verify poolclass import strings are restricted to a safe allowlist."""
+    with pytest.raises(ValidationError, match="poolclass must be one of"):
+        SqlDatabaseConfig(
+            connection_url="sqlite:///:memory:",
+            poolclass="subprocess.Popen",
+        )
+
+
+def test_engine_registry_reference_counting() -> None:
+    """Verify the registry correctly shares and discards connection pools."""
+    config = SqlDatabaseConfig(connection_url="sqlite:///:memory:", query_only=False)
+
+    # Track the underlying key using the config
+    # To properly simulate duplicate configs, we create two resources
+    res1 = SqlDatabaseResource(config)
+    res2 = SqlDatabaseResource(config)
+
+    assert res1._engine is res2._engine
+
+    key = res1._engine_key
+    assert EngineRegistry._registry[key]["ref_count"] == 2
+
+    # Close first resource
+    res1.close()
+    assert key in EngineRegistry._registry
+    assert EngineRegistry._registry[key]["ref_count"] == 1
+
+    # Close second resource
+    res2.close()
+    assert key not in EngineRegistry._registry
+
+
+def test_engine_registry_creates_sync_engine_outside_registry_lock(monkeypatch) -> None:
+    if not hasattr(EngineRegistry._lock, "_is_owned"):
+        pytest.skip("RLock ownership inspection is unavailable on this runtime")
+
+    class DummyEngine:
+        def dispose(self) -> None:
+            pass
+
+    owned_states = []
+
+    def fake_create_engine(_url: str, **_kwargs) -> DummyEngine:
+        owned_states.append(EngineRegistry._lock._is_owned())
+        return DummyEngine()
+
+    key = ("sync-lock-test",)
+    monkeypatch.setattr("boti_data.db.engine_registry.create_engine", fake_create_engine)
+
+    try:
+        _engine, reused = EngineRegistry.get_or_create(key, "sqlite://")
+        assert reused is False
+        assert owned_states == [False]
+    finally:
+        EngineRegistry.release(key)
+
+
+@pytest.mark.asyncio
+async def test_engine_registry_creates_async_engine_outside_registry_lock(monkeypatch) -> None:
+    if not hasattr(EngineRegistry._lock, "_is_owned"):
+        pytest.skip("RLock ownership inspection is unavailable on this runtime")
+
+    class DummyAsyncEngine:
+        async def dispose(self) -> None:
+            return None
+
+    owned_states = []
+
+    def fake_create_async_engine(_url: str, **_kwargs) -> DummyAsyncEngine:
+        owned_states.append(EngineRegistry._lock._is_owned())
+        return DummyAsyncEngine()
+
+    key = ("async-lock-test",)
+    monkeypatch.setattr(
+        "boti_data.db.engine_registry.create_async_engine", fake_create_async_engine
+    )
+
+    try:
+        _engine, reused = await EngineRegistry.get_or_create_async(key, "sqlite+aiosqlite://")
+        assert reused is False
+        assert owned_states == [False]
+    finally:
+        await EngineRegistry.release_async(key)
+
+
+def test_sync_resource_rejects_async_dsn_with_actionable_error() -> None:
+    """Verify synchronous resources fail fast on async-only drivers."""
+    config = SqlDatabaseConfig(connection_url="mysql+asyncmy://user:pass@localhost/test_db")
+
+    with pytest.raises(SQLAlchemyError, match="only supports synchronous SQLAlchemy drivers"):
+        SqlDatabaseResource(config)
+
+
+def test_sync_resource_rejects_missing_driver_with_actionable_error() -> None:
+    """A syntactically valid DSN whose DBAPI driver package isn't installed must
+    fail fast with a clear message naming the missing package, instead of only
+    surfacing deep inside create_engine()/first connect(). boti-data does not
+    declare a Postgres driver dependency, so psycopg2 is reliably absent here."""
+    config = SqlDatabaseConfig(connection_url="postgresql+psycopg2://user:pass@localhost/test_db")
+
+    with pytest.raises(SQLAlchemyError, match="driver package is not installed"):
+        SqlDatabaseResource(config)
+
+
+def test_sync_resource_normalizes_common_mysql_driver_alias() -> None:
+    """Verify legacy mysql+pymsql DSNs are coerced to the supported pymysql driver."""
+    config = SqlDatabaseConfig(
+        connection_url="mysql+pymsql://user:pass@localhost/test_db",
+        query_only=False,
+        poolclass="sqlalchemy.pool.NullPool",
+    )
+
+    db = SqlDatabaseResource(config)
+
+    try:
+        assert db.engine.url.drivername == "mysql+pymysql"
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_async_resource_rejects_sync_dsn_with_actionable_error() -> None:
+    """Verify async resources fail fast on synchronous drivers."""
+    config = SqlDatabaseConfig(connection_url="mysql+pymysql://user:pass@localhost/test_db")
+
+    with pytest.raises(SQLAlchemyError, match="requires an asynchronous SQLAlchemy driver"):
+        async with AsyncSqlDatabaseResource(config):
+            pass
+
+
+def test_async_sqlalchemy_requires_greenlet(monkeypatch) -> None:
+    """Verify missing greenlet raises a clear installation error."""
+    monkeypatch.setattr("boti_data.db.sqlalchemy_async.find_spec", lambda name: None)
+
+    with pytest.raises(SQLAlchemyError, match="require the 'greenlet' package"):
+        ensure_greenlet_available()

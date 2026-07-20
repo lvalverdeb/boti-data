@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -55,6 +56,26 @@ class TrueExpr(Expr):
         return true()
 
 
+_PARQUET_FILTER_BUILDERS: dict[str, Callable[[str, Any], ParquetFilterGroup]] = {
+    "exact": lambda field, value: [(field, "=", value)],
+    "not_exact": lambda field, value: [(field, "!=", value)],
+    "gt": lambda field, value: [(field, ">", value)],
+    "gte": lambda field, value: [(field, ">=", value)],
+    "lt": lambda field, value: [(field, "<", value)],
+    "lte": lambda field, value: [(field, "<=", value)],
+    "in": lambda field, value: [
+        (field, "in", list(value) if not isinstance(value, list) else value)
+    ],
+    "not_in": lambda field, value: [
+        (field, "not in", list(value) if not isinstance(value, list) else value)
+    ],
+    "range": lambda field, value: [
+        (field, ">=", value[0]),
+        (field, "<=", value[1]),
+    ],
+}
+
+
 @dataclass(frozen=True)
 class ColOp(Expr):
     field: str
@@ -73,28 +94,10 @@ class ColOp(Expr):
             return []
 
         value = self.handler._parse_filter_value(self.casting, self.value)
-
-        if self.op == "exact":
-            return [(self.field, "=", value)]
-        if self.op == "not_exact":
-            return [(self.field, "!=", value)]
-        if self.op in {"gt", "gte", "lt", "lte"}:
-            symbol = {"gt": ">", "gte": ">=", "lt": "<", "lte": "<="}[self.op]
-            return [(self.field, symbol, value)]
-        if self.op == "in":
-            return [(self.field, "in", list(value) if not isinstance(value, list) else value)]
-        if self.op == "not_in":
-            return [
-                (
-                    self.field,
-                    "not in",
-                    list(value) if not isinstance(value, list) else value,
-                )
-            ]
-        if self.op == "range":
-            lower_bound, upper_bound = value
-            return [(self.field, ">=", lower_bound), (self.field, "<=", upper_bound)]
-        return []
+        builder = _PARQUET_FILTER_BUILDERS.get(self.op)
+        if builder is None:
+            return []
+        return builder(self.field, value)
 
     def to_sqlalchemy_condition(self, model: Any) -> Any:
         column = self.handler._get_sqlalchemy_column(self.field, model, self.casting)
@@ -126,7 +129,10 @@ class Or(Expr):
         return self.left.mask(df) | self.right.mask(df)
 
     def to_parquet_filters(self) -> ParquetFilters:
-        left_filters, right_filters = self.left.to_parquet_filters(), self.right.to_parquet_filters()
+        left_filters, right_filters = (
+            self.left.to_parquet_filters(),
+            self.right.to_parquet_filters(),
+        )
         if not left_filters or not right_filters:
             return []
         return [left_filters, right_filters]

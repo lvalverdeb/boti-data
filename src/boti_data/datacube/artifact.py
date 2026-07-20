@@ -13,14 +13,12 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
-import pyarrow as pa
 from boti.core import Logger
 from boti.core.lifecycle import LifecycleCore
 from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 
-from boti_data.datacube.contract import DatacubeFrame
+from boti_data.datacube.contract import DatacubeFrame, frame_has_data
 
 if TYPE_CHECKING:
     from boti_data.helper import DataHelper
@@ -161,21 +159,15 @@ class BaseArtifact(PicklableLifecycleCoreMixin, LifecycleCore):
     # ── internals ───────────────────────────────────────────────────────
 
     def _has_data(self) -> bool:
-        """Check if dataframe has rows; avoids hidden heavy ops where possible."""
-        if self.df is None:
-            return False
-        if isinstance(self.df, dd.DataFrame):
-            return len(self.df.index) > 0
-        if isinstance(self.df, pd.DataFrame):
-            return len(self.df.index) > 0
-        if isinstance(self.df, pa.Table):
-            return len(self.df) > 0
-        if hasattr(self.df, "height"):
-            return self.df.height > 0
-        return True
+        return frame_has_data(self.df)
 
     # ── public API ──────────────────────────────────────────────────────
 
+    # Not a copy-pasted twin: load()/aload() mirror each other only because
+    # they call this class's separately-overridable sync/async hooks
+    # (before_load/after_load vs abefore_load/aafter_load), which must stay
+    # distinct so subclasses can override each independently.
+    # spaghetti-ignore[sync-async-duplication]
     def load(self, **options: Any) -> DatacubeFrame:
         """Sync load path with ``before_load`` / ``after_load`` hooks."""
         self.before_load(**options)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 __all__ = [
@@ -78,25 +78,29 @@ class SchemaValidationError(TypeError):
     """Raised when a DataFrame does not satisfy an expected schema contract."""
 
 
+def _normalize_datetime_match(match: re.Match[str] | None, dtype_str: str) -> str | None:
+    """Resolve a datetime/timestamp regex match to a canonical dtype, or None if no match."""
+    if not match:
+        return None
+    timezone = match.group("tz")
+    if timezone is not None:
+        return "datetime64[ns, UTC]" if timezone == "utc" else dtype_str
+    return "datetime64[ns]"
+
+
+_DATETIME_DTYPE_PATTERNS = (_PANDAS_DATETIME_DTYPE_RE, _PYARROW_TIMESTAMP_DTYPE_RE)
+
+
 def normalize_dtype_alias(dtype: Any) -> str:
     """Normalize pandas/Dask/PyArrow dtype strings to a canonical comparison form."""
     dtype_str = str(dtype).strip()
     lowered = dtype_str.lower()
     if lowered in _CANONICAL_DTYPE_ALIASES:
         return _CANONICAL_DTYPE_ALIASES[lowered]
-    pandas_datetime_match = _PANDAS_DATETIME_DTYPE_RE.match(lowered)
-    if pandas_datetime_match:
-        timezone = pandas_datetime_match.group("tz")
-        if timezone is not None:
-            return "datetime64[ns, UTC]" if timezone == "utc" else dtype_str
-        return "datetime64[ns]"
-
-    pyarrow_timestamp_match = _PYARROW_TIMESTAMP_DTYPE_RE.match(lowered)
-    if pyarrow_timestamp_match:
-        timezone = pyarrow_timestamp_match.group("tz")
-        if timezone is not None:
-            return "datetime64[ns, UTC]" if timezone == "utc" else dtype_str
-        return "datetime64[ns]"
+    for pattern in _DATETIME_DTYPE_PATTERNS:
+        result = _normalize_datetime_match(pattern.match(lowered), dtype_str)
+        if result is not None:
+            return result
     return dtype_str
 
 
@@ -116,10 +120,7 @@ def infer_schema_map(
     if missing:
         raise SchemaValidationError(f"Missing column(s) while inferring schema: {missing}.")
 
-    return {
-        column: normalize_dtype_alias(dataframe.dtypes[column])
-        for column in selected_columns
-    }
+    return {column: normalize_dtype_alias(dataframe.dtypes[column]) for column in selected_columns}
 
 
 def _drop_timezone_partition(series: pd.Series) -> pd.Series:
@@ -130,7 +131,9 @@ def _drop_timezone_partition(series: pd.Series) -> pd.Series:
 
 
 def _coerce_boolean_partition(series: pd.Series) -> pd.Series:
-    normalized = series.astype("string").str.strip().str.lower()
+    as_string = series.astype("string")
+    stripped = as_string.str.strip()
+    normalized = stripped.str.lower()
     coerced = normalized.map(_BOOLEAN_LITERAL_MAP)
     unresolved = coerced.isna() & normalized.notna()
     if unresolved.any():
@@ -161,23 +164,25 @@ def _coerce_numeric(series: Any, target_dtype: str, is_dask: bool) -> Any:
     return fn(series, errors="coerce").astype(target_dtype)
 
 
+_EXACT_DTYPE_COERCERS: dict[str, Callable[[Any, bool], Any]] = {
+    "datetime64[ns, UTC]": _coerce_dt_utc,
+    "datetime64[ns]": _coerce_dt,
+    "boolean": lambda series, is_dask: (
+        series.map_partitions(_coerce_boolean_partition, meta=(series.name, "boolean"))
+        if is_dask
+        else _coerce_boolean_partition(series)
+    ),
+    "string": lambda series, _is_dask: series.astype("string"),
+    "category": lambda series, _is_dask: series.astype("category"),
+}
+
+
 def _coerce_series(series: Any, target_dtype: str, *, is_dask: bool) -> Any:
-    if target_dtype == "datetime64[ns, UTC]":
-        return _coerce_dt_utc(series, is_dask)
-    if target_dtype == "datetime64[ns]":
-        return _coerce_dt(series, is_dask)
     if target_dtype in {"Int64", "Int32", "Float64"}:
         return _coerce_numeric(series, target_dtype, is_dask)
-    if target_dtype == "boolean":
-        return (
-            series.map_partitions(_coerce_boolean_partition, meta=(series.name, "boolean"))
-            if is_dask
-            else _coerce_boolean_partition(series)
-        )
-    if target_dtype == "string":
-        return series.astype("string")
-    if target_dtype == "category":
-        return series.astype("category")
+    coercer = _EXACT_DTYPE_COERCERS.get(target_dtype)
+    if coercer is not None:
+        return coercer(series, is_dask)
     return series.astype(target_dtype)
 
 

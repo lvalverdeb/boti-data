@@ -9,7 +9,7 @@ import pandas as pd
 from boti_data import AsyncFrameEnricher, AttachmentSpec
 
 
-async def customer_segment_attachment(ids: list[int]):
+async def customer_segment_attachment(ids: list[int]) -> pd.DataFrame:
     # Simulate a remote lookup/loader.
     return pd.DataFrame({"id": ids, "segment": [f"seg_{value}" for value in ids]})
 

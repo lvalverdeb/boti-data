@@ -27,7 +27,9 @@ class StubLogger:
 def main() -> None:
     with TemporaryDirectory() as tmp_dir:
         project_root = Path(tmp_dir)
-        (project_root / "pyproject.toml").write_text("[project]\nname='example'\n", encoding="utf-8")
+        (project_root / "pyproject.toml").write_text(
+            "[project]\nname='example'\n", encoding="utf-8"
+        )
 
         single_dir = project_root / "parquet" / "single"
         single_dir.mkdir(parents=True)
@@ -44,13 +46,18 @@ def main() -> None:
         )
 
         with ParquetDataResource(single_config) as resource:
-            print(resource.load_files().compute().sort_values("id").reset_index(drop=True))
+            loaded = resource.load_files().compute()
+            print(loaded.sort_values("id").reset_index(drop=True))
 
         partition_root = project_root / "parquet" / "partitioned"
         (partition_root / "2024" / "1" / "1").mkdir(parents=True)
         (partition_root / "2025" / "1" / "1").mkdir(parents=True)
-        pd.DataFrame({"id": [10]}).to_parquet(partition_root / "2024" / "1" / "1" / "part_2024.parquet", index=False)
-        pd.DataFrame({"id": [20]}).to_parquet(partition_root / "2025" / "1" / "1" / "part_2025.parquet", index=False)
+        pd.DataFrame({"id": [10]}).to_parquet(
+            partition_root / "2024" / "1" / "1" / "part_2024.parquet", index=False
+        )
+        pd.DataFrame({"id": [20]}).to_parquet(
+            partition_root / "2025" / "1" / "1" / "part_2025.parquet", index=False
+        )
 
         partition_config = ParquetDataConfig(
             project_root=project_root,
@@ -61,7 +68,8 @@ def main() -> None:
         )
 
         with ParquetDataResource(partition_config) as resource:
-            print(resource.load_files().compute().sort_values("id").reset_index(drop=True))
+            partitioned_loaded = resource.load_files().compute()
+            print(partitioned_loaded.sort_values("id").reset_index(drop=True))
 
 
 if __name__ == "__main__":

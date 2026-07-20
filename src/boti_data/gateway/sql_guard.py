@@ -31,15 +31,11 @@ def _normalize_sql(sql: str) -> str:
 
 def is_read_only_sql(sql: str) -> bool:
     normalized = _normalize_sql(sql)
-    if not normalized:
-        return False
-    if _MULTI_STATEMENT_RE.search(normalized):
+    if not normalized or _MULTI_STATEMENT_RE.search(normalized):
         return False
 
     first = _FIRST_TOKEN_RE.match(normalized)
-    if first is None:
-        return False
-    if first.group(1).lower() not in _ALLOWED_FIRST_TOKENS:
+    if first is None or first.group(1).lower() not in _ALLOWED_FIRST_TOKENS:
         return False
 
     return _MUTATION_KEYWORD_RE.search(normalized) is None

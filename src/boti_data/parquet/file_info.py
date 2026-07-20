@@ -15,10 +15,10 @@ class FileInfoProvider(Protocol):
         raise NotImplementedError
 
 
-class ArrowFileInfoProvider:
+class _BaseFileInfoProvider:
     def __init__(
         self,
-        filesystem: pafs.FileSystem,
+        filesystem: Any,
         *,
         is_missing_path_error: MissingPathPredicate,
         filesystem_runtime_error: RuntimeErrorFactory,
@@ -27,6 +27,8 @@ class ArrowFileInfoProvider:
         self._is_missing_path_error = is_missing_path_error
         self._filesystem_runtime_error = filesystem_runtime_error
 
+
+class ArrowFileInfoProvider(_BaseFileInfoProvider):
     def info(self, path: str) -> FileInfo | None:
         try:
             file_info = self._filesystem.get_file_info(path)
@@ -51,18 +53,7 @@ class ArrowFileInfoProvider:
         return payload
 
 
-class FsspecFileInfoProvider:
-    def __init__(
-        self,
-        filesystem: Any,
-        *,
-        is_missing_path_error: MissingPathPredicate,
-        filesystem_runtime_error: RuntimeErrorFactory,
-    ) -> None:
-        self._filesystem = filesystem
-        self._is_missing_path_error = is_missing_path_error
-        self._filesystem_runtime_error = filesystem_runtime_error
-
+class FsspecFileInfoProvider(_BaseFileInfoProvider):
     def info(self, path: str) -> FileInfo | None:
         try:
             return self._filesystem.info(path)

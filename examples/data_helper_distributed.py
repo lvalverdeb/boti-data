@@ -32,31 +32,91 @@ class UserProfile(Base):
     tier: Mapped[str]
 
 
+def _seed_users_and_profiles(db_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as session:
+            session.add_all(
+                [
+                    User(id=1, status="active"),
+                    User(id=2, status="inactive"),
+                    User(id=3, status="active"),
+                    User(id=4, status="active"),
+                ]
+            )
+            session.add_all(
+                [
+                    UserProfile(id=1, tier="gold"),
+                    UserProfile(id=3, tier="standard"),
+                    UserProfile(id=4, tier="gold"),
+                ]
+            )
+            session.commit()
+    finally:
+        engine.dispose()
+
+
+def _run_joined_helper_workload(config: dict[str, object]) -> dict[str, object]:
+    with DataHelper(config) as helper:
+        dry_run_users = helper.dask.load(
+            statement=select(User),
+            model=User,
+            dry_run=True,
+            diagnostics=True,
+        )
+        user_preview = helper.preview(
+            statement=select(User),
+            model=User,
+            n=2,
+        )
+        users = helper.load(statement=select(User), model=User)
+        profiles = helper.load(statement=select(UserProfile), model=UserProfile)
+        joined = DataHelper.left_join(
+            users,
+            profiles,
+            join_key="id",
+            join_schema_map={"id": "Int64"},
+            persist=True,
+        )
+        frame = joined.compute().sort_values("id").reset_index(drop=True)
+    return {
+        "dry_run_partitions": dry_run_users.npartitions,
+        "preview_records": user_preview.to_dict(orient="records"),
+        "matched_rows": int(frame["tier"].count()),
+        "unmatched_rows": int(frame["tier"].isna().sum()),
+        "records": frame.to_dict(orient="records"),
+    }
+
+
+def _run_distributed_session(config: dict[str, object], cluster: LocalCluster) -> dict[str, object]:
+    with DataHelper.session(
+        scheduler_address=cluster.scheduler_address,
+        verify_connectivity=True,
+        shared=True,
+        shared_key="data-helper-distributed",
+    ) as client:
+        with DataHelper.session(
+            scheduler_address=cluster.scheduler_address,
+            verify_connectivity=True,
+            shared=True,
+            shared_key="data-helper-distributed",
+        ) as shared_client:
+            workers = len(client.scheduler_info()["workers"])
+            shared_client_reused = client is shared_client
+            workload = _run_joined_helper_workload(config)
+
+    return {
+        "workers": workers,
+        "shared_client_reused": shared_client_reused,
+        **workload,
+    }
+
+
 def run_example() -> dict[str, object]:
     with TemporaryDirectory() as tmp_dir:
         db_path = Path(tmp_dir) / "helper_distributed.db"
-        engine = create_engine(f"sqlite:///{db_path}")
-        try:
-            Base.metadata.create_all(engine)
-            with Session(engine) as session:
-                session.add_all(
-                    [
-                        User(id=1, status="active"),
-                        User(id=2, status="inactive"),
-                        User(id=3, status="active"),
-                        User(id=4, status="active"),
-                    ]
-                )
-                session.add_all(
-                    [
-                        UserProfile(id=1, tier="gold"),
-                        UserProfile(id=3, tier="standard"),
-                        UserProfile(id=4, tier="gold"),
-                    ]
-                )
-                session.commit()
-        finally:
-            engine.dispose()
+        _seed_users_and_profiles(db_path)
 
         config = {
             "backend": "sqlalchemy",
@@ -71,52 +131,9 @@ def run_example() -> dict[str, object]:
             processes=False,
             dashboard_address=":0",
         ) as cluster:
-            with DataHelper.session(
-                scheduler_address=cluster.scheduler_address,
-                verify_connectivity=True,
-                shared=True,
-                shared_key="data-helper-distributed",
-            ) as client:
-                with DataHelper.session(
-                    scheduler_address=cluster.scheduler_address,
-                    verify_connectivity=True,
-                    shared=True,
-                    shared_key="data-helper-distributed",
-                ) as shared_client:
-                    workers = len(client.scheduler_info()["workers"])
-                    shared_client_reused = client is shared_client
-                    with DataHelper(config) as helper:
-                        dry_run_users = helper.dask.load(
-                            statement=select(User),
-                            model=User,
-                            dry_run=True,
-                            diagnostics=True,
-                        )
-                        user_preview = helper.preview(
-                            statement=select(User),
-                            model=User,
-                            n=2,
-                        )
-                        users = helper.load(statement=select(User), model=User)
-                        profiles = helper.load(statement=select(UserProfile), model=UserProfile)
-                        joined = DataHelper.left_join(
-                            users,
-                            profiles,
-                            join_key="id",
-                            join_schema_map={"id": "Int64"},
-                            persist=True,
-                        )
-                        frame = joined.compute().sort_values("id").reset_index(drop=True)
+            result = _run_distributed_session(config, cluster)
 
-    return {
-        "workers": workers,
-        "shared_client_reused": shared_client_reused,
-        "dry_run_partitions": dry_run_users.npartitions,
-        "preview_records": user_preview.to_dict(orient="records"),
-        "matched_rows": int(frame["tier"].count()),
-        "unmatched_rows": int(frame["tier"].isna().sum()),
-        "records": frame.to_dict(orient="records"),
-    }
+    return result
 
 
 def main() -> dict[str, object]:

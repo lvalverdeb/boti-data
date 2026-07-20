@@ -58,7 +58,10 @@ class ParquetReaderConfigBuilder:
             settings.return_type,
             settings.execution_mode,
         )
-        if any(value is not None for value in explicit_values) or settings.partition_on is not UNSET:
+        if (
+            any(value is not None for value in explicit_values)
+            or settings.partition_on is not UNSET
+        ):
             raise TypeError(
                 "ParquetReader does not accept explicit parquet settings when config is provided."
             )
@@ -99,9 +102,7 @@ class ParquetReaderConfigBuilder:
             return list(cls.DEFAULT_CONFIG["partition_on"])
         if partition_on is None:
             return None
-        if isinstance(partition_on, str):
-            return [partition_on]
-        return list(partition_on)
+        return [partition_on] if isinstance(partition_on, str) else list(partition_on)
 
     @staticmethod
     def resolve_df_params(

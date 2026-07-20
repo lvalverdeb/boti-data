@@ -8,6 +8,9 @@ from sqlalchemy import Column
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import ColumnProperty
 from sqlalchemy.sql import Select
+from sqlalchemy.sql.sqltypes import BigInteger, Integer, SmallInteger
+
+from boti_data.db.partitioned_statements import base_statement
 
 SqlPartitionParams = tuple[Any, ...] | dict[str, Any] | None
 PartitionStrategy = Literal["offset", "range"]
@@ -45,10 +48,54 @@ def _resolve_model_column(model: Any, column_name: str) -> Any:
 
     column = getattr(model, column_name, None)
     if column is None:
-        raise AttributeError(
-            f"Column '{column_name}' not found on model '{model.__name__}'"
-        )
+        raise AttributeError(f"Column '{column_name}' not found on model '{model.__name__}'")
     return column
+
+
+def _is_range_compatible_column(column: Any) -> bool:
+    return isinstance(column.type, (SmallInteger, Integer, BigInteger))
+
+
+@dataclass(frozen=True)
+class PlannerEngineAdapter:
+    """Duck-typed engine/logger/debug shim satisfying SqlPartitionPlanner's resource contract."""
+
+    engine: Any
+    logger: Any
+    debug: bool = False
+
+
+@dataclass(frozen=True)
+class SqlOffsetPlanContext:
+    base_statement: Select[Any]
+    ordering_column: Any
+    total_rows: int
+    chunk_size: int
+    limit: int | None
+    keyset_eligible: bool
+
+
+def _prepare_offset_plan_context(
+    *,
+    statement: Select[Any],
+    model: Any,
+    order_column: str | None,
+    total_rows: int,
+    chunk_size: int,
+    limit: int | None,
+) -> SqlOffsetPlanContext:
+    order_column_name = order_column or _infer_primary_key_name(model)
+    ordering_column = _resolve_model_column(model, order_column_name)
+    ordered_base_statement = base_statement(statement).order_by(None).order_by(ordering_column)
+    keyset_eligible = limit is None and _is_range_compatible_column(ordering_column)
+    return SqlOffsetPlanContext(
+        base_statement=ordered_base_statement,
+        ordering_column=ordering_column,
+        total_rows=total_rows,
+        chunk_size=chunk_size,
+        limit=limit,
+        keyset_eligible=keyset_eligible,
+    )
 
 
 @dataclass(frozen=True)

@@ -39,9 +39,9 @@ from .utils import (
 class FilterHandler:
     """Coordinates cross-backend filter parsing, pushdown, and expression execution."""
 
-    COMPARISON_OPERATORS: ClassVar[list[str]] = COMPARISON_OPERATORS
-    DT_OPERATORS: ClassVar[list[str]] = DT_OPERATORS
-    DATE_OPERATORS: ClassVar[list[str]] = DATE_OPERATORS
+    COMPARISON_OPERATORS: ClassVar[tuple[str, ...]] = COMPARISON_OPERATORS
+    DT_OPERATORS: ClassVar[tuple[str, ...]] = DT_OPERATORS
+    DATE_OPERATORS: ClassVar[tuple[str, ...]] = DATE_OPERATORS
     PARQUET_OP_MAP: ClassVar[dict[str, str]] = ParquetFilterCompiler.OPERATOR_MAP
 
     _parse_filter_key = staticmethod(parse_filter_key)
@@ -105,17 +105,13 @@ class FilterHandler:
         if self._append_date_pushdown(field, casting, op, value, pushdown_candidates):
             return
 
-        if casting is not None:
+        if casting is not None or op not in self._pushdown_ops():
             residual_filters[key] = value
             return
 
-        if op in self._pushdown_ops():
-            pushdown_candidates[key] = value
-            if self.backend == "dask" and op in {"in", "not_in"}:
-                residual_filters[key] = value
-            return
-
-        residual_filters[key] = value
+        pushdown_candidates[key] = value
+        if self.backend == "dask" and op in {"in", "not_in"}:
+            residual_filters[key] = value
 
     def _append_date_pushdown(
         self,
@@ -241,30 +237,36 @@ class FilterHandler:
             max_concurrency=max_concurrency,
         )
 
+    def _apply_filters_sqlalchemy(self, query_or_df: Any, model: Any, filters: Any) -> Any:
+        if model is None:
+            raise ValueError("model is required when applying SQLAlchemy filters.")
+        condition = self.build_sqlalchemy_condition(model, filters)
+        if hasattr(query_or_df, "where"):
+            return query_or_df.where(condition)
+        if hasattr(query_or_df, "filter"):
+            return query_or_df.filter(condition)
+        raise TypeError("SQLAlchemy filter target must support .where(...) or .filter(...).")
+
+    def _apply_filters_dask(self, query_or_df: Any, filters: Any) -> Any:
+        expr = self.compile_filters(filters)
+        if expr.is_trivial():
+            return query_or_df
+        condition = expr.mask(query_or_df)
+        return self.backend_methods["apply_condition"](query_or_df, condition)
+
+    def _apply_filters_arrow(self, query_or_df: Any, filters: Any) -> Any:
+        if not isinstance(query_or_df, pa.Table):
+            raise TypeError(
+                f"Arrow backend requires pyarrow.Table, got {type(query_or_df).__name__}."
+            )
+        return arrow_kernels.apply_arrow_filters(query_or_df, filters)
+
     def apply_filters(self, query_or_df: Any, model: Any = None, filters: Any = None) -> Any:
         filters = filters or {}
         if self.backend == "sqlalchemy":
-            if model is None:
-                raise ValueError("model is required when applying SQLAlchemy filters.")
-            condition = self.build_sqlalchemy_condition(model, filters)
-            if hasattr(query_or_df, "where"):
-                return query_or_df.where(condition)
-            if hasattr(query_or_df, "filter"):
-                return query_or_df.filter(condition)
-            raise TypeError("SQLAlchemy filter target must support .where(...) or .filter(...).")
-
+            return self._apply_filters_sqlalchemy(query_or_df, model, filters)
         if self.backend == "dask":
-            expr = self.compile_filters(filters)
-            if expr.is_trivial():
-                return query_or_df
-            condition = expr.mask(query_or_df)
-            return self.backend_methods["apply_condition"](query_or_df, condition)
-
+            return self._apply_filters_dask(query_or_df, filters)
         if self.backend == "arrow":
-            if not isinstance(query_or_df, pa.Table):
-                raise TypeError(
-                    f"Arrow backend requires pyarrow.Table, got {type(query_or_df).__name__}."
-                )
-            return arrow_kernels.apply_arrow_filters(query_or_df, filters)
-
+            return self._apply_filters_arrow(query_or_df, filters)
         raise ValueError(f"Unsupported backend: {self.backend}")

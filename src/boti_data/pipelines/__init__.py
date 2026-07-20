@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from .base import ParquetMaterializationResult, ParquetPipeline, SinkPipeline
+from .base import SinkPipeline
+from .parquet_pipeline import ParquetMaterializationResult, ParquetPipeline
 from .registry import SinkRegistry, available_sinks, create_sink, register_sink
 from .sinks import CsvSink, CsvSinkConfig, JsonlSink, JsonlSinkConfig, ParquetSink, SinkWriteResult
 

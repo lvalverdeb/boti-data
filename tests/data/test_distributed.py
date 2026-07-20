@@ -33,7 +33,7 @@ class CaptureLogger:
         self.errors.append(message)
 
 
-def test_gateway_partitioned_sql_diagnostics_log_plan_and_completion(tmp_path):
+def test_gateway_partitioned_sql_diagnostics_log_plan_and_completion(tmp_path) -> None:
     class Base(DeclarativeBase):
         pass
 
@@ -78,7 +78,7 @@ def test_gateway_partitioned_sql_diagnostics_log_plan_and_completion(tmp_path):
     assert any("Gateway load completed" in message for message in logger.infos)
 
 
-def test_indexed_left_join_diagnostics_log_metrics_and_guidance():
+def test_indexed_left_join_diagnostics_log_metrics_and_guidance() -> None:
     logger = CaptureLogger()
     left = dd.from_pandas(
         pd.DataFrame({"id": pd.Series([1, 2, 3], dtype="Int64"), "left_value": ["a", "b", "c"]}),
@@ -104,52 +104,59 @@ def test_indexed_left_join_diagnostics_log_metrics_and_guidance():
     assert any("completed in" in message for message in logger.infos)
 
 
-def test_gateway_partitioned_sql_runs_through_scheduler_address(tmp_path):
-    distributed = pytest.importorskip("dask.distributed")
-    LocalCluster = distributed.LocalCluster
+class _RemoteClusterBase(DeclarativeBase):
+    pass
 
-    class Base(DeclarativeBase):
-        pass
 
-    class User(Base):
-        __tablename__ = "remote_users"
+class _RemoteUser(_RemoteClusterBase):
+    __tablename__ = "remote_users"
 
-        id: Mapped[int] = mapped_column(primary_key=True)
-        status: Mapped[str] = mapped_column(String(32))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[str] = mapped_column(String(32))
 
-    class UserProfile(Base):
-        __tablename__ = "remote_profiles"
 
-        id: Mapped[int] = mapped_column(primary_key=True)
-        tier: Mapped[str] = mapped_column(String(32))
+class _RemoteUserProfile(_RemoteClusterBase):
+    __tablename__ = "remote_profiles"
 
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tier: Mapped[str] = mapped_column(String(32))
+
+
+def _seed_remote_cluster_db(tmp_path) -> SqlDatabaseConfig:
     db_path = tmp_path / "remote_cluster.db"
     engine = create_engine(f"sqlite:///{db_path}")
     try:
-        Base.metadata.create_all(engine)
+        _RemoteClusterBase.metadata.create_all(engine)
         with Session(engine) as session:
             session.add_all(
                 [
-                    User(id=1, status="active"),
-                    User(id=2, status="inactive"),
-                    User(id=3, status="active"),
+                    _RemoteUser(id=1, status="active"),
+                    _RemoteUser(id=2, status="inactive"),
+                    _RemoteUser(id=3, status="active"),
                 ]
             )
             session.add_all(
                 [
-                    UserProfile(id=1, tier="gold"),
-                    UserProfile(id=3, tier="standard"),
+                    _RemoteUserProfile(id=1, tier="gold"),
+                    _RemoteUserProfile(id=3, tier="standard"),
                 ]
             )
             session.commit()
     finally:
         engine.dispose()
 
-    config = SqlDatabaseConfig(
+    return SqlDatabaseConfig(
         connection_url=f"sqlite:///{db_path}",
         poolclass="sqlalchemy.pool.NullPool",
         query_only=False,
     )
+
+
+def test_gateway_partitioned_sql_runs_through_scheduler_address(tmp_path) -> None:
+    distributed = pytest.importorskip("dask.distributed")
+    LocalCluster = distributed.LocalCluster
+
+    config = _seed_remote_cluster_db(tmp_path)
 
     with LocalCluster(
         n_workers=2,
@@ -159,8 +166,10 @@ def test_gateway_partitioned_sql_runs_through_scheduler_address(tmp_path):
     ) as cluster:
         with dask_session(scheduler_address=cluster.scheduler_address):
             with DataGateway(config) as facade:
-                users = facade.load(statement=select(User), model=User)
-                profiles = facade.load(statement=select(UserProfile), model=UserProfile)
+                users = facade.load(statement=select(_RemoteUser), model=_RemoteUser)
+                profiles = facade.load(
+                    statement=select(_RemoteUserProfile), model=_RemoteUserProfile
+                )
                 joined = indexed_left_join(
                     users,
                     profiles,
@@ -175,10 +184,7 @@ def test_gateway_partitioned_sql_runs_through_scheduler_address(tmp_path):
     assert computed.loc[2, "tier"] == "standard"
 
 
-def test_gateway_parquet_and_join_run_through_scheduler_address(temp_project_root):
-    distributed = pytest.importorskip("dask.distributed")
-    LocalCluster = distributed.LocalCluster
-
+def _seed_remote_cluster_parquet(temp_project_root) -> tuple[ParquetDataConfig, ParquetDataConfig]:
     users_path = temp_project_root / "warehouse" / "users.parquet"
     users_path.parent.mkdir(parents=True)
     profiles_path = temp_project_root / "warehouse" / "profiles.parquet"
@@ -205,6 +211,14 @@ def test_gateway_parquet_and_join_run_through_scheduler_address(temp_project_roo
         parquet_storage_path=str(profiles_path.parent),
         parquet_filename="profiles",
     )
+    return users_config, profiles_config
+
+
+def test_gateway_parquet_and_join_run_through_scheduler_address(temp_project_root) -> None:
+    distributed = pytest.importorskip("dask.distributed")
+    LocalCluster = distributed.LocalCluster
+
+    users_config, profiles_config = _seed_remote_cluster_parquet(temp_project_root)
 
     with LocalCluster(
         n_workers=2,
@@ -213,7 +227,10 @@ def test_gateway_parquet_and_join_run_through_scheduler_address(temp_project_roo
         dashboard_address=":0",
     ) as cluster:
         with dask_session(scheduler_address=cluster.scheduler_address):
-            with DataGateway(users_config) as users_gateway, DataGateway(profiles_config) as profiles_gateway:
+            with (
+                DataGateway(users_config) as users_gateway,
+                DataGateway(profiles_config) as profiles_gateway,
+            ):
                 users = users_gateway.load()
                 profiles = profiles_gateway.load()
                 joined = indexed_left_join(
@@ -230,7 +247,7 @@ def test_gateway_parquet_and_join_run_through_scheduler_address(temp_project_roo
     assert computed.loc[2, "tier"] == "standard"
 
 
-def test_left_join_frames_diagnostics_warn_for_direct_dask_merge():
+def test_left_join_frames_diagnostics_warn_for_direct_dask_merge() -> None:
     logger = CaptureLogger()
     left = dd.from_pandas(
         pd.DataFrame({"id": pd.Series([1, 2, 3], dtype="Int64"), "left_value": ["a", "b", "c"]}),
@@ -251,11 +268,13 @@ def test_left_join_frames_diagnostics_warn_for_direct_dask_merge():
     )
 
     assert joined.npartitions >= 1
-    assert any("direct Dask merge may trigger a full shuffle" in message for message in logger.warnings)
+    assert any(
+        "direct Dask merge may trigger a full shuffle" in message for message in logger.warnings
+    )
 
 
 @pytest.mark.asyncio
-async def test_gateway_aload_partitioned_sql_diagnostics_log_plan_and_completion(tmp_path):
+async def test_gateway_aload_partitioned_sql_diagnostics_log_plan_and_completion(tmp_path) -> None:
     class Base(DeclarativeBase):
         pass
 
@@ -298,5 +317,3 @@ async def test_gateway_aload_partitioned_sql_diagnostics_log_plan_and_completion
     ), f"Expected fast path or plan message, got: {logger.infos}"
     assert any("Gateway load graph metrics=" in message for message in logger.infos)
     assert any("Gateway load completed" in message for message in logger.infos)
-
-

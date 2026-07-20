@@ -2,40 +2,33 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import os
+import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
-
-from sqlalchemy import Date, Integer, String, create_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from typing import Any
 
 from boti_data import DataHelper, SinkPipeline
 
-
-class Base(DeclarativeBase):
-    pass
-
-
-class SourceEvent(Base):
-    __tablename__ = "source_events"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    event_date: Mapped[dt.date] = mapped_column(Date())
-    status: Mapped[str] = mapped_column(String(16))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _pipeline_example_shared import _seed_source_events_db  # noqa: E402
 
 
-def _seed(engine) -> None:
-    Base.metadata.create_all(engine)
-    with Session(engine) as session:
-        session.add_all(
-            [
-                SourceEvent(id=1, event_date=dt.date(2026, 4, 15), status="active"),
-                SourceEvent(id=2, event_date=dt.date(2026, 4, 16), status="inactive"),
-                SourceEvent(id=3, event_date=dt.date(2026, 4, 17), status="active"),
-            ]
-        )
-        session.commit()
+def _write_jsonl_pipeline(helper: DataHelper, root: Path) -> Any:
+    pipeline = SinkPipeline(
+        helper,
+        "jsonl",
+        sink_config={
+            "storage_path": str(root / "source_events_jsonl"),
+            "partition_on": ["partition_date"],
+            "project_root": root,
+        },
+        date_field="event_date",
+    )
+    try:
+        return pipeline.write(filters={"status__exact": "active"})
+    finally:
+        pipeline.close()
 
 
 def main() -> dict[str, object]:
@@ -47,11 +40,7 @@ def main() -> dict[str, object]:
         previous_worker_dsn = os.environ.get(worker_dsn_env_var)
         os.environ[worker_dsn_env_var] = sqlite_dsn
 
-        engine = create_engine(sqlite_dsn)
-        try:
-            _seed(engine)
-        finally:
-            engine.dispose()
+        _seed_source_events_db(sqlite_dsn)
 
         helper = DataHelper(
             backend="sqlalchemy",
@@ -62,20 +51,9 @@ def main() -> dict[str, object]:
             table="source_events",
         )
 
-        pipeline = SinkPipeline(
-            helper,
-            "jsonl",
-            sink_config={
-                "storage_path": str(root / "source_events_jsonl"),
-                "partition_on": ["partition_date"],
-                "project_root": root,
-            },
-            date_field="event_date",
-        )
         try:
-            result = pipeline.write(filters={"status__exact": "active"})
+            result = _write_jsonl_pipeline(helper, root)
         finally:
-            pipeline.close()
             if previous_worker_dsn is None:
                 os.environ.pop(worker_dsn_env_var, None)
             else:

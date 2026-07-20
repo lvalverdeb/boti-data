@@ -14,9 +14,7 @@ def main() -> None:
     with TemporaryDirectory() as tmp_dir:
         env_file = Path(tmp_dir) / ".env"
         env_file.write_text(
-            "DB_CONNECTION_URL='sqlite:///:memory:'\n"
-            "DB_QUERY_ONLY=false\n"
-            "DB_POOL_SIZE=9\n",
+            "DB_CONNECTION_URL='sqlite:///:memory:'\nDB_QUERY_ONLY=false\nDB_POOL_SIZE=9\n",
             encoding="utf-8",
         )
 

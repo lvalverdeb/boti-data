@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import dask.dataframe as dd
 import pandas as pd
 import pyarrow as pa
 from sqlalchemy import select, text
@@ -161,7 +162,7 @@ def load_sql_partitioned(
     config: SqlDatabaseConfig,
     resource: SqlDatabaseResource,
     request: SqlPartitionedLoadRequest,
-):
+) -> pd.DataFrame | dd.DataFrame:
     # resource is caller-owned (SqlPartitionedLoader._owns_resource is False here),
     # so closing the loader only releases its own planner/executor state and does
     # not touch resource — safe to close deterministically instead of relying on GC.
@@ -195,21 +196,25 @@ async def read_sql_async(
     return _finalize_frame_result(frame, limit=request.limit)
 
 
-def load_parquet(
+def _load_parquet_eager(
     resource: ParquetDataResource,
     request: ParquetLoadRequest,
-):
-    if request.return_type == "arrow" or request.as_pandas:
-        if request.filters:
-            table = resource.load_filtered_arrow(request.filters, columns=request.columns)
-        else:
-            table = resource.load_arrow(filters=request.raw_filters, columns=request.columns)
-        if request.limit is not None:
-            table = table.slice(0, request.limit)
-        if request.as_pandas:
-            return arrow_table_to_pandas(table)
-        return table
+) -> pa.Table | pd.DataFrame:
+    if request.filters:
+        table = resource.load_filtered_arrow(request.filters, columns=request.columns)
+    else:
+        table = resource.load_arrow(filters=request.raw_filters, columns=request.columns)
+    if request.limit is not None:
+        table = table.slice(0, request.limit)
+    if request.as_pandas:
+        return arrow_table_to_pandas(table)
+    return table
 
+
+def _load_parquet_lazy(
+    resource: ParquetDataResource,
+    request: ParquetLoadRequest,
+) -> pd.DataFrame | dd.DataFrame:
     if request.filters:
         frame = resource.load_filtered(request.filters, columns=request.columns)
     else:
@@ -229,6 +234,15 @@ def load_parquet(
     return frame
 
 
+def load_parquet(
+    resource: ParquetDataResource,
+    request: ParquetLoadRequest,
+) -> pa.Table | pd.DataFrame | dd.DataFrame:
+    if request.return_type == "arrow" or request.as_pandas:
+        return _load_parquet_eager(resource, request)
+    return _load_parquet_lazy(resource, request)
+
+
 def _select_from_model(model: Any, db_column_names: list[str] | None) -> Any:
     if db_column_names:
         columns = [getattr(model, col) for col in db_column_names]
@@ -236,6 +250,10 @@ def _select_from_model(model: Any, db_column_names: list[str] | None) -> Any:
     return select(model)
 
 
+# Not a copy-pasted twin: both already share _select_from_model(); the
+# remaining difference is the irreducible await builder.build_model_async()
+# vs builder.build_model() call.
+# spaghetti-ignore[sync-async-duplication]
 async def reflect_and_select_async(
     resource: Any,
     table: str,

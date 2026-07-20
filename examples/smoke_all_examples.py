@@ -25,9 +25,7 @@ _FAST_DEFAULTS: dict[str, str] = {
 
 
 def discover_examples(examples_dir: Path) -> list[Path]:
-    scripts = sorted(
-        p for p in examples_dir.glob("*.py") if p.name != "smoke_all_examples.py"
-    )
+    scripts = sorted(p for p in examples_dir.glob("*.py") if p.name != "smoke_all_examples.py")
     return scripts
 
 
@@ -38,7 +36,9 @@ def build_env() -> dict[str, str]:
     return env
 
 
-def run_script(repo_root: Path, script: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def run_script(
+    repo_root: Path, script: Path, env: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(script)],
         cwd=repo_root,
@@ -94,4 +94,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

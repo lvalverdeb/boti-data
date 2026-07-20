@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from boti_data import DatacubeConfig, DatacubeContract, DataHelper
+from boti_data.datacube.contract import DatacubeRequest
 from boti_data.gateway import DataGateway
 
 
@@ -20,7 +21,7 @@ def _apply_simple_filters(frame: pd.DataFrame, filters: dict[str, object]) -> pd
     return filtered
 
 
-def test_datacube_structured_load_supports_dask_return_type():
+def test_datacube_structured_load_supports_dask_return_type() -> None:
     source = pd.DataFrame(
         {
             "id": [1, 2, 3],
@@ -28,7 +29,7 @@ def test_datacube_structured_load_supports_dask_return_type():
         }
     )
 
-    def loader(request):
+    def loader(request) -> pd.DataFrame:
         frame = _apply_simple_filters(source, request.filters)
         if request.limit is not None:
             frame = frame.head(request.limit)
@@ -41,10 +42,10 @@ def test_datacube_structured_load_supports_dask_return_type():
     assert frame.compute()["id"].tolist() == [1, 3]
 
 
-def test_datacube_configured_mode_merges_sticky_and_runtime_filters():
+def test_datacube_configured_mode_merges_sticky_and_runtime_filters() -> None:
     captured_requests = []
 
-    def loader(request):
+    def loader(request) -> pd.DataFrame:
         captured_requests.append(request)
         return pd.DataFrame({"id": [1], "status": ["active"], "region": ["na"]})
 
@@ -67,10 +68,10 @@ def test_datacube_configured_mode_merges_sticky_and_runtime_filters():
 
 
 @pytest.mark.asyncio
-async def test_datacube_async_loader_is_used_when_available():
+async def test_datacube_async_loader_is_used_when_available() -> None:
     calls: list[str] = []
 
-    async def async_loader(request):
+    async def async_loader(request) -> pd.DataFrame:
         calls.append(request.cube or "")
         return pd.DataFrame({"id": [1, 2], "status": ["active", "active"]})
 
@@ -84,8 +85,8 @@ async def test_datacube_async_loader_is_used_when_available():
     assert calls == ["users"]
 
 
-def test_datacube_from_config_supports_backend_mapping():
-    def loader(request):
+def test_datacube_from_config_supports_backend_mapping() -> None:
+    def loader(request) -> pd.DataFrame:
         return pd.DataFrame({"cube": [request.cube or "default"]})
 
     with DataGateway.from_config(
@@ -101,8 +102,8 @@ def test_datacube_from_config_supports_backend_mapping():
     assert frame["cube"].tolist() == ["inventory"]
 
 
-def test_datacube_helper_views_apply_engine_defaults():
-    def loader(request):
+def test_datacube_helper_views_apply_engine_defaults() -> None:
+    def loader(request) -> pd.DataFrame:
         return pd.DataFrame({"id": [1, 2], "status": ["active", "inactive"]})
 
     helper = DataHelper({"backend": "datacube", "loader": loader})
@@ -115,17 +116,17 @@ def test_datacube_helper_views_apply_engine_defaults():
     assert frame.compute()["id"].tolist() == [1, 2]
 
 
-def test_datacube_contract_hooks_apply_transform_and_validation():
+def test_datacube_contract_hooks_apply_transform_and_validation() -> None:
     seen_cubes: list[str] = []
 
-    def request_transformer(request):
+    def request_transformer(request) -> DatacubeRequest:
         return request.model_copy(update={"cube": request.cube or "orders_v2"})
 
-    def request_validator(request):
+    def request_validator(request) -> None:
         if request.cube != "orders_v2":
             raise ValueError("unexpected cube")
 
-    def loader(request):
+    def loader(request) -> pd.DataFrame:
         seen_cubes.append(request.cube)
         return pd.DataFrame({"id": [1], "status": ["active"]})
 
@@ -150,8 +151,8 @@ def test_datacube_contract_hooks_apply_transform_and_validation():
 
 
 @pytest.mark.asyncio
-async def test_datacube_contract_async_loader_takes_precedence():
-    async def async_loader(request):
+async def test_datacube_contract_async_loader_takes_precedence() -> None:
+    async def async_loader(request) -> pd.DataFrame:
         return pd.DataFrame({"cube": [request.cube or "none"]})
 
     contract = DatacubeContract(async_loader=async_loader)
@@ -163,13 +164,13 @@ async def test_datacube_contract_async_loader_takes_precedence():
     assert frame["cube"].tolist() == ["async_cube"]
 
 
-def test_datacube_config_requires_loader_source():
+def test_datacube_config_requires_loader_source() -> None:
     with pytest.raises(ValueError, match="DatacubeConfig requires loader/async_loader"):
         DatacubeConfig()
 
 
-def test_datacube_contract_validator_error_includes_actionable_context():
-    def validator(request):
+def test_datacube_contract_validator_error_includes_actionable_context() -> None:
+    def validator(request) -> None:
         if request.cube != "orders":
             raise ValueError("cube must be 'orders'")
 
@@ -179,12 +180,12 @@ def test_datacube_contract_validator_error_includes_actionable_context():
     )
 
     with DataGateway(DatacubeConfig(contract=contract)) as gateway:
-        with pytest.raises(ValueError, match="Datacube contract request validation failed") as exc_info:
+        with pytest.raises(
+            ValueError, match="Datacube contract request validation failed"
+        ) as exc_info:
             gateway.load(return_type="pandas", cube="inventory", status__exact="active")
 
     message = str(exc_info.value)
     assert "cube must be 'orders'" in message
     assert "cube='inventory'" in message
     assert "filter_keys=['status__exact']" in message
-
-

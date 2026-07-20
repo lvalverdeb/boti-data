@@ -1,136 +1,23 @@
-import datetime as dt
+"""
+Filter tests for the ``sqlalchemy`` backend: column resolution, LIKE/regex
+operators, and IN/NOT IN null-handling semantics.
 
-import dask.dataframe as dd
-import pandas as pd
+Split out of test_filters.py purely for god-module headroom.
+"""
+
 import pytest
 from sqlalchemy import ForeignKey, String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 
-from boti_data.filters import And, ColOp, FilterHandler, Not, Or, TrueExpr
+from boti_data.filters import FilterHandler
 
 
 @pytest.fixture
-def dask_handler():
-    return FilterHandler(backend="dask", debug=True)
-
-
-@pytest.fixture
-def sql_handler():
+def sql_handler() -> FilterHandler:
     return FilterHandler(backend="sqlalchemy", debug=True)
 
 
-def test_parse_filter_key(dask_handler):
-    # Standard
-    field, casting, op = dask_handler._parse_filter_key("price__gt")
-    assert field == "price"
-    assert casting is None
-    assert op == "gt"
-
-    # With casting
-    field, casting, op = dask_handler._parse_filter_key("created_at__date__gte")
-    assert field == "created_at"
-    assert casting == "date"
-    assert op == "gte"
-
-    # Negation alias mapping
-    field, casting, op = dask_handler._parse_filter_key("status__ne")
-    assert field == "status"
-    assert casting is None
-    assert op == "not_exact"
-
-    # Middle negation
-    field, casting, op = dask_handler._parse_filter_key("status__not__in")
-    assert field == "status"
-    assert casting is None
-    assert op == "not_in"
-
-
-def test_split_pushdown_and_residual(dask_handler):
-    filters = {
-        "status__exact": "active",
-        "description__icontains": "urgent",
-        "created_at__date__gte": "2024-01-01",
-    }
-
-    parquet_filters, residual_filters = dask_handler.split_pushdown_and_residual(filters)
-
-    # Check residuals (icontains is not a pushdown op)
-    assert "description__icontains" in residual_filters
-    assert residual_filters["description__icontains"] == "urgent"
-
-    # Check pushdowns
-    pushdown_fields = [f for f, op, val in parquet_filters]
-    assert "status" in pushdown_fields
-    assert "created_at" in pushdown_fields
-
-    # Verify the date rewrite to UTC TS
-    for f, op, val in parquet_filters:
-            if f == "created_at":
-                assert op == ">="
-                assert isinstance(val, pd.Timestamp)
-                assert val.tz == dt.UTC
-                assert val == pd.Timestamp("2024-01-01", tz="UTC")
-
-
-def test_split_pushdown_and_residual_intercepts_ast_controls(dask_handler):
-    filters = {
-        "$or": [
-            {"status__exact": "active"},
-            {"status__exact": "inactive"},
-        ]
-    }
-
-    parquet_filters, residual_filters = dask_handler.split_pushdown_and_residual(filters)
-
-    assert parquet_filters == []
-    assert residual_filters == filters
-
-
-def test_ast_compilation(dask_handler):
-    filters = {
-        "$or": [
-            {"price__gt": 100},
-            {"status__in": ["VIP", "Pro"]}
-        ]
-    }
-
-    expr = dask_handler.compile_filters(filters)
-
-    assert isinstance(expr, Or)
-    assert isinstance(expr.left, ColOp)
-    assert isinstance(expr.right, ColOp)
-
-    assert expr.left.field == "price"
-    assert expr.left.op == "gt"
-    assert expr.right.field == "status"
-    assert expr.right.op == "in"
-
-
-def test_ast_compilation_and_not(dask_handler):
-    filters = {
-        "$not": {
-            "status__exact": "banned"
-        }
-    }
-    expr = dask_handler.compile_filters(filters)
-    assert isinstance(expr, Not)
-    assert isinstance(expr.inner, ColOp)
-    assert expr.inner.op == "exact"
-    assert expr.inner.value == "banned"
-
-def test_ast_compilation_implicit_and(dask_handler):
-    filters = {
-        "price__gt": 10,
-        "price__lt": 100
-    }
-    expr = dask_handler.compile_filters(filters)
-
-    # Initial state is TrueExpr() & ColOp. And(TrueExpr, ColOp) -> And(And, ColOp)
-    # Just asserting it built successfully
-    assert isinstance(expr, And)
-
-
-def test_apply_filters_supports_sqlalchemy_select(sql_handler):
+def test_apply_filters_supports_sqlalchemy_select(sql_handler) -> None:
     class Base(DeclarativeBase):
         pass
 
@@ -164,14 +51,7 @@ def test_apply_filters_supports_sqlalchemy_select(sql_handler):
     assert rows[0].status == "active"
 
 
-def test_get_dask_column_rejects_unknown_field(dask_handler):
-    df = dd.from_pandas(pd.DataFrame({"status": ["active"]}), npartitions=1)
-
-    with pytest.raises(AttributeError, match="Field 'missing' not found"):
-        dask_handler._get_dask_column(df, "missing", None)
-
-
-def test_get_sqlalchemy_column_rejects_relationships(sql_handler):
+def test_get_sqlalchemy_column_rejects_relationships(sql_handler) -> None:
     class Base(DeclarativeBase):
         pass
 
@@ -192,7 +72,7 @@ def test_get_sqlalchemy_column_rejects_relationships(sql_handler):
         sql_handler._get_sqlalchemy_column("team", User, None)
 
 
-def test_sqlalchemy_like_operations_escape_wildcards(sql_handler):
+def test_sqlalchemy_like_operations_escape_wildcards(sql_handler) -> None:
     class Base(DeclarativeBase):
         pass
 
@@ -232,7 +112,7 @@ def test_sqlalchemy_like_operations_escape_wildcards(sql_handler):
     assert [row.description for row in iexact_rows] == ["promo 50%_OFF"]
 
 
-def test_sqlalchemy_regex_uses_dialect_agnostic_operator(sql_handler):
+def test_sqlalchemy_regex_uses_dialect_agnostic_operator(sql_handler) -> None:
     class Base(DeclarativeBase):
         pass
 
@@ -253,20 +133,7 @@ def test_sqlalchemy_regex_uses_dialect_agnostic_operator(sql_handler):
     assert "REGEXP" in compiled.upper()
 
 
-def test_apply_filters_short_circuits_trivial_dask_filters(dask_handler, monkeypatch):
-    dataframe = dd.from_pandas(pd.DataFrame({"status": ["active", "inactive"]}), npartitions=1)
-    monkeypatch.setattr(
-        TrueExpr,
-        "mask",
-        lambda self, df: (_ for _ in ()).throw(AssertionError("TrueExpr.mask should not run")),
-    )
-
-    result = dask_handler.apply_filters(dataframe, filters={})
-
-    assert result is dataframe
-
-
-def test_sqlalchemy_in_filter_normalizes_duplicates_and_nulls(sql_handler):
+def test_sqlalchemy_in_filter_normalizes_duplicates_and_nulls(sql_handler) -> None:
     class Base(DeclarativeBase):
         pass
 
@@ -299,7 +166,7 @@ def test_sqlalchemy_in_filter_normalizes_duplicates_and_nulls(sql_handler):
     assert [row.code for row in rows] == ["A", None]
 
 
-def test_sqlalchemy_not_in_filter_handles_empty_and_nulls(sql_handler):
+def test_sqlalchemy_not_in_filter_handles_empty_and_nulls(sql_handler) -> None:
     class Base(DeclarativeBase):
         pass
 
@@ -339,7 +206,7 @@ def test_sqlalchemy_not_in_filter_handles_empty_and_nulls(sql_handler):
     assert [row.code for row in null_rows] == ["B"]
 
 
-def test_sqlalchemy_empty_in_filter_returns_no_rows(sql_handler):
+def test_sqlalchemy_empty_in_filter_returns_no_rows(sql_handler) -> None:
     class Base(DeclarativeBase):
         pass
 
@@ -366,7 +233,7 @@ def test_sqlalchemy_empty_in_filter_returns_no_rows(sql_handler):
     assert rows == []
 
 
-def test_filter_handler_suggests_sql_in_chunking(sql_handler):
+def test_filter_handler_suggests_sql_in_chunking(sql_handler) -> None:
     suggestion = sql_handler.suggest_sql_in_chunking(
         {"code__in": [1, 2, 2, None, 3, 4, 5]},
         chunk_size=2,

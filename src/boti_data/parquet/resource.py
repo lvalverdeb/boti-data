@@ -8,112 +8,24 @@ import asyncio
 import datetime as dt
 import functools
 import posixpath
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import dask.dataframe as dd
 import fsspec
-import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.fs as pafs
-from boti.core.filesystem import FilesystemConfig, create_filesystem
-from boti.core.models import ResourceConfig
+from boti.core.filesystem import create_filesystem
 from boti.core.secure_io import SecureResource
-from boti.core.security import is_valid_identifier
-from fsspec.implementations.local import LocalFileSystem
-from pydantic import Field, field_validator, model_validator
 
 from boti_data.filters import FilterHandler
-from boti_data.filters.utils import parse_filter_key
-from boti_data.parquet.file_info import ArrowFileInfoProvider, FsspecFileInfoProvider
 
+from . import discovery, filesystem, schema_filters
+from .config import ParquetDataConfig
 
-def create_local_filesystem() -> fsspec.AbstractFileSystem:
-    """Create the default local filesystem for Parquet resources."""
-    return fsspec.filesystem("file")
-
-
-class ParquetDataConfig(ResourceConfig):
-    """Validated configuration for Parquet-backed discovery and loading."""
-
-    parquet_storage_path: str | None = Field(default=None)
-    parquet_filename: str | None = Field(default=None)
-    parquet_start_date: dt.date | None = Field(default=None)
-    parquet_end_date: dt.date | None = Field(default=None)
-    parquet_max_age_minutes: int = Field(default=0, ge=0)
-    partition_on: list[str] | None = Field(default=None)
-    filesystem_profile: str | None = Field(default=None)
-
-    @field_validator("parquet_storage_path")
-    @classmethod
-    def validate_storage_path(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("parquet_storage_path must be specified.")
-        return normalized.rstrip("/")
-
-    @field_validator("parquet_filename")
-    @classmethod
-    def validate_filename(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        if not value or value in {".", ".."} or "/" in value or "\\" in value:
-            raise ValueError("parquet_filename must be a simple file name, not a path.")
-        return value
-
-    @field_validator("partition_on")
-    @classmethod
-    def validate_partition_on(cls, value: list[str] | None) -> list[str] | None:
-        if value is None:
-            return None
-        if not value:
-            raise ValueError("partition_on must contain at least one partition field.")
-        if any(not is_valid_identifier(item) for item in value):
-            raise ValueError("partition_on values must be valid identifiers.")
-        return value
-
-    @field_validator("filesystem_profile")
-    @classmethod
-    def validate_filesystem_profile(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("filesystem_profile must not be empty.")
-        return normalized
-
-    @model_validator(mode="after")
-    def validate_date_range(self) -> ParquetDataConfig:
-        if self.parquet_storage_path is None and self.filesystem_profile is None:
-            raise ValueError("Either parquet_storage_path or filesystem_profile must be provided.")
-        if bool(self.parquet_start_date) != bool(self.parquet_end_date):
-            raise ValueError(
-                "Both parquet_start_date and parquet_end_date must be provided, or neither."
-            )
-        if (
-            self.parquet_start_date is not None
-            and self.parquet_end_date is not None
-            and self.parquet_end_date < self.parquet_start_date
-        ):
-            raise ValueError("parquet_end_date cannot be before parquet_start_date.")
-        return self
-
-
-_RAW_FILTER_CLAUSE_DISPATCH: dict[str, Callable[[Any, Any], ds.Expression]] = {
-    "=": lambda col, v: col == v,
-    "!=": lambda col, v: col != v,
-    ">": lambda col, v: col > v,
-    ">=": lambda col, v: col >= v,
-    "<": lambda col, v: col < v,
-    "<=": lambda col, v: col <= v,
-    "in": lambda col, v: col.isin(v),
-    "not in": lambda col, v: ~col.isin(v),
-}
+__all__ = ["ParquetDataConfig", "ParquetDataResource"]
 
 
 class ParquetDataResource(SecureResource):
@@ -127,7 +39,7 @@ class ParquetDataResource(SecureResource):
         fs_factory: Any | None = None,
         catalog: Any | None = None,
     ) -> None:
-        self._filesystem_config, resolved_fs_factory = self._resolve_filesystem_factory(
+        self._filesystem_config, resolved_fs_factory = filesystem.resolve_filesystem_factory(
             config,
             fs=fs,
             fs_factory=fs_factory,
@@ -137,44 +49,12 @@ class ParquetDataResource(SecureResource):
         super().__init__(
             config=config,
             fs=fs,
-            fs_factory=resolved_fs_factory or (None if fs is not None else create_local_filesystem),
+            fs_factory=resolved_fs_factory
+            or (None if fs is not None else filesystem.create_local_filesystem),
         )
         self.config = config
         if self.config.parquet_storage_path is not None:
             self._secure_local_path(self.config.parquet_storage_path)
-
-    @staticmethod
-    def _resolve_filesystem_factory(
-        config: ParquetDataConfig,
-        *,
-        fs: fsspec.AbstractFileSystem | None,
-        fs_factory: Any | None,
-        catalog: Any | None,
-    ) -> tuple[FilesystemConfig | None, Any | None]:
-        if fs is not None or fs_factory is not None or config.filesystem_profile is None:
-            return None, fs_factory
-        if catalog is None:
-            raise ValueError(
-                "ParquetDataResource requires a catalog when filesystem_profile is configured."
-            )
-        filesystem_config = catalog.filesystem_config(config.filesystem_profile)
-        adapter_factory = ParquetDataResource._catalog_filesystem_factory(
-            catalog,
-            config.filesystem_profile,
-        )
-        return filesystem_config, adapter_factory or functools.partial(
-            create_filesystem,
-            filesystem_config,
-        )
-
-    @staticmethod
-    def _catalog_filesystem_factory(catalog: Any, profile: str) -> Any | None:
-        if not hasattr(catalog, "filesystem_adapter"):
-            return None
-        adapter = catalog.filesystem_adapter(profile)
-        if adapter is not None and hasattr(adapter, "get_filesystem"):
-            return adapter.get_filesystem
-        return None
 
     def _restore_runtime_state(self) -> None:
         super()._restore_runtime_state()
@@ -182,7 +62,7 @@ class ParquetDataResource(SecureResource):
             if self._filesystem_config is not None:
                 self._fs_factory = functools.partial(create_filesystem, self._filesystem_config)
             else:
-                self._fs_factory = create_local_filesystem
+                self._fs_factory = filesystem.create_local_filesystem
             self._owns_fs = True
 
     @property
@@ -204,19 +84,6 @@ class ParquetDataResource(SecureResource):
             return self.ensure_file_extension(raw_path, "parquet")
         return self.parquet_storage_path
 
-    def _uses_nonlocal_explicit_fs(self) -> bool:
-        fs = self.require_fs()
-        if isinstance(fs, pafs.FileSystem):
-            return not isinstance(fs, pafs.LocalFileSystem)
-        if isinstance(fs, LocalFileSystem):
-            return False
-        protocol = getattr(fs, "protocol", None)
-        if isinstance(protocol, tuple):
-            return "file" not in protocol
-        if isinstance(protocol, str):
-            return protocol != "file"
-        return True
-
     def load_files(
         self,
         filters: list[Any] | None = None,
@@ -227,19 +94,17 @@ class ParquetDataResource(SecureResource):
         files_to_load = self._resolve_files_to_load()
         if not files_to_load:
             self.logger.warning("No files found.")
-            return self._empty_ddf()
+            return schema_filters.empty_ddf()
 
         self.logger.debug("Loading %s from %s", files_to_load, self.parquet_storage_path)
-        filesystem = self.require_fs()
+        fs_ = self.require_fs()
         read_kwargs: dict[str, Any] = {
-            "filesystem": filesystem,
+            "filesystem": fs_,
             "filters": filters,
             "columns": columns,
             "ignore_metadata_file": True,
         }
-        if isinstance(filesystem, pafs.FileSystem):
-            pass
-        else:
+        if not isinstance(fs_, pafs.FileSystem):
             read_kwargs["engine"] = "pyarrow"
             read_kwargs["aggregate_files"] = True
 
@@ -261,11 +126,11 @@ class ParquetDataResource(SecureResource):
             return pa.table({})
 
         dataset = ds.dataset(
-            [self._normalized_arrow_load_path(path) for path in files_to_load],
-            filesystem=self._arrow_filesystem(),
+            [filesystem.normalized_arrow_load_path(self, path) for path in files_to_load],
+            filesystem=filesystem.arrow_filesystem(self),
             format="parquet",
         )
-        expression = self._raw_filters_to_expression(filters)
+        expression = schema_filters.raw_filters_to_expression(filters)
         return dataset.to_table(filter=expression, columns=columns)
 
     def load_filtered(
@@ -276,7 +141,7 @@ class ParquetDataResource(SecureResource):
     ) -> dd.DataFrame:
         """Load Parquet data from a high-level filter spec with pushdown + residual masking."""
         filter_handler = FilterHandler(backend="dask", logger=self.logger, debug=self.debug)
-        coerced = self._coerce_temporal_filters(filters or {})
+        coerced = schema_filters.coerce_temporal_filters(self, filters or {})
         pushdown_filters, residual_filters = filter_handler.split_pushdown_and_residual(coerced)
         dataframe = self.load_files(filters=pushdown_filters or None, columns=columns)
         if residual_filters:
@@ -291,7 +156,7 @@ class ParquetDataResource(SecureResource):
     ) -> pa.Table:
         """Load Parquet data as Arrow with pushdown and Arrow residual filters."""
         filter_handler = FilterHandler(backend="arrow", logger=self.logger, debug=self.debug)
-        coerced = self._coerce_temporal_filters(filters or {})
+        coerced = schema_filters.coerce_temporal_filters(self, filters or {})
         pushdown_filters, residual_filters = filter_handler.split_pushdown_and_residual(coerced)
         table = self.load_arrow(filters=pushdown_filters or None, columns=columns)
         if residual_filters:
@@ -316,11 +181,14 @@ class ParquetDataResource(SecureResource):
         """Async wrapper for high-level parquet filtering."""
         return await asyncio.to_thread(self.load_filtered, filters, columns=columns)
 
+    def _resolve_filename_path(self) -> list[str]:
+        if not self.determine_recency():
+            return []
+        return [filesystem.normalized_load_path(self, self.parquet_full_path)]
+
     def _resolve_files_to_load(self) -> list[str]:
         if self.parquet_filename:
-            if not self.determine_recency():
-                return []
-            return [self._normalized_load_path(self.parquet_full_path)]
+            return self._resolve_filename_path()
         if self.config.parquet_start_date and self.config.parquet_end_date:
             return self._discover_partitioned_files()
 
@@ -329,34 +197,44 @@ class ParquetDataResource(SecureResource):
         )
         return self._discover_all_files()
 
-    def _discover_partitioned_files(self) -> list[str]:
-        source_path, filesystem = self._dataset_source()
-        partitioning: ds.Partitioning | str
-        partition_key: str
-
+    def _partitioning_for_config(self) -> tuple[ds.Partitioning | str, str]:
         if self.config.partition_on:
-            partitioning = ds.partitioning(flavor="hive")
-            partition_key = self.config.partition_on[0]
-        else:
-            partitioning = ds.partitioning(
-                schema=pa.schema(
-                    [("year", pa.int32()), ("month", pa.int32()), ("day", pa.int32())]
-                )
-            )
-            partition_key = "year"
+            return ds.partitioning(flavor="hive"), self.config.partition_on[0]
+        return (
+            ds.partitioning(
+                schema=pa.schema([("year", pa.int32()), ("month", pa.int32()), ("day", pa.int32())])
+            ),
+            "year",
+        )
 
+    def _open_partitioned_dataset(
+        self,
+        source_path: str,
+        fs_: Any,
+        partitioning: ds.Partitioning | str,
+        partition_key: str,
+    ) -> ds.Dataset | list[str]:
+        """Returns the opened dataset, or a listing-based file list on failure/missing-path."""
         try:
-            dataset = ds.dataset(
+            return ds.dataset(
                 source=source_path,
-                filesystem=filesystem,
+                filesystem=fs_,
                 format="parquet",
                 partitioning=partitioning,
             )
         except (FileNotFoundError, OSError, pa.ArrowInvalid, pa.ArrowException) as exc:
-            if self._is_missing_path_error(exc):
+            if discovery.is_missing_path_error(exc):
                 self.logger.warning("Parquet path does not exist: %s", self.parquet_storage_path)
                 return []
-            return self._discover_partitioned_files_via_listing(partition_key)
+            return discovery.discover_partitioned_files_via_listing(self, partition_key)
+
+    def _discover_partitioned_files(self) -> list[str]:
+        source_path, fs_ = filesystem.dataset_source(self)
+        partitioning, partition_key = self._partitioning_for_config()
+
+        dataset = self._open_partitioned_dataset(source_path, fs_, partitioning, partition_key)
+        if isinstance(dataset, list):
+            return dataset
 
         start_date = self.config.parquet_start_date
         end_date = self.config.parquet_end_date
@@ -367,14 +245,12 @@ class ParquetDataResource(SecureResource):
                 ds.field(partition_key) <= str(end_date)
             )
         else:
-            expression = (ds.field("year") >= start_date.year) & (
-                ds.field("year") <= end_date.year
-            )
+            expression = (ds.field("year") >= start_date.year) & (ds.field("year") <= end_date.year)
 
         fragments = dataset.get_fragments(expression)
-        found_files = [self._restore_protocol(fragment.path) for fragment in fragments]
+        found_files = [filesystem.restore_protocol(fragment.path) for fragment in fragments]
         if not found_files:
-            return self._discover_partitioned_files_via_listing(partition_key)
+            return discovery.discover_partitioned_files_via_listing(self, partition_key)
 
         if self.debug:
             self.logger.debug("Requested range: %s to %s", start_date, end_date)
@@ -382,114 +258,25 @@ class ParquetDataResource(SecureResource):
 
         return found_files
 
-    def _discover_partitioned_files_via_listing(self, partition_key: str) -> list[str]:
-        start_date = self.config.parquet_start_date
-        end_date = self.config.parquet_end_date
-        assert start_date is not None and end_date is not None
-
-        files: list[str] = []
-        for path in self._list_candidate_files():
-            if not path.endswith(".parquet"):
-                continue
-            if self._path_matches_partition_range(path, partition_key, start_date, end_date):
-                files.append(self._restore_protocol(path))
-        return sorted(files)
-
-    @staticmethod
-    def _is_missing_path_error(exc: Exception) -> bool:
-        if isinstance(exc, FileNotFoundError):
-            return True
-        errno = getattr(exc, "errno", None)
-        if errno in {2, 20}:
-            return True
-        message = str(exc).lower()
-        return any(
-            token in message
-            for token in (
-                "not found",
-                "no such file",
-                "does not exist",
-                "path does not exist",
-                "no such bucket",
-                "bucket does not exist",
-            )
-        )
-
-    @staticmethod
-    def _filesystem_runtime_error(action: str, path: str, exc: Exception) -> RuntimeError:
-        return RuntimeError(f"Failed to {action} for {path!r}: {exc}")
-
-    def _list_candidate_files(self) -> list[str]:
-        base_path = self.parquet_storage_path
-        fs = self.require_fs()
-        try:
-            if isinstance(fs, pafs.FileSystem):
-                selector = pafs.FileSelector(base_dir=base_path, recursive=True)
-                infos = fs.get_file_info(selector)
-                return [
-                    info.path for info in infos if getattr(info, "type", None) == pafs.FileType.File
-                ]
-
-            if hasattr(fs, "find"):
-                return list(fs.find(base_path))
-            if hasattr(fs, "glob"):
-                return [
-                    path for path in fs.glob(f"{base_path.rstrip('/')}/**") if not path.endswith("/")
-                ]
-        except (FileNotFoundError, OSError, pa.ArrowInvalid, pa.ArrowException) as exc:
-            if self._is_missing_path_error(exc):
-                self.logger.warning("Parquet path does not exist for listing: %s", base_path)
-                return []
-            raise
-        return []
-
-    @staticmethod
-    def _path_matches_partition_range(
-        path: str,
-        partition_key: str,
-        start_date: dt.date,
-        end_date: dt.date,
-    ) -> bool:
-        marker = f"{partition_key}="
-        for segment in path.split("/"):
-            if not segment.startswith(marker):
-                continue
-            partition_value = segment[len(marker):]
-            try:
-                partition_date = dt.date.fromisoformat(partition_value)
-            except ValueError:
-                return start_date.isoformat() <= partition_value <= end_date.isoformat()
-            return start_date <= partition_date <= end_date
-        return False
-
     def _discover_all_files(self) -> list[str]:
-        source_path, filesystem = self._dataset_source()
+        source_path, fs_ = filesystem.dataset_source(self)
         try:
             dataset = ds.dataset(
                 source_path,
-                filesystem=filesystem,
+                filesystem=fs_,
                 format="parquet",
                 partitioning=None,
             )
         except (FileNotFoundError, OSError, pa.ArrowInvalid, pa.ArrowException) as exc:
-            if self._is_missing_path_error(exc):
+            if discovery.is_missing_path_error(exc):
                 self.logger.warning("Parquet path does not exist: %s", self.parquet_storage_path)
                 return []
-            raise self._filesystem_runtime_error(
+            raise discovery.filesystem_runtime_error(
                 "scan parquet dataset", self.parquet_storage_path, exc
             ) from exc
-        return [self._restore_protocol(path) for path in dataset.files]
+        return [filesystem.restore_protocol(path) for path in dataset.files]
 
-    def determine_recency(self) -> bool:
-        path = self._normalized_load_path(self.parquet_full_path)
-        if not path.endswith(".parquet"):
-            return True
-
-        info = self._get_file_info(path)
-        if info is None:
-            return False
-
-        modified_at = self._get_mtime_from_info(info)
+    def _is_recent_enough(self, modified_at: dt.datetime | None) -> bool:
         if self.config.parquet_max_age_minutes == 0:
             return modified_at is not None
         if modified_at is None:
@@ -499,6 +286,31 @@ class ParquetDataResource(SecureResource):
         if modified_at.tzinfo is None:
             modified_at = modified_at.replace(tzinfo=dt.UTC)
         return (now - modified_at) <= dt.timedelta(minutes=self.config.parquet_max_age_minutes)
+
+    def determine_recency(self) -> bool:
+        path = filesystem.normalized_load_path(self, self.parquet_full_path)
+        if not path.endswith(".parquet"):
+            return True
+
+        info = self._get_file_info(path)
+        if info is None:
+            return False
+
+        modified_at = discovery.get_mtime_from_info(info)
+        return self._is_recent_enough(modified_at)
+
+    def _sum_file_sizes(self, files_to_load: list[str]) -> int | None:
+        """Returns total byte size across files, or None if any file's size is unavailable."""
+        total_bytes = 0
+        for path in files_to_load:
+            info = self._get_file_info(path)
+            if info is None:
+                return None
+            size = info.get("size")
+            if not isinstance(size, int):
+                return None
+            total_bytes += size
+        return total_bytes
 
     def scan_summary(self, *, max_files: int) -> tuple[int | None, int | None]:
         """Cheap size probe for auto return-type decisions.
@@ -513,223 +325,16 @@ class ParquetDataResource(SecureResource):
             return 0, 0
         if len(files_to_load) > max_files:
             return None, None
-        total_bytes = 0
-        for path in files_to_load:
-            info = self._get_file_info(path)
-            if info is None:
-                return None, None
-            size = info.get("size")
-            if not isinstance(size, int):
-                return None, None
-            total_bytes += size
-        return None, total_bytes
+        return None, self._sum_file_sizes(files_to_load)
 
     def _get_file_info(self, path: str) -> dict[str, Any] | None:
-        fs = self.require_fs()
-        return self._file_info_provider(fs).info(path)
-
-    def _get_arrow_file_info(self, fs: pafs.FileSystem, path: str) -> dict[str, Any] | None:
-        return self._arrow_file_info_provider(fs).info(path)
-
-    def _get_fsspec_file_info(self, fs: Any, path: str) -> dict[str, Any] | None:
-        return self._fsspec_file_info_provider(fs).info(path)
-
-    def _try_fsspec_modified(self, fs: Any, path: str, original_exc: Exception) -> dict[str, Any] | None:
-        return self._fsspec_file_info_provider(fs)._try_modified(path, original_exc)
-
-    def _file_info_provider(self, fs: Any) -> ArrowFileInfoProvider | FsspecFileInfoProvider:
-        if isinstance(fs, pafs.FileSystem):
-            return self._arrow_file_info_provider(fs)
-        return self._fsspec_file_info_provider(fs)
-
-    def _arrow_file_info_provider(self, fs: pafs.FileSystem) -> ArrowFileInfoProvider:
-        return ArrowFileInfoProvider(
-            fs,
-            is_missing_path_error=self._is_missing_path_error,
-            filesystem_runtime_error=self._filesystem_runtime_error,
-        )
-
-    def _fsspec_file_info_provider(self, fs: Any) -> FsspecFileInfoProvider:
-        return FsspecFileInfoProvider(
-            fs,
-            is_missing_path_error=self._is_missing_path_error,
-            filesystem_runtime_error=self._filesystem_runtime_error,
-        )
-
-    @staticmethod
-    def _get_mtime_from_info(info: dict[str, Any]) -> dt.datetime | None:
-        modified = info.get("mtime")
-        if isinstance(modified, dt.datetime):
-            return modified
-        if isinstance(modified, (int, float)):
-            return dt.datetime.fromtimestamp(modified, tz=dt.UTC)
-        if isinstance(modified, str):
-            try:
-                return dt.datetime.fromisoformat(modified)
-            except ValueError:
-                return None
-        return None
-
-    def _dataset_schema(self) -> pa.Schema | None:
-        """Return the Arrow schema of the resolved dataset, or ``None`` if unavailable.
-
-        Cached per-instance: the storage schema is stable for a fixed config, and
-        this spares a metadata round-trip on every filtered load.
-        """
-        cached = getattr(self, "_schema_cache", None)
-        if cached is not None:
-            return cached
-        files = self._resolve_files_to_load()
-        if not files:
-            return None
-        try:
-            dataset = ds.dataset(
-                [self._normalized_arrow_load_path(path) for path in files],
-                filesystem=self._arrow_filesystem(),
-                format="parquet",
-            )
-            schema = dataset.schema
-        except (FileNotFoundError, OSError, pa.ArrowInvalid, pa.ArrowException):
-            return None
-        self._schema_cache = schema
-        return schema
-
-    def _coerce_temporal_filters(self, filters: dict[str, Any]) -> dict[str, Any]:
-        """Coerce date/datetime filter values to ISO strings for string-typed columns.
-
-        A ``date``/``datetime`` value compared against a string column (e.g. an
-        ISO-8601 date stored as text) has no PyArrow comparison kernel and would
-        raise ``ArrowNotImplementedError`` on both the pushdown and residual
-        paths. Rewriting the value to its ISO string makes the comparison a
-        (correct) lexicographic string comparison. Columns with a genuine
-        temporal type, and explicitly cast filters, are left untouched.
-        """
-        if not filters:
-            return filters
-        schema = self._dataset_schema()
-        if schema is None:
-            return filters
-        string_fields = {
-            field.name
-            for field in schema
-            if pa.types.is_string(field.type) or pa.types.is_large_string(field.type)
-        }
-        if not string_fields:
-            return filters
-        return self._coerce_mapping(filters, string_fields)
-
-    def _coerce_mapping(
-        self, filters: dict[str, Any], string_fields: set[str]
-    ) -> dict[str, Any]:
-        coerced: dict[str, Any] = {}
-        for key, value in filters.items():
-            if key in {"$and", "$or"} and isinstance(value, (list, tuple)):
-                coerced[key] = [
-                    self._coerce_mapping(sub, string_fields)
-                    if isinstance(sub, dict)
-                    else sub
-                    for sub in value
-                ]
-            elif key == "$not" and isinstance(value, dict):
-                coerced[key] = self._coerce_mapping(value, string_fields)
-            elif str(key).startswith("$"):
-                coerced[key] = value
-            else:
-                field, casting, _op = parse_filter_key(key)
-                if casting is None and field in string_fields:
-                    coerced[key] = self._stringify_temporal(value)
-                else:
-                    coerced[key] = value
-        return coerced
-
-    @staticmethod
-    def _stringify_temporal(value: Any) -> Any:
-        def convert(item: Any) -> Any:
-            # pandas.Timestamp subclasses datetime, so it is handled here too.
-            if isinstance(item, dt.datetime):
-                if item.time() == dt.time(0, 0):
-                    return item.date().isoformat()
-                return item.isoformat()
-            if isinstance(item, dt.date):
-                return item.isoformat()
-            return item
-
-        if isinstance(value, (list, tuple)):
-            return type(value)(convert(item) for item in value)
-        return convert(value)
-
-    def _dataset_source(self) -> tuple[str, Any | None]:
-        parsed = urlparse(self.parquet_storage_path)
-        if parsed.scheme and parsed.scheme != "file":
-            return self._strip_protocol(self.parquet_storage_path), self._arrow_filesystem()
-        if self._uses_nonlocal_explicit_fs():
-            return self.parquet_storage_path, self._arrow_filesystem()
-
-        local_path = str(self._secure_local_path(self.parquet_storage_path))
-        return local_path, None
-
-    def _arrow_filesystem(self) -> pafs.FileSystem | None:
-        parsed = urlparse(self.parquet_storage_path)
-        if self._uses_nonlocal_explicit_fs():
-            fs = self.require_fs()
-            if isinstance(fs, pafs.FileSystem):
-                return fs
-            return pafs.PyFileSystem(pafs.FSSpecHandler(fs))
-        if parsed.scheme and parsed.scheme != "file":
-            return pafs.PyFileSystem(pafs.FSSpecHandler(self.require_fs()))
-        return None
-
-    def _normalized_load_path(self, path: str) -> str:
-        parsed = urlparse(path)
-        if self._uses_nonlocal_explicit_fs():
-            return path
-        if parsed.scheme and parsed.scheme != "file":
-            return path
-        return str(self._secure_local_path(path))
-
-    def _normalized_arrow_load_path(self, path: str) -> str:
-        parsed = urlparse(path)
-        if self._uses_nonlocal_explicit_fs():
-            return path
-        if parsed.scheme and parsed.scheme != "file":
-            return self._strip_protocol(path)
-        return str(self._secure_local_path(path))
+        fs_ = self.require_fs()
+        return discovery.file_info_provider(self, fs_).info(path)
 
     def _secure_local_path(self, path: str) -> Path:
         parsed = urlparse(path)
         local_path = parsed.path if parsed.scheme == "file" else path
         return self.get_secure_path(local_path)
-
-    @staticmethod
-    def _strip_protocol(path: str) -> str:
-        return path.split("://", 1)[1] if "://" in path else path
-
-    @staticmethod
-    def _restore_protocol(path: str) -> str:
-        return str(path)
-
-    @staticmethod
-    def _raw_filters_to_expression(filters: list[Any] | None) -> ds.Expression | None:
-        if not filters:
-            return None
-
-        expression: ds.Expression | None = None
-        for field, op, value in filters:
-            clause = ParquetDataResource._raw_filter_clause(field, op, value)
-            expression = clause if expression is None else expression & clause
-        return expression
-
-    @staticmethod
-    def _raw_filter_clause(field: str, op: str, value: Any) -> ds.Expression:
-        column = ds.field(field)
-        handler = _RAW_FILTER_CLAUSE_DISPATCH.get(op)
-        if handler is None:
-            raise ValueError(f"Unsupported parquet pushdown operator for Arrow load: {op!r}")
-        return handler(column, value)
-
-    @staticmethod
-    def _empty_ddf() -> dd.DataFrame:
-        return dd.from_pandas(pd.DataFrame(), npartitions=1)
 
     @staticmethod
     def ensure_file_extension(filepath: str, extension: str) -> str:

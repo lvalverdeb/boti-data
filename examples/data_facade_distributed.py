@@ -127,7 +127,9 @@ def _run_sync_benchmark(config: SqlDatabaseConfig) -> None:
             diagnostics=ENABLE_DIAGNOSTICS,
         )
         load_seconds = perf_counter() - started
-    _summarize_run(users=users, profiles=profiles, joined=joined, load_seconds=load_seconds, mode="sync")
+    _summarize_run(
+        users=users, profiles=profiles, joined=joined, load_seconds=load_seconds, mode="sync"
+    )
 
 
 async def _run_async_benchmark(config: SqlDatabaseConfig) -> None:
@@ -156,7 +158,9 @@ async def _run_async_benchmark(config: SqlDatabaseConfig) -> None:
             diagnostics=ENABLE_DIAGNOSTICS,
         )
         load_seconds = perf_counter() - started
-    _summarize_run(users=users, profiles=profiles, joined=joined, load_seconds=load_seconds, mode="async")
+    _summarize_run(
+        users=users, profiles=profiles, joined=joined, load_seconds=load_seconds, mode="async"
+    )
 
 
 def main() -> None:

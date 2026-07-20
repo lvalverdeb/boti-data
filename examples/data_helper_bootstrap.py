@@ -119,23 +119,108 @@ async def _run_async_resilience(frame, *, client) -> dict[str, Any]:
     }
 
 
+def _build_helper(db_path: Path) -> DataHelper:
+    return DataHelper(
+        backend="sqlalchemy",
+        connection_url=f"sqlite:///{db_path}",
+        poolclass="sqlalchemy.pool.NullPool",
+        query_only=False,
+        table="asm_tracking_productos",
+        field_map={
+            "id_track_global": "global_track_id",
+            "id_tipo_producto": "product_type_id",
+        },
+        sticky_filters={"product_type_id": 1},
+    )
+
+
+def _load_resilient_frames(helper: DataHelper, columns: list[str]) -> dict[str, Any]:
+    dry_run_frame = asyncio.run(
+        helper.aload(
+            global_track_id__in=[1, 2, 3, 4],
+            columns=columns,
+            return_type="dask",
+            persist=True,
+            resilient=True,
+            diagnostics=True,
+            dry_run=True,
+        )
+    )
+    resilient_frame = asyncio.run(
+        helper.aload(
+            global_track_id__in=[1, 2, 3, 4],
+            columns=columns,
+            return_type="dask",
+            persist=True,
+            resilient=True,
+            diagnostics=True,
+        )
+    )
+    return {"dry_run_frame": dry_run_frame, "resilient_frame": resilient_frame}
+
+
+def _run_sync_resilience(resilient_frame: Any, *, client: Any) -> dict[str, Any]:
+    persisted_frame = safe_persist(resilient_frame, dask_client=client)
+    safe_wait(persisted_frame, dask_client=client, timeout=30)
+    sync_row_count = int(
+        safe_compute(resilient_frame["global_track_id"].count(), dask_client=client)
+    )
+    sync_gather = [
+        int(value)
+        for value in safe_gather(
+            [resilient_frame["global_track_id"].count()],
+            dask_client=client,
+        )
+    ]
+    sync_preview = safe_head(resilient_frame, n=3, dask_client=client)
+    del persisted_frame
+    return {
+        "sync_row_count": sync_row_count,
+        "sync_gather": sync_gather,
+        "sync_preview": sync_preview,
+    }
+
+
+def _run_session_workload(helper: DataHelper, client: Any, columns: list[str]) -> dict[str, Any]:
+    engine_views = asyncio.run(_run_engine_views(helper, columns=columns))
+    frames = _load_resilient_frames(helper, columns)
+    resilient_frame = frames["resilient_frame"]
+
+    sync_summary = _run_sync_resilience(resilient_frame, client=client)
+    async_summary = asyncio.run(_run_async_resilience(resilient_frame, client=client))
+    probably_empty = dask_is_probably_empty(resilient_frame)
+    is_empty = dask_is_empty(resilient_frame, dask_client=client)
+    unique_values = asyncio.run(
+        UniqueValuesExtractor(dask_client=client).extract_unique_values(
+            resilient_frame,
+            "product_type_id",
+            "global_track_id",
+            limit=10,
+        )
+    )
+    del resilient_frame
+
+    return {
+        "engine_views": engine_views,
+        "dry_run_partitions": int(frames["dry_run_frame"].npartitions),
+        "sync_row_count": sync_summary["sync_row_count"],
+        "sync_gather": sync_summary["sync_gather"],
+        "sync_preview_ids": sync_summary["sync_preview"]["global_track_id"].tolist(),
+        "async_row_count": async_summary["row_count"],
+        "async_preview_ids": async_summary["preview_ids"],
+        "async_gather": async_summary["gathered"],
+        "probably_empty": probably_empty,
+        "is_empty": is_empty,
+        "unique_values": unique_values,
+    }
+
+
 def run_example() -> dict[str, Any]:
     with TemporaryDirectory() as tmp_dir:
         db_path = Path(tmp_dir) / "bootstrap_legacy.db"
         _seed_database(db_path)
 
-        helper = DataHelper(
-            backend="sqlalchemy",
-            connection_url=f"sqlite:///{db_path}",
-            poolclass="sqlalchemy.pool.NullPool",
-            query_only=False,
-            table="asm_tracking_productos",
-            field_map={
-                "id_track_global": "global_track_id",
-                "id_tipo_producto": "product_type_id",
-            },
-            sticky_filters={"product_type_id": 1},
-        )
+        helper = _build_helper(db_path)
 
         columns = ["id_producto", "cliente_id", "product_type_id", "global_track_id"]
         try:
@@ -150,70 +235,11 @@ def run_example() -> dict[str, Any]:
                     "dashboard_address": ":0",
                 },
             ) as client:
-                engine_views = asyncio.run(_run_engine_views(helper, columns=columns))
-                dry_run_frame = asyncio.run(
-                    helper.aload(
-                        global_track_id__in=[1, 2, 3, 4],
-                        columns=columns,
-                        return_type="dask",
-                        persist=True,
-                        resilient=True,
-                        diagnostics=True,
-                        dry_run=True,
-                    )
-                )
-                resilient_frame = asyncio.run(
-                    helper.aload(
-                        global_track_id__in=[1, 2, 3, 4],
-                        columns=columns,
-                        return_type="dask",
-                        persist=True,
-                        resilient=True,
-                        diagnostics=True,
-                    )
-                )
-                persisted_frame = safe_persist(resilient_frame, dask_client=client)
-                safe_wait(persisted_frame, dask_client=client, timeout=30)
-                sync_row_count = int(
-                    safe_compute(resilient_frame["global_track_id"].count(), dask_client=client)
-                )
-                sync_gather = [
-                    int(value)
-                    for value in safe_gather(
-                        [resilient_frame["global_track_id"].count()],
-                        dask_client=client,
-                    )
-                ]
-                sync_preview = safe_head(resilient_frame, n=3, dask_client=client)
-                async_summary = asyncio.run(_run_async_resilience(resilient_frame, client=client))
-                probably_empty = dask_is_probably_empty(resilient_frame)
-                is_empty = dask_is_empty(resilient_frame, dask_client=client)
-                unique_values = asyncio.run(
-                    UniqueValuesExtractor(dask_client=client).extract_unique_values(
-                        resilient_frame,
-                        "product_type_id",
-                        "global_track_id",
-                        limit=10,
-                    )
-                )
-                del persisted_frame
-                del resilient_frame
+                result = _run_session_workload(helper, client, columns)
         finally:
             helper.close()
 
-    return {
-        "engine_views": engine_views,
-        "dry_run_partitions": int(dry_run_frame.npartitions),
-        "sync_row_count": sync_row_count,
-        "sync_gather": sync_gather,
-        "sync_preview_ids": sync_preview["global_track_id"].tolist(),
-        "async_row_count": async_summary["row_count"],
-        "async_preview_ids": async_summary["preview_ids"],
-        "async_gather": async_summary["gathered"],
-        "probably_empty": probably_empty,
-        "is_empty": is_empty,
-        "unique_values": unique_values,
-    }
+    return result
 
 
 def main() -> dict[str, Any]:
@@ -235,4 +261,3 @@ def main() -> dict[str, Any]:
 
 if __name__ == "__main__":
     main()
-

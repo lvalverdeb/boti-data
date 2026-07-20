@@ -5,9 +5,10 @@ import os
 import random
 import statistics
 import time
+from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Callable
+from typing import Any
 
 from sqlalchemy import create_engine, text
 
@@ -39,7 +40,9 @@ def _seed_sqlite(db_path: Path) -> None:
                     for i in range(start, stop)
                 ]
                 conn.execute(
-                    text("insert into events(id, group_id, payload) values (:id, :group_id, :payload)"),
+                    text(
+                        "insert into events(id, group_id, payload) values (:id, :group_id, :payload)"
+                    ),
                     rows,
                 )
     finally:
@@ -55,6 +58,50 @@ def _measure(fn: Callable[[], int]) -> tuple[float, int]:
 
 def _median_ms(samples: list[float]) -> float:
     return round(statistics.median(samples), 2)
+
+
+def _build_scenarios(helper: DataHelper) -> dict[str, Callable[[list[int]], int]]:
+    return {
+        "sync_pandas_single": lambda ids: len(
+            helper.pandas.load(id__in=ids, in_chunk_strategy="off")
+        ),
+        "sync_pandas_auto_chunk": lambda ids: len(helper.pandas.load(id__in=ids)),
+        "sync_pandas_forced_chunk": lambda ids: len(
+            helper.pandas.load(id__in=ids, in_chunk_size=900, in_chunk_concurrency=4)
+        ),
+        "sync_dask_single": lambda ids: int(
+            helper.dask.load(id__in=ids, in_chunk_strategy="off").shape[0].compute()
+        ),
+        "sync_dask_auto_chunk": lambda ids: int(helper.dask.load(id__in=ids).shape[0].compute()),
+        "async_pandas_single": lambda ids: len(
+            asyncio.run(helper.pandas.aload(id__in=ids, in_chunk_strategy="off"))
+        ),
+        "async_pandas_auto_chunk": lambda ids: len(asyncio.run(helper.pandas.aload(id__in=ids))),
+    }
+
+
+def _benchmark_scenario(
+    name: str, scenario: Callable[[list[int]], int], ids: list[int], in_size: int
+) -> dict[str, Any]:
+    warm_rows = scenario(ids)
+    if warm_rows != in_size:
+        raise RuntimeError(
+            f"Warm-up mismatch for {name} in_size={in_size}: {warm_rows} != {in_size}"
+        )
+
+    samples: list[float] = []
+    for _ in range(REPEATS):
+        elapsed_ms, rows = _measure(lambda: scenario(ids))
+        if rows != in_size:
+            raise RuntimeError(f"Row mismatch for {name} in_size={in_size}: {rows} != {in_size}")
+        samples.append(elapsed_ms)
+
+    return {
+        "scenario": name,
+        "in_size": in_size,
+        "median_ms": _median_ms(samples),
+        "samples_ms": [round(value, 2) for value in samples],
+    }
 
 
 def run_benchmark() -> list[dict[str, Any]]:
@@ -74,58 +121,13 @@ def run_benchmark() -> list[dict[str, Any]]:
         try:
             os.environ["BENCH_DB_DSN"] = f"sqlite:///{db_path}"
             id_pool = list(range(1, ROW_COUNT + 1))
-
-            scenarios: dict[str, Callable[[list[int]], int]] = {
-                "sync_pandas_single": lambda ids: len(
-                    helper.pandas.load(id__in=ids, in_chunk_strategy="off")
-                ),
-                "sync_pandas_auto_chunk": lambda ids: len(helper.pandas.load(id__in=ids)),
-                "sync_pandas_forced_chunk": lambda ids: len(
-                    helper.pandas.load(
-                        id__in=ids,
-                        in_chunk_size=900,
-                        in_chunk_concurrency=4,
-                    )
-                ),
-                "sync_dask_single": lambda ids: int(
-                    helper.dask.load(id__in=ids, in_chunk_strategy="off").shape[0].compute()
-                ),
-                "sync_dask_auto_chunk": lambda ids: int(helper.dask.load(id__in=ids).shape[0].compute()),
-                "async_pandas_single": lambda ids: len(
-                    asyncio.run(
-                        helper.pandas.aload(id__in=ids, in_chunk_strategy="off")
-                    )
-                ),
-                "async_pandas_auto_chunk": lambda ids: len(asyncio.run(helper.pandas.aload(id__in=ids))),
-            }
+            scenarios = _build_scenarios(helper)
 
             results: list[dict[str, Any]] = []
             for in_size in IN_SIZES:
                 ids = random.sample(id_pool, in_size)
                 for name, scenario in scenarios.items():
-                    warm_rows = scenario(ids)
-                    if warm_rows != in_size:
-                        raise RuntimeError(
-                            f"Warm-up mismatch for {name} in_size={in_size}: {warm_rows} != {in_size}"
-                        )
-
-                    samples: list[float] = []
-                    for _ in range(REPEATS):
-                        elapsed_ms, rows = _measure(lambda: scenario(ids))
-                        if rows != in_size:
-                            raise RuntimeError(
-                                f"Row mismatch for {name} in_size={in_size}: {rows} != {in_size}"
-                            )
-                        samples.append(elapsed_ms)
-
-                    results.append(
-                        {
-                            "scenario": name,
-                            "in_size": in_size,
-                            "median_ms": _median_ms(samples),
-                            "samples_ms": [round(value, 2) for value in samples],
-                        }
-                    )
+                    results.append(_benchmark_scenario(name, scenario, ids, in_size))
             return results
         finally:
             helper.close()
@@ -140,4 +142,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

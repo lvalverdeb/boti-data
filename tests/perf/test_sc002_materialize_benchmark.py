@@ -4,6 +4,7 @@ SC-002: Materialize 100K rows from SQL to partitioned Parquet.
 Goal — no automated performance gate currently enforces this threshold.
 This is the gate. Run explicitly with: pytest tests/perf/ -m perf
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -65,6 +66,7 @@ def test_sc002_materialize_100k_rows(benchmark) -> None:
         )
         try:
             import os
+
             os.environ["SC002_BENCH_DB_DSN"] = f"sqlite:///{db_path}"
 
             pipeline = ParquetPipeline(
@@ -77,6 +79,7 @@ def test_sc002_materialize_100k_rows(benchmark) -> None:
                 date_field="event_date",
             )
             try:
+
                 def _materialize() -> int:
                     result = pipeline.materialize(reload=True, overwrite=True)
                     return len(result.frame) if result.frame is not None else 0

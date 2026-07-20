@@ -5,9 +5,11 @@ Provides Arrow-native equivalents of Dask operations like ``sort_by()``,
 ``drop_duplicates()``, and ``concat_tables()`` that are zero-copy or
 significantly faster than their pandas/Dask counterparts.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -15,6 +17,7 @@ import pyarrow.compute as pc
 # ---------------------------------------------------------------------------
 # Sort
 # ---------------------------------------------------------------------------
+
 
 def sort_table(
     table: pa.Table,
@@ -42,6 +45,45 @@ def sort_table(
 # Drop duplicates
 # ---------------------------------------------------------------------------
 
+
+def _drop_duplicates_keep_none(table: pa.Table, subset: Sequence[str]) -> pa.Table:
+    if len(subset) == 1:
+        key_col = table.column(subset[0])
+    else:
+        key_col = pa.StructArray.from_arrays(
+            [table.column(col) for col in subset],
+            names=subset,
+        )
+    # Keep only rows that appear exactly once — use Arrow compute to avoid
+    # materialising the column into Python objects via tolist().
+    value_counts = pc.value_counts(key_col)
+    singleton_values = value_counts.field("values").filter(
+        pc.equal(value_counts.field("counts"), pa.scalar(1, type=pa.int64()))
+    )
+    if len(singleton_values) == 0:
+        return table.slice(0, 0)
+    mask = pc.is_in(key_col, value_set=singleton_values)
+    return table.filter(mask)
+
+
+def _drop_duplicates_by_aggregate(
+    table: pa.Table, subset: Sequence[str], aggregation: str
+) -> pa.Table:
+    row_index_name = "__boti_row_index__"
+    indexed = table.append_column(
+        row_index_name,
+        pa.array(range(table.num_rows), type=pa.int64()),
+    )
+    grouped = indexed.group_by(list(subset)).aggregate([(row_index_name, aggregation)])
+    index_column_name = f"{row_index_name}_{aggregation}"
+    sorted_indices = (
+        pa.table({"idx": grouped[index_column_name]}).sort_by([("idx", "ascending")]).column("idx")
+    )
+    if len(sorted_indices) == 0:
+        return table.slice(0, 0)
+    return table.take(sorted_indices)
+
+
 def drop_duplicates(
     table: pa.Table,
     subset: Sequence[str] | None = None,
@@ -61,51 +103,19 @@ def drop_duplicates(
     if not subset:
         return table
 
-    if keep == "first":
-        aggregation = "min"
-    elif keep == "last":
-        aggregation = "max"
-    elif keep == "none":
-        if len(subset) == 1:
-            key_col = table.column(subset[0])
-        else:
-            key_col = pa.StructArray.from_arrays(
-                [table.column(col) for col in subset],
-                names=subset,
-            )
-        # Keep only rows that appear exactly once — use Arrow compute to avoid
-        # materialising the column into Python objects via tolist().
-        value_counts = pc.value_counts(key_col)
-        singleton_values = value_counts.field("values").filter(
-            pc.equal(value_counts.field("counts"), pa.scalar(1, type=pa.int64()))
-        )
-        if len(singleton_values) == 0:
-            return table.slice(0, 0)
-        mask = pc.is_in(key_col, value_set=singleton_values)
-        return table.filter(mask)
-    else:
+    if keep == "none":
+        return _drop_duplicates_keep_none(table, subset)
+    if keep not in ("first", "last"):
         raise ValueError(f"keep must be 'first', 'last', or 'none', got {keep!r}")
-
-    row_index_name = "__boti_row_index__"
-    indexed = table.append_column(
-        row_index_name,
-        pa.array(range(table.num_rows), type=pa.int64()),
-    )
-    grouped = indexed.group_by(list(subset)).aggregate([(row_index_name, aggregation)])
-    index_column_name = f"{row_index_name}_{aggregation}"
-    sorted_indices = (
-        pa.table({"idx": grouped[index_column_name]})
-        .sort_by([("idx", "ascending")])
-        .column("idx")
-    )
-    if len(sorted_indices) == 0:
-        return table.slice(0, 0)
-    return table.take(sorted_indices)
+    return _drop_duplicates_by_aggregate(table, subset, "min" if keep == "first" else "max")
 
 
 # ---------------------------------------------------------------------------
 # Group by + aggregate
 # ---------------------------------------------------------------------------
+
+_ARROW_AGG_FUNCTIONS = frozenset({"count", "sum", "mean", "min", "max", "any"})
+
 
 def group_by_aggregate(
     table: pa.Table,
@@ -128,31 +138,18 @@ def group_by_aggregate(
             aggregations={"salary": "sum", "age": "mean"},
         )
     """
+    unsupported = set(aggregations.values()) - _ARROW_AGG_FUNCTIONS
+    if unsupported:
+        raise ValueError(f"Unsupported aggregation(s): {sorted(unsupported)!r}")
+
     gb = table.group_by(group_keys)
-
-    agg_exprs = []
-    for col, fn in aggregations.items():
-        if fn == "count":
-            agg_exprs.append((col, "count"))
-        elif fn == "sum":
-            agg_exprs.append((col, "sum"))
-        elif fn == "mean":
-            agg_exprs.append((col, "mean"))
-        elif fn == "min":
-            agg_exprs.append((col, "min"))
-        elif fn == "max":
-            agg_exprs.append((col, "max"))
-        elif fn == "any":
-            agg_exprs.append((col, "any"))
-        else:
-            raise ValueError(f"Unsupported aggregation: {fn!r}")
-
-    return gb.aggregate(agg_exprs)
+    return gb.aggregate(list(aggregations.items()))
 
 
 # ---------------------------------------------------------------------------
 # Concat tables (zero-copy when schemas match)
 # ---------------------------------------------------------------------------
+
 
 def concat_tables(
     tables: Sequence[pa.Table],
@@ -177,6 +174,7 @@ def concat_tables(
 # ---------------------------------------------------------------------------
 # Select columns
 # ---------------------------------------------------------------------------
+
 
 def select_columns(table: pa.Table, columns: Sequence[str]) -> pa.Table:
     """Select specific columns from a table (O(1) operation)."""
@@ -209,6 +207,7 @@ def project_columns(
 # Head / limit
 # ---------------------------------------------------------------------------
 
+
 def head_table(table: pa.Table, n: int) -> pa.Table:
     """Return the first n rows of a table (zero-copy slice)."""
     return table.slice(0, min(n, table.num_rows))
@@ -218,31 +217,40 @@ def head_table(table: pa.Table, n: int) -> pa.Table:
 # Apply DataFrame options (Arrow equivalents of _apply_df_options)
 # ---------------------------------------------------------------------------
 
-def apply_table_options(
-    table: pa.Table,
-    *,
-    sort_field: str | None = None,
-    sort_ascending: bool = True,
-    duplicate_expr: list[str] | None = None,
-    duplicate_keep: str = "first",
-    group_by_expr: str | list[str] | None = None,
-    group_expr: str | dict[str, str] | None = None,
-    fieldnames: list[str] | None = None,
-    column_names: list[str] | None = None,
-) -> pa.Table:
+
+@dataclass(frozen=True)
+class TableOptionsSpec:
+    """Post-load transform options for apply_table_options()."""
+
+    sort_field: str | None = None
+    sort_ascending: bool = True
+    duplicate_expr: list[str] | None = None
+    duplicate_keep: str = "first"
+    group_by_expr: str | list[str] | None = None
+    group_expr: str | dict[str, str] | None = None
+    fieldnames: list[str] | None = None
+    column_names: list[str] | None = None
+
+
+def apply_table_options(table: pa.Table, options: TableOptionsSpec) -> pa.Table:
     """Apply post-load transform options to an Arrow Table.
 
     Arrow-native equivalent of ``DataGateway._apply_df_options()``.
     """
     # Sort
-    if sort_field:
-        table = sort_table(table, [(sort_field, "ascending" if sort_ascending else "descending")])
+    if options.sort_field:
+        table = sort_table(
+            table,
+            [(options.sort_field, "ascending" if options.sort_ascending else "descending")],
+        )
 
     # Drop duplicates
-    if duplicate_expr:
-        table = drop_duplicates(table, subset=duplicate_expr, keep=duplicate_keep)
+    if options.duplicate_expr:
+        table = drop_duplicates(table, subset=options.duplicate_expr, keep=options.duplicate_keep)
 
-    if group_by_expr is not None and group_expr is not None:
+    if options.group_by_expr is not None and options.group_expr is not None:
+        group_by_expr = options.group_by_expr
+        group_expr = options.group_expr
         group_keys = [group_by_expr] if isinstance(group_by_expr, str) else list(group_by_expr)
         if isinstance(group_expr, str):
             aggregations = {
@@ -253,12 +261,13 @@ def apply_table_options(
         table = group_by_aggregate(table, group_keys=group_keys, aggregations=aggregations)
 
     # Select/rename columns
+    fieldnames = options.fieldnames
     if fieldnames:
         table = select_columns(table, fieldnames)
 
-    if column_names:
+    if options.column_names:
         source_names = fieldnames if fieldnames else list(table.column_names)
-        rename_map = dict(zip(source_names, column_names))
+        rename_map = dict(zip(source_names, options.column_names))
         new_names = [rename_map.get(name, name) for name in table.column_names]
         table = table.rename_columns(new_names)
 
@@ -268,6 +277,7 @@ def apply_table_options(
 # ---------------------------------------------------------------------------
 # Semi-join pattern (Arrow native)
 # ---------------------------------------------------------------------------
+
 
 def semi_join(
     left: pa.Table,
@@ -306,6 +316,7 @@ def anti_join(
 # ---------------------------------------------------------------------------
 # Date range filtering (Arrow native)
 # ---------------------------------------------------------------------------
+
 
 def filter_date_range(
     table: pa.Table,

@@ -1,6 +1,7 @@
 """
 Tests for the dynamic SQLAlchemy model registry logic.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -10,15 +11,16 @@ from sqlalchemy.exc import SQLAlchemyError
 from boti_data.db.sql_model_registry import RegistryConfig, SqlModelRegistry
 
 
-def test_registry_dynamic_model_generation():
+def test_registry_dynamic_model_generation() -> None:
     engine = create_engine("sqlite:///:memory:")
 
     # Create the db schema manually
     metadata = MetaData()
     test_table = Table(
-        'test_dynamic_users', metadata,
-        Column('id', Integer, primary_key=True),
-        Column('name', String)
+        "test_dynamic_users",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("name", String),
     )
     metadata.create_all(engine)
 
@@ -35,16 +37,12 @@ def test_registry_dynamic_model_generation():
     assert UserModel is UserModel2
 
 
-def test_registry_missing_pk_fallback():
+def test_registry_missing_pk_fallback() -> None:
     """Verify registry dynamically falls back to sequential columns when PK is missing."""
     engine = create_engine("sqlite:///:memory:")
     metadata = MetaData()
 
-    Table(
-        'missing_pk_table', metadata,
-        Column('pseudo_id', Integer),
-        Column('data', String)
-    )
+    Table("missing_pk_table", metadata, Column("pseudo_id", Integer), Column("data", String))
     metadata.create_all(engine)
 
     messages: list[str] = []
@@ -62,9 +60,12 @@ def test_registry_missing_pk_fallback():
 
 
 @pytest.mark.asyncio
-async def test_async_registry_requires_greenlet_before_engine_use(monkeypatch):
+async def test_async_registry_requires_greenlet_before_engine_use(monkeypatch) -> None:
     """Verify async registry surfaces a clear dependency error."""
-    monkeypatch.setattr("boti_data.db.sql_model_registry.ensure_greenlet_available", lambda: (_ for _ in ()).throw(SQLAlchemyError("missing greenlet")))
+    monkeypatch.setattr(
+        "boti_data.db.sql_model_registry.ensure_greenlet_available",
+        lambda: (_ for _ in ()).throw(SQLAlchemyError("missing greenlet")),
+    )
 
     registry = SqlModelRegistry()
 
@@ -72,12 +73,12 @@ async def test_async_registry_requires_greenlet_before_engine_use(monkeypatch):
         await registry.get_model_async(object(), "panel_users")  # type: ignore[arg-type]
 
 
-def test_registry_config_rejects_invalid_default_module_label():
+def test_registry_config_rejects_invalid_default_module_label() -> None:
     with pytest.raises(ValueError, match="valid dotted Python module path"):
         RegistryConfig(default_module_label="bad-module/path")
 
 
-def test_registry_rejects_invalid_direct_module_label_override():
+def test_registry_rejects_invalid_direct_module_label_override() -> None:
     engine = create_engine("sqlite:///:memory:")
     metadata = MetaData()
     Table(
@@ -94,7 +95,7 @@ def test_registry_rejects_invalid_direct_module_label_override():
         registry.get_model(engine, "module_label_users", module_label="bad-module/path")
 
 
-def test_registry_rejects_module_label_outside_trusted_root():
+def test_registry_rejects_module_label_outside_trusted_root() -> None:
     engine = create_engine("sqlite:///:memory:")
     metadata = MetaData()
     Table(
@@ -110,7 +111,7 @@ def test_registry_rejects_module_label_outside_trusted_root():
         registry.get_model(engine, "external_module_users", module_label="os.path")
 
 
-def test_registry_rejects_existing_non_dynamic_module_namespace():
+def test_registry_rejects_existing_non_dynamic_module_namespace() -> None:
     engine = create_engine("sqlite:///:memory:")
     metadata = MetaData()
     Table(

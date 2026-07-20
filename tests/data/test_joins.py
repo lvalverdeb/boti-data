@@ -9,7 +9,29 @@ from boti_data.joins import indexed_left_join, left_join_frames
 from boti_data.schema import validate_schema
 
 
-def test_left_join_frames_normalizes_join_keys_for_pandas():
+def _build_left_right_dask_frames() -> tuple[dd.DataFrame, dd.DataFrame]:
+    left = dd.from_pandas(
+        pd.DataFrame(
+            {
+                "id": pd.Series([1, 2, 3], dtype="Int64"),
+                "left_value": ["a", "b", "c"],
+            }
+        ),
+        npartitions=2,
+    )
+    right = dd.from_pandas(
+        pd.DataFrame(
+            {
+                "id": pd.Series([1, 3], dtype="Int64"),
+                "right_value": ["x", "z"],
+            }
+        ),
+        npartitions=2,
+    )
+    return left, right
+
+
+def test_left_join_frames_normalizes_join_keys_for_pandas() -> None:
     left = pd.DataFrame(
         {
             "id": pd.Series([1, 2, 3], dtype="Int64"),
@@ -31,7 +53,7 @@ def test_left_join_frames_normalizes_join_keys_for_pandas():
     assert joined.loc[2, "right_value"] == "z"
 
 
-def test_left_join_frames_normalizes_join_keys_for_dask():
+def test_left_join_frames_normalizes_join_keys_for_dask() -> None:
     left = dd.from_pandas(
         pd.DataFrame(
             {
@@ -59,7 +81,7 @@ def test_left_join_frames_normalizes_join_keys_for_dask():
     assert computed.loc[2, "right_value"] == "z"
 
 
-def test_indexed_left_join_returns_expected_matches_for_dask():
+def test_indexed_left_join_returns_expected_matches_for_dask() -> None:
     left = dd.from_pandas(
         pd.DataFrame(
             {
@@ -95,7 +117,7 @@ def test_indexed_left_join_returns_expected_matches_for_dask():
     assert pd.isna(computed.loc[3, "right_value"])
 
 
-def test_indexed_left_join_computes_with_distributed_client():
+def test_indexed_left_join_computes_with_distributed_client() -> None:
     distributed = pytest.importorskip("dask.distributed")
     Client = distributed.Client
     LocalCluster = distributed.LocalCluster
@@ -119,12 +141,15 @@ def test_indexed_left_join_computes_with_distributed_client():
         npartitions=3,
     )
 
-    with LocalCluster(
-        n_workers=2,
-        threads_per_worker=1,
-        processes=False,
-        dashboard_address=":0",
-    ) as cluster, Client(cluster):
+    with (
+        LocalCluster(
+            n_workers=2,
+            threads_per_worker=1,
+            processes=False,
+            dashboard_address=":0",
+        ) as cluster,
+        Client(cluster),
+    ):
         joined = indexed_left_join(
             left,
             right,
@@ -138,7 +163,7 @@ def test_indexed_left_join_computes_with_distributed_client():
     assert computed["right_value"].isna().sum() == 250
 
 
-def test_align_join_columns_skips_noop_pandas_realignment(monkeypatch):
+def test_align_join_columns_skips_noop_pandas_realignment(monkeypatch) -> None:
     frame = pd.DataFrame(
         {
             "id": pd.Series([1, 2, 3], dtype="Int64"),
@@ -148,7 +173,9 @@ def test_align_join_columns_skips_noop_pandas_realignment(monkeypatch):
     monkeypatch.setattr(
         joins_module,
         "apply_schema_map",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("apply_schema_map should not run")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("apply_schema_map should not run")
+        ),
     )
 
     result = joins_module._align_join_columns(frame, {"id": "Int64"})
@@ -156,7 +183,7 @@ def test_align_join_columns_skips_noop_pandas_realignment(monkeypatch):
     assert result is frame
 
 
-def test_align_join_columns_skips_noop_dask_realignment(monkeypatch):
+def test_align_join_columns_skips_noop_dask_realignment(monkeypatch) -> None:
     frame = dd.from_pandas(
         pd.DataFrame(
             {
@@ -169,7 +196,9 @@ def test_align_join_columns_skips_noop_dask_realignment(monkeypatch):
     monkeypatch.setattr(
         joins_module,
         "apply_schema_map",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("apply_schema_map should not run")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("apply_schema_map should not run")
+        ),
     )
 
     result = joins_module._align_join_columns(frame, {"id": "Int64"})
@@ -177,28 +206,11 @@ def test_align_join_columns_skips_noop_dask_realignment(monkeypatch):
     assert result is frame
 
 
-def test_indexed_left_join_uses_safe_persist_when_resilient(monkeypatch):
-    left = dd.from_pandas(
-        pd.DataFrame(
-            {
-                "id": pd.Series([1, 2, 3], dtype="Int64"),
-                "left_value": ["a", "b", "c"],
-            }
-        ),
-        npartitions=2,
-    )
-    right = dd.from_pandas(
-        pd.DataFrame(
-            {
-                "id": pd.Series([1, 3], dtype="Int64"),
-                "right_value": ["x", "z"],
-            }
-        ),
-        npartitions=2,
-    )
+def test_indexed_left_join_uses_safe_persist_when_resilient(monkeypatch) -> None:
+    left, right = _build_left_right_dask_frames()
     calls: list[int] = []
 
-    def fake_safe_persist(frame, *, dask_client=None, logger=None):
+    def fake_safe_persist(frame, *, dask_client=None, logger=None) -> dd.DataFrame:
         calls.append(frame.npartitions)
         return frame.persist()
 
@@ -220,25 +232,8 @@ def test_indexed_left_join_uses_safe_persist_when_resilient(monkeypatch):
     assert computed.loc[2, "right_value"] == "z"
 
 
-def test_indexed_left_join_dry_run_skips_persist_and_logs(monkeypatch):
-    left = dd.from_pandas(
-        pd.DataFrame(
-            {
-                "id": pd.Series([1, 2, 3], dtype="Int64"),
-                "left_value": ["a", "b", "c"],
-            }
-        ),
-        npartitions=2,
-    )
-    right = dd.from_pandas(
-        pd.DataFrame(
-            {
-                "id": pd.Series([1, 3], dtype="Int64"),
-                "right_value": ["x", "z"],
-            }
-        ),
-        npartitions=2,
-    )
+def test_indexed_left_join_dry_run_skips_persist_and_logs(monkeypatch) -> None:
+    left, right = _build_left_right_dask_frames()
 
     logger = type(
         "Logger",
@@ -251,7 +246,7 @@ def test_indexed_left_join_dry_run_skips_persist_and_logs(monkeypatch):
         },
     )()
 
-    def fail_safe_persist(*_args, **_kwargs):
+    def fail_safe_persist(*_args, **_kwargs) -> None:
         raise AssertionError("safe_persist should not run in dry_run mode")
 
     monkeypatch.setattr(joins_module, "safe_persist", fail_safe_persist)
@@ -271,4 +266,6 @@ def test_indexed_left_join_dry_run_skips_persist_and_logs(monkeypatch):
 
     assert computed.loc[0, "right_value"] == "x"
     assert any("dry run requested; persist steps skipped" in message for message in logger.infos)
-    assert any("dry run requested; execution skipped with graph=" in message for message in logger.infos)
+    assert any(
+        "dry run requested; execution skipped with graph=" in message for message in logger.infos
+    )

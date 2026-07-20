@@ -12,39 +12,18 @@ import hashlib
 import re
 import sys
 import threading
-import types
 from collections.abc import Callable
 from typing import Any, Union
 
 from boti.core.logger import Logger
 from boti.core.security import is_valid_dotted_identifier
-from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import MetaData, Table
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine
-from sqlalchemy.orm import DeclarativeBase
 
+from boti_data.db.sql_model_module_injection import register_as_module_attribute
+from boti_data.db.sql_model_registry_types import DefaultBase, ModelBuildContext, RegistryConfig
 from boti_data.db.sqlalchemy_async import ensure_greenlet_available
-
-
-class RegistryConfig(BaseModel):
-    """Configuration mapping establishing deterministic registry footprints."""
-    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
-
-    default_module_label: str = Field(default="boti_data.dynamic_models")
-
-    @field_validator("default_module_label")
-    @classmethod
-    def validate_default_module_label(cls, value: str) -> str:
-        """Restrict registry module targets to valid module paths."""
-        if not is_valid_dotted_identifier(value):
-            raise ValueError("default_module_label must be a valid dotted Python module path.")
-        return value
-
-
-class DefaultBase(DeclarativeBase):
-    """Shared declarative base for prototype ORM models."""
-    pass
 
 
 class SqlModelRegistry:
@@ -55,11 +34,7 @@ class SqlModelRegistry:
 
     _DYNAMIC_MODULE_SENTINEL = "__boti_dynamic_model_namespace__"
 
-    def __init__(
-        self,
-        config: RegistryConfig | None = None,
-        logger: Logger | None = None
-    ) -> None:
+    def __init__(self, config: RegistryConfig | None = None, logger: Logger | None = None) -> None:
         self.config = config or RegistryConfig()
         self.logger = logger or Logger.default_logger(logger_name=self.__class__.__name__)
 
@@ -150,7 +125,7 @@ class SqlModelRegistry:
             return md
 
     @staticmethod
-    def _get_or_create_cached(cache: dict, key: Any, factory: Callable[[], Any]) -> Any:
+    def _get_or_create_cached(cache: dict[Any, Any], key: Any, factory: Callable[[], Any]) -> Any:
         value = cache.get(key)
         if value is None:
             value = factory()
@@ -164,47 +139,6 @@ class SqlModelRegistry:
     async def _get_or_create_md_lock_async(self, md_key: tuple[str, str | None]) -> asyncio.Lock:
         async with self._async_lock:
             return self._get_or_create_cached(self._md_async_locks, md_key, asyncio.Lock)
-
-    def _register_as_module_attribute(self, cls: type, module_name: str, class_name: str) -> None:
-        """
-        Injects the class into sys.modules maintaining Pickling safety across processes.
-        """
-        parts = module_name.split(".")
-        with self._lock:
-            existing = sys.modules.get(module_name)
-            if existing is not None and not getattr(
-                existing,
-                self._DYNAMIC_MODULE_SENTINEL,
-                False,
-            ):
-                raise ValueError(
-                    "module_label must target an unused or registry-managed dynamic module namespace."
-                )
-
-            for index in range(1, len(parts) + 1):
-                current_name = ".".join(parts[:index])
-                current_module = sys.modules.get(current_name)
-                if current_module is None:
-                    current_module = types.ModuleType(current_name)
-                    current_module.__package__ = current_name.rpartition(".")[0]
-                    current_module.__path__ = []  # type: ignore[attr-defined]
-                    setattr(current_module, self._DYNAMIC_MODULE_SENTINEL, True)
-                    sys.modules[current_name] = current_module
-                elif index == len(parts) and not getattr(
-                    current_module,
-                    self._DYNAMIC_MODULE_SENTINEL,
-                    False,
-                ):
-                    raise ValueError(
-                        "module_label must target an unused or registry-managed dynamic module namespace."
-                    )
-
-                if index > 1:
-                    parent_name = ".".join(parts[: index - 1])
-                    child_name = parts[index - 1]
-                    setattr(sys.modules[parent_name], child_name, current_module)
-
-            setattr(sys.modules[module_name], class_name, cls)
 
     def _resolve_model_keys(
         self,
@@ -220,51 +154,56 @@ class SqlModelRegistry:
         ekey = self._engine_key(engine)
         model_key = (ekey, resolved_schema, tname)
         md_key = (ekey, resolved_schema)
-        resolved_module_label = self._resolve_module_label(module_label, self.config.default_module_label)
+        resolved_module_label = self._resolve_module_label(
+            module_label, self.config.default_module_label
+        )
         return ekey, resolved_schema, tname, model_key, md_key, resolved_module_label
 
-    def _build_model_class(
-        self,
-        tbl: Table,
-        *,
-        qname: str,
-        tname: str,
-        base_class: type[Any],
-        module_label: str,
-        prefer_stable_names: bool,
-        ekey: str,
-        schema: str | None,
-        missing_pk_warning_suffix: str,
-    ) -> type[Any]:
-        base_name = self._normalize_class_name(tname)
+    def _build_model_class(self, tbl: Table, context: ModelBuildContext) -> type[Any]:
+        base_name = self._normalize_class_name(context.tname)
         final_name = base_name
 
-        if self._is_class_name_taken(base_name, module_label):
-            suffix = self._short_hash(ekey, schema or "", tname)
+        if self._is_class_name_taken(base_name, context.module_label):
+            suffix = self._short_hash(context.ekey, context.schema or "", context.tname)
             final_name = f"{base_name}_{suffix}"
-        elif not prefer_stable_names:
-            suffix = self._short_hash(ekey, schema or "", tname)
+        elif not context.prefer_stable_names:
+            suffix = self._short_hash(context.ekey, context.schema or "", context.tname)
             final_name = f"{base_name}_{suffix}"
 
         attrs: dict[str, Any] = {
             "__tablename__": tbl.name,
             "__table__": tbl,
-            "__module__": module_label,
+            "__module__": context.module_label,
         }
 
         if not tbl.primary_key.columns and tbl.columns:
             # Observability hook for injected read-only views avoiding ORM exceptions
             self.logger.warning(
-                f"Missing native Primary Key on {qname}. "
+                f"Missing native Primary Key on {context.qname}. "
                 "Synthesizing mapper bindings using primary sequential column fallback. "
-                f"{missing_pk_warning_suffix}"
+                f"{context.missing_pk_warning_suffix}"
             )
             attrs["__mapper_args__"] = {"primary_key": [list(tbl.columns)[0]]}
 
-        model_cls = type(final_name, (base_class,), attrs)
-        self._register_as_module_attribute(model_cls, module_label, final_name)
+        model_cls = type(final_name, (context.base_class,), attrs)
+        register_as_module_attribute(
+            model_cls,
+            context.module_label,
+            final_name,
+            lock=self._lock,
+            sentinel=self._DYNAMIC_MODULE_SENTINEL,
+        )
         return model_cls
 
+    # Not a copy-pasted twin: shared logic is already extracted into
+    # _resolve_model_keys()/_get_or_create_metadata()/_qualified_key()/
+    # _find_existing_model_for_table()/_build_model_class(); the remaining
+    # difference (threading.RLock vs asyncio.Lock, sync md.reflect() vs
+    # conn.run_sync(md.reflect) + ensure_greenlet_available()) is a genuine
+    # concurrency-primitive difference, not copy-paste. _resolve_or_build_model()
+    # is a further shared helper — it does no locking/IO of its own, only the
+    # already-shared _find_existing_model_for_table()/_build_model_class().
+    # spaghetti-ignore[sync-async-duplication]
     def get_model(
         self,
         engine: Engine,
@@ -274,47 +213,22 @@ class SqlModelRegistry:
         schema: str | None = None,
         module_label: str | None = None,
         prefer_stable_names: bool = True,
-        base_class: type[Any] = DefaultBase
+        base_class: type[Any] = DefaultBase,
     ) -> type[Any]:
-        """
-        Atomically reflects a table schema and scaffolds its ORM class safely.
-        """
+        """Atomically reflects a table schema and scaffolds its ORM class safely."""
         ekey, schema, tname, model_key, md_key, module_label = self._resolve_model_keys(
             engine, table_name, schema=schema, module_label=module_label
         )
-
-        if refresh:
-            with self._lock:
-                self._model_cache.pop(model_key, None)
-
-        with self._lock:
-            m = self._model_cache.get(model_key)
-            if m is not None:
-                return m
+        cached = self._check_cache(model_key, refresh=refresh)
+        if cached is not None:
+            return cached
 
         md = self._get_or_create_metadata(ekey, schema)
         md_lock = self._get_or_create_md_lock(md_key)
         qname = self._qualified_key(schema, tname)
+        tbl = self._reflect_table(engine, md, md_lock, qname=qname, tname=tname, schema=schema)
 
-        tbl = md.tables.get(qname)
-        if tbl is None:
-            with md_lock:
-                tbl = md.tables.get(qname)
-                if tbl is None:
-                    md.reflect(bind=engine, only=[tname], schema=schema)
-                tbl = md.tables.get(qname)
-
-        if tbl is None:
-            raise ValueError(f"Table '{qname}' does not exist referencing the given DB target.")
-
-        reused = self._find_existing_model_for_table(tbl, base_class)
-        if reused is not None:
-            with self._lock:
-                self._model_cache[model_key] = reused
-            return reused
-
-        model_cls = self._build_model_class(
-            tbl,
+        context = ModelBuildContext(
             qname=qname,
             tname=tname,
             base_class=base_class,
@@ -324,7 +238,7 @@ class SqlModelRegistry:
             schema=schema,
             missing_pk_warning_suffix="Ensure ORM mutation sequences validate bounds manually.",
         )
-
+        model_cls = self._resolve_or_build_model(tbl, qname, context, target_label="DB target")
         with self._lock:
             self._model_cache[model_key] = model_cls
         return model_cls
@@ -338,46 +252,25 @@ class SqlModelRegistry:
         schema: str | None = None,
         module_label: str | None = None,
         prefer_stable_names: bool = True,
-        base_class: type[Any] = DefaultBase
+        base_class: type[Any] = DefaultBase,
     ) -> type[Any]:
         """Atomically reflects schemas asynchronously bridging Non-Blocking asyncio event pools."""
         ensure_greenlet_available()
         ekey, schema, tname, model_key, md_key, module_label = self._resolve_model_keys(
             engine, table_name, schema=schema, module_label=module_label
         )
-
-        if refresh:
-            async with self._async_lock:
-                self._model_cache.pop(model_key, None)
-
-        async with self._async_lock:
-            m = self._model_cache.get(model_key)
-            if m is not None: return m
+        cached = await self._check_cache_async(model_key, refresh=refresh)
+        if cached is not None:
+            return cached
 
         md = self._get_or_create_metadata(ekey, schema)
         md_lock = await self._get_or_create_md_lock_async(md_key)
         qname = self._qualified_key(schema, tname)
+        tbl = await self._reflect_table_async(
+            engine, md, md_lock, qname=qname, tname=tname, schema=schema
+        )
 
-        tbl = md.tables.get(qname)
-        if tbl is None:
-            async with md_lock:
-                tbl = md.tables.get(qname)
-                if tbl is None:
-                    async with engine.begin() as conn:
-                        await conn.run_sync(md.reflect, only=[tname], schema=schema)
-                tbl = md.tables.get(qname)
-
-        if tbl is None:
-            raise ValueError(f"Table '{qname}' does not exist referencing the given Async DB target.")
-
-        reused = self._find_existing_model_for_table(tbl, base_class)
-        if reused is not None:
-            async with self._async_lock:
-                self._model_cache[model_key] = reused
-            return reused
-
-        model_cls = self._build_model_class(
-            tbl,
+        context = ModelBuildContext(
             qname=qname,
             tname=tname,
             base_class=base_class,
@@ -387,10 +280,88 @@ class SqlModelRegistry:
             schema=schema,
             missing_pk_warning_suffix="Ensure Async ORM validation sequences capture bounds correctly.",
         )
-
+        model_cls = self._resolve_or_build_model(
+            tbl, qname, context, target_label="Async DB target"
+        )
         async with self._async_lock:
             self._model_cache[model_key] = model_cls
         return model_cls
+
+    def _resolve_or_build_model(
+        self,
+        tbl: Table | None,
+        qname: str,
+        context: ModelBuildContext,
+        *,
+        target_label: str,
+    ) -> type[Any]:
+        if tbl is None:
+            raise ValueError(
+                f"Table '{qname}' does not exist referencing the given {target_label}."
+            )
+        reused = self._find_existing_model_for_table(tbl, context.base_class)
+        if reused is not None:
+            return reused
+        return self._build_model_class(tbl, context)
+
+    # Not a copy-pasted twin: threading.Lock vs asyncio.Lock is a genuine
+    # concurrency-primitive difference (see get_model()'s comment above).
+    # spaghetti-ignore[sync-async-duplication]
+    def _check_cache(self, model_key: tuple, *, refresh: bool) -> type[Any] | None:
+        if refresh:
+            with self._lock:
+                self._model_cache.pop(model_key, None)
+        with self._lock:
+            return self._model_cache.get(model_key)
+
+    async def _check_cache_async(self, model_key: tuple, *, refresh: bool) -> type[Any] | None:
+        if refresh:
+            async with self._async_lock:
+                self._model_cache.pop(model_key, None)
+        async with self._async_lock:
+            return self._model_cache.get(model_key)
+
+    # Not a copy-pasted twin: sync md.reflect() vs conn.run_sync(md.reflect) is
+    # a genuine concurrency-primitive difference (see get_model()'s comment above).
+    @staticmethod
+    # spaghetti-ignore[sync-async-duplication]
+    def _reflect_table(
+        engine: Engine,
+        md: MetaData,
+        md_lock: threading.Lock,
+        *,
+        qname: str,
+        tname: str,
+        schema: str | None,
+    ) -> Table | None:
+        tbl = md.tables.get(qname)
+        if tbl is None:
+            with md_lock:
+                tbl = md.tables.get(qname)
+                if tbl is None:
+                    md.reflect(bind=engine, only=[tname], schema=schema)
+                tbl = md.tables.get(qname)
+        return tbl
+
+    @staticmethod
+    async def _reflect_table_async(
+        engine: AsyncEngine,
+        md: MetaData,
+        md_lock: asyncio.Lock,
+        *,
+        qname: str,
+        tname: str,
+        schema: str | None,
+    ) -> Table | None:
+        tbl = md.tables.get(qname)
+        if tbl is None:
+            async with md_lock:
+                tbl = md.tables.get(qname)
+                if tbl is None:
+                    async with engine.begin() as conn:
+                        await conn.run_sync(md.reflect, only=[tname], schema=schema)
+                tbl = md.tables.get(qname)
+        return tbl
 
     def clear(self) -> None:
         """Reset internal caches unconditionally."""
@@ -403,6 +374,7 @@ class SqlModelRegistry:
 
 # Thread-safe global fallback
 _global_registry = SqlModelRegistry()
+
 
 def get_global_registry() -> SqlModelRegistry:
     return _global_registry

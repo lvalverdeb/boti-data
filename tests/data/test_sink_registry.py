@@ -6,12 +6,12 @@ from boti_data import SinkRegistry, available_sinks, create_sink, register_sink
 from boti_data.pipelines.sinks import CsvSink, JsonlSink
 
 
-def test_global_sink_registry_exposes_builtin_sinks():
+def test_global_sink_registry_exposes_builtin_sinks() -> None:
     names = set(available_sinks())
     assert {"parquet", "csv", "jsonl"}.issubset(names)
 
 
-def test_global_sink_registry_creates_builtin_sink_instances(temp_project_root):
+def test_global_sink_registry_creates_builtin_sink_instances(temp_project_root) -> None:
     csv_sink = create_sink(
         "csv",
         {
@@ -35,17 +35,17 @@ def test_global_sink_registry_creates_builtin_sink_instances(temp_project_root):
         jsonl_sink.close()
 
 
-def test_sink_registry_register_and_overwrite_behaviour():
+def test_sink_registry_register_and_overwrite_behaviour() -> None:
     registry = SinkRegistry()
 
     class DummySink:
         def __init__(self, config):
             self.config = config
 
-        def write(self, *args, **kwargs):
+        def write(self, *args, **kwargs) -> None:
             raise NotImplementedError
 
-        async def awrite(self, *args, **kwargs):
+        async def awrite(self, *args, **kwargs) -> None:
             raise NotImplementedError
 
     registry.register("dummy", lambda config: DummySink(config))
@@ -59,15 +59,15 @@ def test_sink_registry_register_and_overwrite_behaviour():
     assert getattr(overwritten, "config") == {"overwritten": True}
 
 
-def test_register_sink_global_helper_supports_custom_factory():
+def test_register_sink_global_helper_supports_custom_factory() -> None:
     class TinySink:
         def __init__(self, config):
             self.config = config
 
-        def write(self, *args, **kwargs):
+        def write(self, *args, **kwargs) -> None:
             raise NotImplementedError
 
-        async def awrite(self, *args, **kwargs):
+        async def awrite(self, *args, **kwargs) -> None:
             raise NotImplementedError
 
     name = "tiny_test_sink"

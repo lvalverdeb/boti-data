@@ -1,12 +1,14 @@
 """
-Tests for the SQLAlchemy connection manager and engine registry.
+Tests for SqlDatabaseResource/AsyncSqlDatabaseResource lifecycle, query-only
+enforcement, pickling, and worker-config resolution.
+
+Split out of test_sql_manager.py purely for god-module/long-file headroom.
 """
 
 import asyncio
 import pickle
 
 import pytest
-from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm.exc import UnmappedInstanceError
@@ -19,83 +21,33 @@ from boti_data.db.sql_manager import (
     SqlDatabaseResource,
     _create_worker_sync_engine,
 )
-from boti_data.db.sqlalchemy_async import ensure_greenlet_available
 
 
-def test_config_validation():
-    """Verify DSN and initialization constraints are respected."""
-    # Invalid: missing URL
-    with pytest.raises(ValidationError):
-        SqlDatabaseConfig()
+class _SlowDisposeEngine:
+    """Fake async engine whose ``dispose()`` suspends via a real await point,
+    exposing TOCTOU races that a no-await fake cannot (asyncio only switches
+    tasks at genuine suspension points)."""
 
-    # Valid config
-    config = SqlDatabaseConfig(connection_url="sqlite:///:memory:")
-    assert config.pool_pre_ping is True
-    assert config.query_only is True
+    sync_engine = object()
+    dispose_calls = 0
 
-
-def test_config_from_env_uses_pydantic_settings(monkeypatch):
-    """Verify env-backed DB settings load through pydantic-settings."""
-    monkeypatch.setenv("DB_CONNECTION_URL", "sqlite:///:memory:")
-    monkeypatch.setenv("DB_POOL_SIZE", "9")
-    monkeypatch.setenv("DB_QUERY_ONLY", "false")
-
-    config = SqlDatabaseConfig.from_env()
-
-    assert config.connection_url.get_secret_value() == "sqlite:///:memory:"
-    assert config.pool_size == 9
-    assert config.query_only is False
+    async def dispose(self) -> None:
+        await asyncio.sleep(0.05)
+        _SlowDisposeEngine.dispose_calls += 1
 
 
-def test_config_from_env_file_uses_pydantic_settings(tmp_path):
-    """Verify dotenv-backed DB settings load through pydantic-settings."""
-    env_file = tmp_path / ".env"
-    env_file.write_text(
-        "DB_CONNECTION_URL='sqlite:///:memory:'\nDB_POOL_TIMEOUT=41\n",
-        encoding="utf-8",
-    )
+def _make_fake_get_or_create_async(engine_key: tuple, shared_engine: _SlowDisposeEngine):
+    async def fake_get_or_create_async(*_args, **_kwargs) -> tuple[_SlowDisposeEngine, bool]:
+        # Register this resource's own reference (ref_count=1), the way the
+        # real EngineRegistry.get_or_create_async would.
+        with EngineRegistry._lock:
+            EngineRegistry._registry[engine_key] = {"engine": shared_engine, "ref_count": 1}
+        return shared_engine, False
 
-    config = SqlDatabaseConfig.from_env(env_file=env_file)
-
-    assert config.connection_url.get_secret_value() == "sqlite:///:memory:"
-    assert config.pool_timeout == 41
+    return fake_get_or_create_async
 
 
-def test_config_from_named_env_prefix(tmp_path):
-    """Verify multiple DB profiles can be loaded from explicit prefixes."""
-    env_file = tmp_path / ".env"
-    env_file.write_text(
-        "\n".join(
-            [
-                "PRIMARY_DB_CONNECTION_URL='sqlite:///:memory:'",
-                "PRIMARY_DB_QUERY_ONLY=false",
-                "PRIMARY_DB_POOL_SIZE=7",
-                "ANALYTICS_DB_CONNECTION_URL='sqlite:///:memory:'",
-                "ANALYTICS_DB_QUERY_ONLY=true",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    primary = SqlDatabaseConfig.from_env_prefix("PRIMARY_DB_", env_file=env_file)
-    analytics = SqlDatabaseConfig.from_env_prefix("ANALYTICS_DB_", env_file=env_file)
-
-    assert primary.pool_size == 7
-    assert primary.query_only is False
-    assert analytics.query_only is True
-
-
-def test_config_rejects_non_allowlisted_poolclass_import():
-    """Verify poolclass import strings are restricted to a safe allowlist."""
-    with pytest.raises(ValidationError, match="poolclass must be one of"):
-        SqlDatabaseConfig(
-            connection_url="sqlite:///:memory:",
-            poolclass="subprocess.Popen",
-        )
-
-
-def test_resource_initializes_engine_correctly():
+def test_resource_initializes_engine_correctly() -> None:
     """Verify the context manager builds the engine securely."""
     config = SqlDatabaseConfig(
         connection_url="sqlite:///:memory:",
@@ -115,84 +67,7 @@ def test_resource_initializes_engine_correctly():
             assert session.execute(text("SELECT 1")).scalar() == 1
 
 
-def test_engine_registry_reference_counting():
-    """Verify the registry correctly shares and discards connection pools."""
-    config = SqlDatabaseConfig(connection_url="sqlite:///:memory:", query_only=False)
-
-    # Track the underlying key using the config
-    # To properly simulate duplicate configs, we create two resources
-    res1 = SqlDatabaseResource(config)
-    res2 = SqlDatabaseResource(config)
-
-    assert res1._engine is res2._engine
-
-    key = res1._engine_key
-    assert EngineRegistry._registry[key]["ref_count"] == 2
-
-    # Close first resource
-    res1.close()
-    assert key in EngineRegistry._registry
-    assert EngineRegistry._registry[key]["ref_count"] == 1
-
-    # Close second resource
-    res2.close()
-    assert key not in EngineRegistry._registry
-
-
-def test_engine_registry_creates_sync_engine_outside_registry_lock(monkeypatch):
-    if not hasattr(EngineRegistry._lock, "_is_owned"):
-        pytest.skip("RLock ownership inspection is unavailable on this runtime")
-
-    class DummyEngine:
-        def dispose(self) -> None:
-            pass
-
-    owned_states = []
-
-    def fake_create_engine(_url: str, **_kwargs):
-        owned_states.append(EngineRegistry._lock._is_owned())
-        return DummyEngine()
-
-    key = ("sync-lock-test",)
-    monkeypatch.setattr("boti_data.db.engine_registry.create_engine", fake_create_engine)
-
-    try:
-        _engine, reused = EngineRegistry.get_or_create(key, "sqlite://")
-        assert reused is False
-        assert owned_states == [False]
-    finally:
-        EngineRegistry.release(key)
-
-
-@pytest.mark.asyncio
-async def test_engine_registry_creates_async_engine_outside_registry_lock(monkeypatch):
-    if not hasattr(EngineRegistry._lock, "_is_owned"):
-        pytest.skip("RLock ownership inspection is unavailable on this runtime")
-
-    class DummyAsyncEngine:
-        async def dispose(self) -> None:
-            return None
-
-    owned_states = []
-
-    def fake_create_async_engine(_url: str, **_kwargs):
-        owned_states.append(EngineRegistry._lock._is_owned())
-        return DummyAsyncEngine()
-
-    key = ("async-lock-test",)
-    monkeypatch.setattr(
-        "boti_data.db.engine_registry.create_async_engine", fake_create_async_engine
-    )
-
-    try:
-        _engine, reused = await EngineRegistry.get_or_create_async(key, "sqlite+aiosqlite://")
-        assert reused is False
-        assert owned_states == [False]
-    finally:
-        await EngineRegistry.release_async(key)
-
-
-def test_resource_cleanup_failure_resilience():
+def test_resource_cleanup_failure_resilience() -> None:
     """Verify resource cleanup is gracefully handled and engine is destroyed."""
     config = SqlDatabaseConfig(connection_url="sqlite:///:memory:", query_only=False)
     db = SqlDatabaseResource(config)
@@ -205,66 +80,13 @@ def test_resource_cleanup_failure_resilience():
     assert engine.pool is not None  # It was active before, now detached safely
 
 
-def test_sync_resource_rejects_async_dsn_with_actionable_error():
-    """Verify synchronous resources fail fast on async-only drivers."""
-    config = SqlDatabaseConfig(connection_url="mysql+asyncmy://user:pass@localhost/test_db")
-
-    with pytest.raises(SQLAlchemyError, match="only supports synchronous SQLAlchemy drivers"):
-        SqlDatabaseResource(config)
-
-
-def test_sync_resource_rejects_missing_driver_with_actionable_error():
-    """A syntactically valid DSN whose DBAPI driver package isn't installed must
-    fail fast with a clear message naming the missing package, instead of only
-    surfacing deep inside create_engine()/first connect(). boti-data does not
-    declare a Postgres driver dependency, so psycopg2 is reliably absent here."""
-    config = SqlDatabaseConfig(connection_url="postgresql+psycopg2://user:pass@localhost/test_db")
-
-    with pytest.raises(SQLAlchemyError, match="driver package is not installed"):
-        SqlDatabaseResource(config)
-
-
-def test_sync_resource_normalizes_common_mysql_driver_alias():
-    """Verify legacy mysql+pymsql DSNs are coerced to the supported pymysql driver."""
-    config = SqlDatabaseConfig(
-        connection_url="mysql+pymsql://user:pass@localhost/test_db",
-        query_only=False,
-        poolclass="sqlalchemy.pool.NullPool",
-    )
-
-    db = SqlDatabaseResource(config)
-
-    try:
-        assert db.engine.url.drivername == "mysql+pymysql"
-    finally:
-        db.close()
-
-
-@pytest.mark.asyncio
-async def test_async_resource_rejects_sync_dsn_with_actionable_error():
-    """Verify async resources fail fast on synchronous drivers."""
-    config = SqlDatabaseConfig(connection_url="mysql+pymysql://user:pass@localhost/test_db")
-
-    with pytest.raises(SQLAlchemyError, match="requires an asynchronous SQLAlchemy driver"):
-        async with AsyncSqlDatabaseResource(config):
-            pass
-
-
-def test_async_sqlalchemy_requires_greenlet(monkeypatch):
-    """Verify missing greenlet raises a clear installation error."""
-    monkeypatch.setattr("boti_data.db.sqlalchemy_async.find_spec", lambda name: None)
-
-    with pytest.raises(SQLAlchemyError, match="require the 'greenlet' package"):
-        ensure_greenlet_available()
-
-
-def test_sync_resource_defaults_to_query_only():
+def test_sync_resource_defaults_to_query_only() -> None:
     """Verify synchronous query_only relies on native database-enforced read-only access."""
     # Prepare a writable SQLite database first, then reopen it through a read-only DSN.
     # SQLAlchemy requires URI mode for SQLite read-only connections.
     from sqlalchemy import create_engine
 
-    def create_db(path):
+    def create_db(path) -> None:
         engine = create_engine(f"sqlite:///{path}")
         with engine.begin() as conn:
             conn.exec_driver_sql("CREATE TABLE readonly_table (id INTEGER PRIMARY KEY, name TEXT)")
@@ -298,7 +120,7 @@ def test_sync_resource_defaults_to_query_only():
                 session.commit()
 
 
-def test_query_only_rejects_sqlite_memory_without_native_read_only():
+def test_query_only_rejects_sqlite_memory_without_native_read_only() -> None:
     """Verify query_only=True rejects SQLite DSNs that cannot enforce read-only mode."""
     config = SqlDatabaseConfig(
         connection_url="sqlite:///:memory:", poolclass="sqlalchemy.pool.StaticPool"
@@ -309,7 +131,7 @@ def test_query_only_rejects_sqlite_memory_without_native_read_only():
 
 
 @pytest.mark.asyncio
-async def test_async_resource_defaults_to_query_only():
+async def test_async_resource_defaults_to_query_only() -> None:
     """Verify async sessions remain read-only by default."""
     config = SqlDatabaseConfig(connection_url="mysql+asyncmy://user:pass@localhost/test_db")
 
@@ -323,7 +145,7 @@ async def test_async_resource_defaults_to_query_only():
             await session.commit()
 
 
-def test_query_only_false_allows_sync_mutations():
+def test_query_only_false_allows_sync_mutations() -> None:
     """Verify explicitly disabling query-only mode restores write capabilities."""
     config = SqlDatabaseConfig(
         connection_url="sqlite:///:memory:",
@@ -342,7 +164,7 @@ def test_query_only_false_allows_sync_mutations():
         assert rows == ["Alice"]
 
 
-def test_worker_sync_engine_preserves_query_only(tmp_path):
+def test_worker_sync_engine_preserves_query_only(tmp_path) -> None:
     """Verify worker-local engines keep native database read-only enforcement."""
     from sqlalchemy import create_engine
 
@@ -370,7 +192,7 @@ def test_worker_sync_engine_preserves_query_only(tmp_path):
         engine.dispose()
 
 
-def test_sql_database_resource_is_pickleable(tmp_path):
+def test_sql_database_resource_is_pickleable(tmp_path) -> None:
     """Verify SqlDatabaseResource can round-trip through pickle and restore its engine."""
     db_path = tmp_path / "pickleable.db"
     config = SqlDatabaseConfig(
@@ -400,7 +222,7 @@ def test_sql_database_resource_is_pickleable(tmp_path):
             restored.close()
 
 
-def test_worker_sql_config_can_resolve_connection_from_env(monkeypatch, tmp_path):
+def test_worker_sql_config_can_resolve_connection_from_env(monkeypatch, tmp_path) -> None:
     """Verify worker SQL payloads can avoid serializing DSNs by resolving them from env."""
     db_path = tmp_path / "worker-env.db"
     bootstrap = SqlDatabaseConfig(
@@ -432,7 +254,7 @@ def test_worker_sql_config_can_resolve_connection_from_env(monkeypatch, tmp_path
 
 
 @pytest.mark.asyncio
-async def test_query_only_false_disables_async_session_guard():
+async def test_query_only_false_disables_async_session_guard() -> None:
     """Verify async query-only mode can be explicitly disabled."""
     config = SqlDatabaseConfig(
         connection_url="mysql+asyncmy://user:pass@localhost/test_db",
@@ -447,7 +269,7 @@ async def test_query_only_false_disables_async_session_guard():
 
 
 @pytest.mark.asyncio
-async def test_async_resource_aclose_is_idempotent():
+async def test_async_resource_aclose_is_idempotent() -> None:
     config = SqlDatabaseConfig(
         connection_url="mysql+asyncmy://user:pass@localhost/test_db", query_only=False
     )
@@ -465,7 +287,7 @@ async def test_async_resource_aclose_is_idempotent():
 
 
 @pytest.mark.asyncio
-async def test_async_resource_aclose_is_safe_under_concurrency(monkeypatch):
+async def test_async_resource_aclose_is_safe_under_concurrency(monkeypatch) -> None:
     config = SqlDatabaseConfig(
         connection_url="mysql+asyncmy://user:pass@localhost/test_db", query_only=False
     )
@@ -474,12 +296,12 @@ async def test_async_resource_aclose_is_safe_under_concurrency(monkeypatch):
     class _DummyEngine:
         sync_engine = object()
 
-    async def fake_get_or_create_async(*_args, **_kwargs):
+    async def fake_get_or_create_async(*_args, **_kwargs) -> tuple[_DummyEngine, bool]:
         return _DummyEngine(), False
 
     release_calls: list[tuple] = []
 
-    async def fake_release_async(key, logger=None):
+    async def fake_release_async(key, logger=None) -> None:
         release_calls.append((key, logger))
 
     monkeypatch.setattr(EngineRegistry, "get_or_create_async", fake_get_or_create_async)
@@ -497,49 +319,25 @@ async def test_async_resource_aclose_is_safe_under_concurrency(monkeypatch):
     assert resource._engine is None
 
 
-@pytest.mark.asyncio
-async def test_async_resource_aclose_race_does_not_leak_shared_engine(monkeypatch):
-    """Regression: the pre-LifecycleCore aclose() had a real TOCTOU race —
-    "if self._engine_key and self._engine" was checked, then awaited
-    EngineRegistry.release_async(), then only *afterward* reset self._engine.
-    Two concurrent aclose() calls on the same instance could both pass the
-    check before either reset state, each independently calling
-    release_async() for what should be one logical release.
-
-    This only manifests when release_async() actually suspends (a fake with
-    no real await point, like the one above, can't expose it — Python's
-    asyncio only switches tasks at genuine suspension points) and is only
-    harmful when the engine is *shared* (ref_count > 1): a double-release
-    disposes the engine while a sibling resource still holds a live
-    reference to it. Proven directly against EngineRegistry before this
-    fix; this test proves it stays fixed through AsyncSqlDatabaseResource's
-    public API, using LifecycleCore's aclose() barrier instead of a
-    hand-rolled idempotency check.
-    """
+async def _prepare_race_test_resource(
+    monkeypatch,
+) -> tuple[AsyncSqlDatabaseResource, tuple]:
+    """Build an entered AsyncSqlDatabaseResource whose engine is registered under
+    a shared, refcounted key with a slow (real-suspension) dispose(), then bump
+    the refcount to 2 to simulate a sibling resource holding the same engine."""
     config = SqlDatabaseConfig(
         connection_url="mysql+asyncmy://user:pass@localhost/test_db", query_only=False
     )
     resource = AsyncSqlDatabaseResource(config)
 
-    class _SlowDisposeEngine:
-        sync_engine = object()
-        dispose_calls = 0
-
-        async def dispose(self):
-            await asyncio.sleep(0.05)  # forces a real suspension point
-            _SlowDisposeEngine.dispose_calls += 1
-
     engine_key = ("probe-shared-key",)
     shared_engine = _SlowDisposeEngine()
 
-    async def fake_get_or_create_async(*_args, **_kwargs):
-        # Register this resource's own reference (ref_count=1), the way the
-        # real EngineRegistry.get_or_create_async would.
-        with EngineRegistry._lock:
-            EngineRegistry._registry[engine_key] = {"engine": shared_engine, "ref_count": 1}
-        return shared_engine, False
-
-    monkeypatch.setattr(EngineRegistry, "get_or_create_async", fake_get_or_create_async)
+    monkeypatch.setattr(
+        EngineRegistry,
+        "get_or_create_async",
+        _make_fake_get_or_create_async(engine_key, shared_engine),
+    )
     monkeypatch.setattr(resource, "_get_engine_key", lambda: engine_key)
     monkeypatch.setattr("boti_data.db.sql_resource.ensure_greenlet_available", lambda: None)
     monkeypatch.setattr(
@@ -552,6 +350,20 @@ async def test_async_resource_aclose_race_does_not_leak_shared_engine(monkeypatc
     # same engine: bump ref_count from 1 (this resource's own) to 2.
     with EngineRegistry._lock:
         EngineRegistry._registry[engine_key]["ref_count"] = 2
+
+    return resource, engine_key
+
+
+@pytest.mark.asyncio
+async def test_async_resource_aclose_race_does_not_leak_shared_engine(monkeypatch) -> None:
+    """Regression: aclose() used to check state, await release_async(), and
+    only afterward reset self._engine — two concurrent aclose() calls could
+    both pass the check before either reset state, double-releasing a shared
+    engine (ref_count > 1) while a sibling resource still held a live
+    reference. Proven here through AsyncSqlDatabaseResource's public API,
+    using LifecycleCore's aclose() barrier instead of a hand-rolled check.
+    """
+    resource, engine_key = await _prepare_race_test_resource(monkeypatch)
 
     # Race this resource's own aclose() against itself.
     await asyncio.gather(resource.aclose(), resource.aclose())

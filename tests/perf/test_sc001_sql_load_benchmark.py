@@ -4,6 +4,7 @@ SC-001: Load 1M rows from SQLite into a Dask DataFrame in under 10 seconds.
 Goal — no automated performance gate currently enforces this threshold.
 This is the gate. Run explicitly with: pytest tests/perf/ -m perf
 """
+
 from __future__ import annotations
 
 import os

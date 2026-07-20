@@ -82,9 +82,7 @@ class ParquetReader(DataHelper):
             raise TypeError("filters must be a mapping when provided.")
 
         bare_filters = {
-            key: value
-            for key, value in resolved_options.items()
-            if key not in LOAD_CONTROL_KEYS
+            key: value for key, value in resolved_options.items() if key not in LOAD_CONTROL_KEYS
         }
         if not bare_filters:
             return resolved_options

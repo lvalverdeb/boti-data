@@ -5,6 +5,7 @@ Provides zero-copy type conversion from SQLAlchemy result rows to PyArrow
 Tables, replacing the per-column pandas coercion loop with a single-pass
 ``table.cast()`` operation.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -35,6 +36,7 @@ _logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # SQLAlchemy → PyArrow type mapping
 # ---------------------------------------------------------------------------
+
 
 def _numeric_to_arrow(sql_type: Any) -> pa.DataType:
     precision = getattr(sql_type, "precision", None) or 18
@@ -81,41 +83,43 @@ _PANDAS_DTYPE_TO_ARROW: dict[str, pa.DataType] = {
 }
 
 
+_SUBSTRING_ARROW_TYPES: list[tuple[str, pa.DataType]] = [
+    ("int64", pa.int64()),
+    ("int32", pa.int32()),
+    ("float64", pa.float64()),
+    ("bool", pa.bool_()),
+]
+
+
+def _pandas_dtype_to_arrow_fallback(normalized: str) -> pa.DataType:
+    """Pattern-match common dtype substrings when no exact key match is found."""
+    for substring, arrow_type in _SUBSTRING_ARROW_TYPES:
+        if substring in normalized:
+            return arrow_type
+    if "datetime" in normalized:
+        return pa.timestamp("ns", tz="UTC") if "utc" in normalized else pa.timestamp("ns")
+    return pa.string()
+
+
 def pandas_dtype_to_arrow(dtype_str: str) -> pa.DataType:
     """Convert a canonical pandas dtype string to a PyArrow DataType."""
     normalized = dtype_str.strip().lower()
-    # Direct match
     for key, arrow_type in _PANDAS_DTYPE_TO_ARROW.items():
         if normalized == key.lower():
             return arrow_type
-    # Fallback: try to parse common patterns
-    if "int64" in normalized:
-        return pa.int64()
-    if "int32" in normalized:
-        return pa.int32()
-    if "float64" in normalized:
-        return pa.float64()
-    if "bool" in normalized:
-        return pa.bool_()
-    if "datetime" in normalized:
-        if "utc" in normalized:
-            return pa.timestamp("ns", tz="UTC")
-        return pa.timestamp("ns")
-    return pa.string()
+    return _pandas_dtype_to_arrow_fallback(normalized)
 
 
 # ---------------------------------------------------------------------------
 # Schema builders
 # ---------------------------------------------------------------------------
 
+
 def build_arrow_schema_from_meta_dtypes(
     meta_dtypes: dict[str, str],
 ) -> pa.Schema:
     """Build a PyArrow Schema from a pandas-style meta_dtypes dict."""
-    fields = [
-        (col, pandas_dtype_to_arrow(dtype))
-        for col, dtype in meta_dtypes.items()
-    ]
+    fields = [(col, pandas_dtype_to_arrow(dtype)) for col, dtype in meta_dtypes.items()]
     return pa.schema(fields)
 
 
@@ -125,8 +129,7 @@ def build_arrow_schema_from_sqlalchemy_types(
 ) -> pa.Schema:
     """Build a PyArrow Schema from SQLAlchemy column names and types."""
     fields = [
-        (col, sqlalchemy_type_to_arrow(sql_type))
-        for col, sql_type in zip(columns, sql_types)
+        (col, sqlalchemy_type_to_arrow(sql_type)) for col, sql_type in zip(columns, sql_types)
     ]
     return pa.schema(fields)
 
@@ -134,6 +137,7 @@ def build_arrow_schema_from_sqlalchemy_types(
 # ---------------------------------------------------------------------------
 # Value coercion helpers
 # ---------------------------------------------------------------------------
+
 
 def _coerce_timestamp(value: Any, arrow_type: pa.DataType) -> Any:
     import pandas as pd
@@ -160,9 +164,7 @@ def _coerce_timestamp(value: Any, arrow_type: pa.DataType) -> Any:
 def _coerce_date(value: Any, arrow_type: pa.DataType) -> Any:
     if isinstance(value, str):
         value = value.strip()
-        if not value:
-            return None
-        return dt.date.fromisoformat(value)
+        return dt.date.fromisoformat(value) if value else None
     if isinstance(value, dt.datetime):
         return value.date()
     return value
@@ -238,7 +240,9 @@ def _coerce_row_to_arrays(
             arrays.append(arr)
         except (pa.ArrowInvalid, pa.ArrowTypeError):
             # Last resort: use string type
-            arr = pa.array([str(v) if v is not None else None for v in raw_values], type=pa.string())
+            arr = pa.array(
+                [str(v) if v is not None else None for v in raw_values], type=pa.string()
+            )
             arrays.append(arr)
 
     return arrays
@@ -247,6 +251,7 @@ def _coerce_row_to_arrays(
 # ---------------------------------------------------------------------------
 # Table construction from SQLAlchemy cursor results
 # ---------------------------------------------------------------------------
+
 
 def rows_to_arrow_table(
     rows: list[tuple],
@@ -273,19 +278,20 @@ def build_empty_arrow_table(schema: pa.Schema) -> pa.Table:
 # Arrow → pandas conversion with type preservation
 # ---------------------------------------------------------------------------
 
+
 def _default_types_mapper(arrow_dtype: pa.DataType) -> Any:
     import pandas as pd
 
-    if pa.types.is_int64(arrow_dtype):
-        return pd.Int64Dtype()
-    if pa.types.is_int32(arrow_dtype):
-        return pd.Int32Dtype()
-    if pa.types.is_float64(arrow_dtype):
-        return pd.Float64Dtype()
-    if pa.types.is_boolean(arrow_dtype):
-        return pd.BooleanDtype()
-    if pa.types.is_string(arrow_dtype) or pa.types.is_large_string(arrow_dtype):
-        return pd.StringDtype()
+    dispatch: list[tuple[bool, Any]] = [
+        (pa.types.is_int64(arrow_dtype), pd.Int64Dtype),
+        (pa.types.is_int32(arrow_dtype), pd.Int32Dtype),
+        (pa.types.is_float64(arrow_dtype), pd.Float64Dtype),
+        (pa.types.is_boolean(arrow_dtype), pd.BooleanDtype),
+        (pa.types.is_string(arrow_dtype) or pa.types.is_large_string(arrow_dtype), pd.StringDtype),
+    ]
+    for matched, dtype_factory in dispatch:
+        if matched:
+            return dtype_factory()
     return None
 
 
@@ -325,6 +331,7 @@ def arrow_table_to_pandas(
 # ---------------------------------------------------------------------------
 # Schema coercion: single-pass cast (replaces apply_schema_map loop)
 # ---------------------------------------------------------------------------
+
 
 def coerce_arrow_table(
     table: pa.Table,

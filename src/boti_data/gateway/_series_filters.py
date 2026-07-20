@@ -36,22 +36,26 @@ def resolve_series_filters(options: dict[str, Any]) -> dict[str, Any]:
     return resolved
 
 
+def _classify_series_in_keys(options: dict[str, Any]) -> tuple[list[str], list[str]]:
+    dask_keys: list[str] = []
+    pandas_or_polars_keys: list[str] = []
+    for key, value in options.items():
+        if not key.endswith("__in"):
+            continue
+        if isinstance(value, dd.Series):
+            dask_keys.append(key)
+        elif isinstance(value, (pd.Series, pl.Series)):
+            pandas_or_polars_keys.append(key)
+    return dask_keys, pandas_or_polars_keys
+
+
 async def resolve_series_filters_async(options: dict[str, Any]) -> dict[str, Any]:
     """Async variant of :func:`resolve_series_filters`.
 
     Dask Series are computed in a thread pool so the event loop is not
     blocked while Dask executes the computation graph.
     """
-    dask_keys = [
-        k
-        for k, v in options.items()
-        if k.endswith("__in") and isinstance(v, dd.Series)
-    ]
-    pandas_or_polars_keys = [
-        k
-        for k, v in options.items()
-        if k.endswith("__in") and isinstance(v, (pd.Series, pl.Series)) and not isinstance(v, dd.Series)
-    ]
+    dask_keys, pandas_or_polars_keys = _classify_series_in_keys(options)
     if not dask_keys and not pandas_or_polars_keys:
         return options
     resolved = dict(options)

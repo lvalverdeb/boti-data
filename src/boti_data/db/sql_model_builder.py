@@ -1,6 +1,7 @@
 """
 SQLAlchemy Model Builder mapping declarative ORM constructs towards the Thread-Safe Registry.
 """
+
 from __future__ import annotations
 
 import keyword
@@ -17,6 +18,7 @@ from boti_data.db.sql_model_registry import get_global_registry
 
 class BuilderConfig(BaseModel):
     """Structure managing contextual format overrides across the model boundaries."""
+
     model_config = ConfigDict(frozen=True)
 
     module_label: str | None = Field(default=None)
@@ -39,31 +41,38 @@ class SqlAlchemyModelBuilder:
     Delegates dynamic reflection tracking natively to the caching registry.
     """
 
-    def __init__(self, engine: Union[Engine, AsyncEngine], table_name: str, config: BuilderConfig | None = None):
+    def __init__(
+        self,
+        engine: Union[Engine, AsyncEngine],
+        table_name: str,
+        config: BuilderConfig | None = None,
+    ):
         self.engine = engine
         self.table_name = table_name
         self.config = config or BuilderConfig()
 
+    def _registry_kwargs(self) -> dict[str, Any]:
+        return {
+            "table_name": self.table_name,
+            "module_label": self.config.module_label,
+            "prefer_stable_names": self.config.prefer_stable_names,
+        }
+
+    # Not a copy-pasted twin: the shared kwargs are already extracted into
+    # _registry_kwargs(); the remaining difference is the irreducible
+    # registry.get_model() vs await registry.get_model_async() call.
+    # spaghetti-ignore[sync-async-duplication]
     def build_model(self) -> type[Any]:
         """Reflects the table and returns the stable mapped ORM class."""
         registry = get_global_registry()
-
-        return registry.get_model(
-            engine=self.engine,
-            table_name=self.table_name,
-            module_label=self.config.module_label,
-            prefer_stable_names=self.config.prefer_stable_names,
-        )
+        return registry.get_model(engine=self.engine, **self._registry_kwargs())
 
     async def build_model_async(self) -> type[Any]:
         """Reflects the table and returns the stable mapped ORM class across parallel async loops."""
         registry = get_global_registry()
-
         return await registry.get_model_async(
             engine=self.engine,  # type: ignore
-            table_name=self.table_name,
-            module_label=self.config.module_label,
-            prefer_stable_names=self.config.prefer_stable_names,
+            **self._registry_kwargs(),
         )
 
     @staticmethod

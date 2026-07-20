@@ -137,6 +137,8 @@ design decisions of the boti-data package (`src/boti_data/`). It describes:
 
 5. **Async-first**: All major operations have sync, async, and `*_sync()`
    convenience wrappers.
+6. **Favour composition over inheritance**: New features should compose existing components
+   rather than subclassing.
 
 ---
 

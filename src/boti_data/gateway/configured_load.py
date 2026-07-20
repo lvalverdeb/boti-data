@@ -1,24 +1,16 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from boti_data.db import AsyncSqlDatabaseResource
-from boti_data.field_map import FieldMap
 
-from ._backend_strategies import (
-    BackendStrategy,
-    ConfiguredLoadContext,
-)
+from ._backend_strategies import ConfiguredLoadContext
+from .build_context import ConfiguredSelectAccessors, GatewayBuildContext
 from .frame_strategies import FrameResult
 from .load_request import GatewayLoadRequest
-from .post_process import PostProcessor
 from .requests import (
-    BackendConfig,
-    BackendResource,
     ConfiguredRequest,
-    DataFrameParams,
     ResolvedExecutionMode,
     ReturnType,
 )
@@ -40,32 +32,25 @@ class _ConfiguredNormalization:
 class ConfiguredLoadService:
     def __init__(
         self,
+        ctx: GatewayBuildContext,
         *,
-        strategy: BackendStrategy,
         table: str | None,
-        config: BackendConfig,
-        resource: BackendResource | None,
-        field_map: FieldMap,
         sticky_filters: dict[str, Any],
         exclude: bool,
-        df_params: DataFrameParams,
-        post_processor: PostProcessor,
-        async_sql_resource: AsyncSqlDatabaseResource | None = None,
-        get_configured_select: Callable[[list[str] | None], tuple[Any, Any]] | None = None,
-        get_configured_select_async: Callable[[Any, list[str] | None], Awaitable[tuple[Any, Any]]] | None = None,
+        select_accessors: ConfiguredSelectAccessors = ConfiguredSelectAccessors(),
     ) -> None:
-        self._strategy = strategy
+        self._strategy = ctx.strategy
         self._table = table
-        self._config = config
-        self._resource = resource
-        self._field_map = field_map
+        self._config = ctx.config
+        self._resource = ctx.resource
+        self._field_map = ctx.field_map
         self._sticky_filters = sticky_filters
         self._exclude = exclude
-        self._df_params = df_params
-        self._post_processor = post_processor
-        self._async_sql_resource = async_sql_resource
-        self._get_configured_select = get_configured_select
-        self._get_configured_select_async = get_configured_select_async
+        self._df_params = ctx.df_params
+        self._post_processor = ctx.post_processor
+        self._async_sql_resource = ctx.async_sql_resource
+        self._get_configured_select = select_accessors.get_configured_select
+        self._get_configured_select_async = select_accessors.get_configured_select_async
 
     def update_async_resource(self, resource: AsyncSqlDatabaseResource | None) -> None:
         self._async_sql_resource = resource
@@ -102,11 +87,7 @@ class ConfiguredLoadService:
             )
         else:
             db_filters = combined_filters
-            db_columns = (
-                list(configured_fieldnames)
-                if configured_fieldnames
-                else None
-            )
+            db_columns = list(configured_fieldnames) if configured_fieldnames else None
 
         return _ConfiguredNormalization(
             control=request,
@@ -118,6 +99,7 @@ class ConfiguredLoadService:
 
     def _build_configured_request(self, options: dict[str, Any]) -> ConfiguredRequest:
         from boti_data.db import SqlDatabaseResource
+
         assert isinstance(self._resource, SqlDatabaseResource)
         norm = self._normalize_for_configured(options)
         assert self._get_configured_select is not None
@@ -167,6 +149,11 @@ class ConfiguredLoadService:
             chunk_size=self._df_params.chunk_size,
         )
 
+    # Not a copy-pasted twin: both already build the shared ConfiguredLoadContext
+    # via _build_configured_load_context(); the remaining difference
+    # (self._strategy.load_configured_sync(ctx) vs await ...load_configured_async(ctx))
+    # is the theoretical floor for this pattern.
+    # spaghetti-ignore[sync-async-duplication]
     def load(
         self,
         options: dict[str, Any],

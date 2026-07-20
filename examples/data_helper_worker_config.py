@@ -27,6 +27,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
 
 from dask.distributed import LocalCluster
 from sqlalchemy import String, create_engine
@@ -48,62 +49,74 @@ class Transaction(Base):
     amount: Mapped[float] = mapped_column()
 
 
+def _seed_transactions(db_path: Path) -> None:
+    bootstrap = create_engine(f"sqlite:///{db_path}")
+    try:
+        Base.metadata.create_all(bootstrap)
+        with Session(bootstrap) as session:
+            session.add_all(
+                [
+                    Transaction(status="confirmed", amount=100.0),
+                    Transaction(status="confirmed", amount=250.0),
+                    Transaction(status="pending", amount=75.0),
+                ]
+            )
+            session.commit()
+    finally:
+        bootstrap.dispose()
+
+
+def _build_scheduler_config(dsn: str, env_var: str) -> SqlDatabaseConfig:
+    # worker_connection_env_var names the env var that workers will read.
+    # The full DSN lives only in this process; it is not pickled.
+    return SqlDatabaseConfig(
+        connection_url=dsn,
+        poolclass="sqlalchemy.pool.NullPool",
+        query_only=True,
+        worker_connection_env_var=env_var,
+    )
+
+
+def _run_distributed_transactions_load(
+    scheduler_config: SqlDatabaseConfig, dsn: str, env_var: str
+) -> Any:
+    # ── Worker-side environment ────────────────────────────────────────
+    # In production this is injected via Kubernetes secrets or cluster
+    # init scripts.  Here we set it in-process so that the LocalCluster
+    # workers inherit it through forked memory.
+    os.environ[env_var] = dsn
+    try:
+        with LocalCluster(
+            n_workers=2,
+            threads_per_worker=1,
+            processes=False,  # threads share env; avoids subprocess injection
+            dashboard_address=":0",
+        ) as cluster:
+            with DataHelper.session(scheduler_address=cluster.scheduler_address):
+                with DataHelper(scheduler_config, table="transactions") as helper:
+                    ddf = helper.dask.load(status__exact="confirmed")
+                    return ddf.compute()
+    finally:
+        os.environ.pop(env_var, None)
+
+
 def run_example() -> dict[str, object]:
     with TemporaryDirectory() as tmp_dir:
         db_path = Path(tmp_dir) / "worker_config_demo.db"
-
-        bootstrap = create_engine(f"sqlite:///{db_path}")
-        try:
-            Base.metadata.create_all(bootstrap)
-            with Session(bootstrap) as session:
-                session.add_all(
-                    [
-                        Transaction(status="confirmed", amount=100.0),
-                        Transaction(status="confirmed", amount=250.0),
-                        Transaction(status="pending", amount=75.0),
-                    ]
-                )
-                session.commit()
-        finally:
-            bootstrap.dispose()
+        _seed_transactions(db_path)
 
         dsn = f"sqlite:///file:{db_path}?mode=ro&uri=true"
         env_var = "BOTI_EXAMPLE_WORKER_DSN"
 
         # ── Scheduler-side config ──────────────────────────────────────────
-        # worker_connection_env_var names the env var that workers will read.
-        # The full DSN lives only in this process; it is not pickled.
-        scheduler_config = SqlDatabaseConfig(
-            connection_url=dsn,
-            poolclass="sqlalchemy.pool.NullPool",
-            query_only=True,
-            worker_connection_env_var=env_var,
-        )
+        scheduler_config = _build_scheduler_config(dsn, env_var)
 
         # Demonstrate that WorkerSqlConfig strips the DSN.
         worker_payload = WorkerSqlConfig.from_database_config(scheduler_config)
         assert worker_payload.connection_url is None, "DSN must not be in the worker payload"
         assert worker_payload.connection_env_var == env_var
 
-        # ── Worker-side environment ────────────────────────────────────────
-        # In production this is injected via Kubernetes secrets or cluster
-        # init scripts.  Here we set it in-process so that the LocalCluster
-        # workers inherit it through forked memory.
-        os.environ[env_var] = dsn
-
-        try:
-            with LocalCluster(
-                n_workers=2,
-                threads_per_worker=1,
-                processes=False,  # threads share env; avoids subprocess injection
-                dashboard_address=":0",
-            ) as cluster:
-                with DataHelper.session(scheduler_address=cluster.scheduler_address):
-                    with DataHelper(scheduler_config, table="transactions") as helper:
-                        ddf = helper.dask.load(status__exact="confirmed")
-                        result = ddf.compute()
-        finally:
-            os.environ.pop(env_var, None)
+        result = _run_distributed_transactions_load(scheduler_config, dsn, env_var)
 
     return {
         "worker_payload_has_no_dsn": worker_payload.connection_url is None,

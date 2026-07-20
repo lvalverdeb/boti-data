@@ -28,42 +28,52 @@ class Order(Base):
     region: Mapped[str] = mapped_column(String(32))
 
 
+def _seed_orders_db(db_path: Path) -> None:
+    """Bootstrap the database with seed data."""
+    bootstrap = create_engine(f"sqlite:///{db_path}")
+    try:
+        Base.metadata.create_all(bootstrap)
+        with Session(bootstrap) as session:
+            session.add_all(
+                [
+                    Order(status="confirmed", region="EMEA"),
+                    Order(status="confirmed", region="AMER"),
+                    Order(status="pending", region="EMEA"),
+                    Order(status="confirmed", region="APAC"),
+                ]
+            )
+            session.commit()
+    finally:
+        bootstrap.dispose()
+
+
+def _register_orders_catalog(readonly_dsn: str) -> ConnectionCatalog:
+    """Register the connection under a named key in the catalog.
+
+    In production this would typically be driven by environment variables
+    via catalog.load_sql("prod", prefix="PROD_DB_").
+    """
+    catalog = ConnectionCatalog()
+    catalog.register_sql(
+        "orders_db",
+        SqlDatabaseConfig(
+            connection_url=readonly_dsn,
+            poolclass="sqlalchemy.pool.NullPool",
+            query_only=True,
+        ),
+    )
+    return catalog
+
+
 def run_example() -> dict[str, object]:
     with TemporaryDirectory() as tmp_dir:
         db_path = Path(tmp_dir) / "catalog_demo.db"
         readonly_dsn = f"sqlite:///file:{db_path}?mode=ro&uri=true"
 
-        # Bootstrap the database with seed data.
-        bootstrap = create_engine(f"sqlite:///{db_path}")
-        try:
-            Base.metadata.create_all(bootstrap)
-            with Session(bootstrap) as session:
-                session.add_all(
-                    [
-                        Order(status="confirmed", region="EMEA"),
-                        Order(status="confirmed", region="AMER"),
-                        Order(status="pending", region="EMEA"),
-                        Order(status="confirmed", region="APAC"),
-                    ]
-                )
-                session.commit()
-        finally:
-            bootstrap.dispose()
-
-        # Register the connection under a named key in the catalog.
-        # In production this would typically be driven by environment variables
-        # via catalog.load_sql("prod", prefix="PROD_DB_").
-        catalog = ConnectionCatalog()
-        catalog.register_sql(
-            "orders_db",
-            SqlDatabaseConfig(
-                connection_url=readonly_dsn,
-                poolclass="sqlalchemy.pool.NullPool",
-                query_only=True,
-            ),
-        )
+        _seed_orders_db(db_path)
 
         # Retrieve the named config and wire it into a DataHelper.
+        catalog = _register_orders_catalog(readonly_dsn)
         orders_config = catalog.sql_config("orders_db")
 
         with DataHelper(orders_config, table="orders") as helper:

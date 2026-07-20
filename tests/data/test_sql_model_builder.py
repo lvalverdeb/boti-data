@@ -1,6 +1,7 @@
 """
 Unit test suite verifying SqlAlchemyModelBuilder bindings.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -10,14 +11,12 @@ from boti_data.db.sql_model_builder import BuilderConfig, SqlAlchemyModelBuilder
 from boti_data.db.sql_model_registry import get_global_registry
 
 
-def test_sql_model_builder_resolves_registry_transparently():
+def test_sql_model_builder_resolves_registry_transparently() -> None:
     engine = create_engine("sqlite:///:memory:")
 
     metadata = MetaData()
     test_table = Table(
-        'facade_users', metadata,
-        Column('id', Integer, primary_key=True),
-        Column('name', String)
+        "facade_users", metadata, Column("id", Integer, primary_key=True), Column("name", String)
     )
     metadata.create_all(engine)
 
@@ -32,7 +31,7 @@ def test_sql_model_builder_resolves_registry_transparently():
     assert FacadeModel is RegistryModel
 
 
-def test_sql_model_builder_string_normalizations():
+def test_sql_model_builder_string_normalizations() -> None:
     assert SqlAlchemyModelBuilder._normalize_class_name("super_admin_nodes") == "SuperAdminNodes"
 
     # Assert column normalization sanitizes reserved keywords securely
@@ -40,6 +39,6 @@ def test_sql_model_builder_string_normalizations():
     assert SqlAlchemyModelBuilder._normalize_column_name("1invalid_start") == "_1invalid_start"
 
 
-def test_builder_config_rejects_invalid_module_label():
+def test_builder_config_rejects_invalid_module_label() -> None:
     with pytest.raises(ValueError, match="valid dotted Python module path"):
         BuilderConfig(module_label="bad-module/path")

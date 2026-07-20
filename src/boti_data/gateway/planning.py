@@ -19,16 +19,12 @@ SyncAutoResolver = Callable[[dict[str, Any]], ResolvedReturnType]
 AsyncAutoResolver = Callable[[dict[str, Any]], Awaitable[ResolvedReturnType]]
 
 
+@dataclass
 class InChunkPolicy:
     """Controls automatic fan-out for large SQL ``IN`` filters."""
 
-    def __init__(
-        self,
-        eager_auto_min_values: int,
-        eager_auto_concurrency: int | None = None,
-    ) -> None:
-        self.eager_auto_min_values = eager_auto_min_values
-        self.eager_auto_concurrency = eager_auto_concurrency
+    eager_auto_min_values: int
+    eager_auto_concurrency: int | None = None
 
 
 @dataclass(frozen=True)
@@ -87,32 +83,56 @@ class LoadPlanner:
         requested_execution_mode = self._resolve_requested_execution_mode(options, request=request)
         return controls, requested_return_type, requested_execution_mode
 
-    def plan(self, options: dict[str, Any], *, request: GatewayLoadRequest | None = None) -> LoadPlan:
+    # Not a copy-pasted twin: shared prep (_prepare_plan_inputs) and shared
+    # finish (_finish_plan) are already extracted; the remaining difference is
+    # the irreducible self._resolve_execution_plan(...) vs
+    # await ..._async(...) call.
+    # spaghetti-ignore[sync-async-duplication]
+    def plan(
+        self, options: dict[str, Any], *, request: GatewayLoadRequest | None = None
+    ) -> LoadPlan:
         controls, requested_return_type, requested_execution_mode = self._prepare_plan_inputs(
             options, request=request
         )
-        resolved_return_type, resolved_execution_mode = self._resolve_execution_plan(
+        resolved = self._resolve_execution_plan(
             requested_return_type=requested_return_type,
             requested_execution_mode=requested_execution_mode,
             options=options,
         )
-        return self._build_plan(
+        return self._finish_plan(
             controls=controls,
             requested_return_type=requested_return_type,
             requested_execution_mode=requested_execution_mode,
-            resolved_return_type=resolved_return_type,
-            resolved_execution_mode=resolved_execution_mode,
+            resolved=resolved,
         )
 
-    async def aplan(self, options: dict[str, Any], *, request: GatewayLoadRequest | None = None) -> LoadPlan:
+    async def aplan(
+        self, options: dict[str, Any], *, request: GatewayLoadRequest | None = None
+    ) -> LoadPlan:
         controls, requested_return_type, requested_execution_mode = self._prepare_plan_inputs(
             options, request=request
         )
-        resolved_return_type, resolved_execution_mode = await self._resolve_execution_plan_async(
+        resolved = await self._resolve_execution_plan_async(
             requested_return_type=requested_return_type,
             requested_execution_mode=requested_execution_mode,
             options=options,
         )
+        return self._finish_plan(
+            controls=controls,
+            requested_return_type=requested_return_type,
+            requested_execution_mode=requested_execution_mode,
+            resolved=resolved,
+        )
+
+    def _finish_plan(
+        self,
+        *,
+        controls: LoadControls,
+        requested_return_type: ReturnType,
+        requested_execution_mode: ExecutionMode,
+        resolved: tuple[ResolvedReturnType, ResolvedExecutionMode],
+    ) -> LoadPlan:
+        resolved_return_type, resolved_execution_mode = resolved
         return self._build_plan(
             controls=controls,
             requested_return_type=requested_return_type,
@@ -151,6 +171,19 @@ class LoadPlanner:
             timeout=options.pop("timeout", None),
         )
 
+    @staticmethod
+    def _explicit_requested_return_type(
+        *,
+        options: dict[str, Any],
+        request: GatewayLoadRequest | None,
+    ) -> ReturnType | None:
+        """Returns an explicitly-requested return type, or None if unspecified."""
+        if request is not None and request.return_type is not None:
+            return request.return_type
+        if "return_type" in options:
+            return options.pop("return_type")
+        return None
+
     def _resolve_requested_return_type(
         self,
         *,
@@ -158,15 +191,34 @@ class LoadPlanner:
         options: dict[str, Any],
         request: GatewayLoadRequest | None = None,
     ) -> ReturnType:
-        if request is not None and request.return_type is not None:
-            return request.return_type
-        if "return_type" in options:
-            return options.pop("return_type")
+        explicit = self._explicit_requested_return_type(options=options, request=request)
+        if explicit is not None:
+            return explicit
         if as_pandas:
             return "pandas"
-        if self._configured:
-            return self._default_return_type
-        return "dask"
+        return self._default_return_type if self._configured else "dask"
+
+    @staticmethod
+    def _explicit_requested_execution_mode(
+        options: dict[str, Any],
+        *,
+        request: GatewayLoadRequest | None,
+    ) -> ExecutionMode | None:
+        """Returns an explicitly-requested execution mode, or None if unspecified."""
+        if request is not None and request.execution_mode is not None:
+            return request.execution_mode
+        if "execution_mode" in options:
+            return options.pop("execution_mode")
+        return None
+
+    @staticmethod
+    def _execution_mode_from_partitioned(partitioned: bool | None) -> ExecutionMode | None:
+        """Returns the execution mode implied by an explicit `partitioned` flag, else None."""
+        if partitioned is True:
+            return "lazy"
+        if partitioned is False:
+            return "eager"
+        return None
 
     def _resolve_requested_execution_mode(
         self,
@@ -174,19 +226,30 @@ class LoadPlanner:
         *,
         request: GatewayLoadRequest | None = None,
     ) -> ExecutionMode:
-        if request is not None and request.execution_mode is not None:
-            return request.execution_mode
-        if "execution_mode" in options:
-            return options.pop("execution_mode")
+        explicit = self._explicit_requested_execution_mode(options, request=request)
+        if explicit is not None:
+            return explicit
         partitioned = request.partitioned if request is not None else options.get("partitioned")
-        if partitioned is True:
-            return "lazy"
-        if partitioned is False:
-            return "eager"
-        if self._configured:
-            return self._default_execution_mode
-        return "auto"
+        from_partitioned = self._execution_mode_from_partitioned(partitioned)
+        if from_partitioned is not None:
+            return from_partitioned
+        return self._default_execution_mode if self._configured else "auto"
 
+    def _finish_execution_plan(
+        self,
+        *,
+        resolved_return_type: ResolvedReturnType,
+        requested_execution_mode: ExecutionMode,
+    ) -> tuple[ResolvedReturnType, ResolvedExecutionMode]:
+        return resolved_return_type, self._resolve_execution_mode(
+            requested_execution_mode=requested_execution_mode,
+            resolved_return_type=resolved_return_type,
+        )
+
+    # Not a copy-pasted twin: the shared tail is already extracted into
+    # _finish_execution_plan(); the remaining difference is the irreducible
+    # self._resolve_return_type(...) vs await ..._async(...) call.
+    # spaghetti-ignore[sync-async-duplication]
     def _resolve_execution_plan(
         self,
         *,
@@ -199,9 +262,9 @@ class LoadPlanner:
             requested_execution_mode=requested_execution_mode,
             options=options,
         )
-        return resolved_return_type, self._resolve_execution_mode(
-            requested_execution_mode=requested_execution_mode,
+        return self._finish_execution_plan(
             resolved_return_type=resolved_return_type,
+            requested_execution_mode=requested_execution_mode,
         )
 
     async def _resolve_execution_plan_async(
@@ -216,9 +279,9 @@ class LoadPlanner:
             requested_execution_mode=requested_execution_mode,
             options=options,
         )
-        return resolved_return_type, self._resolve_execution_mode(
-            requested_execution_mode=requested_execution_mode,
+        return self._finish_execution_plan(
             resolved_return_type=resolved_return_type,
+            requested_execution_mode=requested_execution_mode,
         )
 
     @staticmethod
@@ -234,6 +297,11 @@ class LoadPlanner:
             return "dask" if requested_execution_mode == "lazy" else "pandas"
         return None
 
+    # Not a copy-pasted twin: shared decision logic is already extracted into
+    # _requested_or_fixed_return_type(); the remaining difference is the
+    # irreducible self._resolve_auto_return_type(options) vs
+    # await ..._async(options) call.
+    # spaghetti-ignore[sync-async-duplication]
     def _resolve_return_type(
         self,
         *,

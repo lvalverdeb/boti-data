@@ -19,6 +19,24 @@ DatacubeRequestTransformer = Callable[[Any], Any]
 DatacubeFrameTransformer = Callable[[DatacubeFrame, Any], DatacubeFrame]
 
 
+_FRAME_HAS_DATA_CHECKS: list[tuple[Callable[[Any], bool], Callable[[Any], bool]]] = [
+    (lambda frame: isinstance(frame, dd.DataFrame), lambda frame: len(frame.index) > 0),
+    (lambda frame: isinstance(frame, pd.DataFrame), lambda frame: len(frame.index) > 0),
+    (lambda frame: isinstance(frame, pa.Table), lambda frame: len(frame) > 0),
+    (lambda frame: hasattr(frame, "height"), lambda frame: frame.height > 0),
+]
+
+
+def frame_has_data(frame: DatacubeFrame | None) -> bool:
+    """Check if *frame* has rows; avoids hidden heavy ops where possible."""
+    if frame is None:
+        return False
+    for predicate, check in _FRAME_HAS_DATA_CHECKS:
+        if predicate(frame):
+            return check(frame)
+    return True
+
+
 @dataclass(slots=True)
 class DatacubeContract:
     """Optional typed datacube contract hooks used by DatacubeResource.
@@ -43,6 +61,7 @@ class DatacubeRequest(BaseModel):
     Passed through DatacubeResource._prepare_request for default injection,
     transformation, and validation before reaching the user's loader callable.
     """
+
     model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
     filters: dict[str, Any] = Field(default_factory=dict)
@@ -94,4 +113,3 @@ class DatacubeConfig(ResourceConfig):
                 "DatacubeConfig requires loader/async_loader or contract.loader/contract.async_loader."
             )
         return self
-

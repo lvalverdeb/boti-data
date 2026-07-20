@@ -7,8 +7,9 @@ DataFrame options application, and diagnostics logging.
 from __future__ import annotations
 
 import warnings
+from dataclasses import dataclass
 from time import perf_counter
-from typing import Any, Literal
+from typing import Any
 
 import dask.dataframe as dd
 import pandas as pd
@@ -22,28 +23,42 @@ from boti_data.field_map import FieldMap
 from boti_data.schema import apply_schema_map
 
 from .frame_strategies import FrameResult, FrameStrategy, get_frame_strategy
+from .planning import LoadPlan
 from .requests import DataFrameOptions, DataFrameParams, ResolvedReturnType, ReturnType
 
 __all__ = [
     "PostProcessor",
+    "ResultShapingConfig",
     "frame_strategy",
     "strategy_for_frame",
 ]
+
+
+@dataclass(frozen=True)
+class ResultShapingConfig:
+    """The field-map/params/options trio PostProcessor shapes results with."""
+
+    field_map: FieldMap
+    df_params: DataFrameParams
+    df_options: DataFrameOptions
 
 
 def frame_strategy(return_type: ResolvedReturnType) -> FrameStrategy:
     return get_frame_strategy(return_type)
 
 
+_FRAME_TYPE_STRATEGY_KEYS: list[tuple[type, ResolvedReturnType]] = [
+    (dd.DataFrame, "dask"),
+    (pd.DataFrame, "pandas"),
+    (pa.Table, "arrow"),
+    (pl.DataFrame, "polars"),
+]
+
+
 def strategy_for_frame(frame: FrameResult) -> FrameStrategy:
-    if isinstance(frame, dd.DataFrame):
-        return get_frame_strategy("dask")
-    if isinstance(frame, pd.DataFrame):
-        return get_frame_strategy("pandas")
-    if isinstance(frame, pa.Table):
-        return get_frame_strategy("arrow")
-    if isinstance(frame, pl.DataFrame):
-        return get_frame_strategy("polars")
+    for frame_type, key in _FRAME_TYPE_STRATEGY_KEYS:
+        if isinstance(frame, frame_type):
+            return get_frame_strategy(key)
     raise TypeError(f"Unsupported frame type: {type(frame)!r}")
 
 
@@ -57,17 +72,15 @@ class PostProcessor:
 
     def __init__(
         self,
-        field_map: FieldMap,
-        df_params: DataFrameParams,
-        df_options: DataFrameOptions,
+        shaping: ResultShapingConfig,
         *,
         backend: str | None = None,
         configured: bool = False,
         logger: Any | None = None,
     ) -> None:
-        self._field_map = field_map
-        self._df_params = df_params
-        self._df_options = df_options
+        self._field_map = shaping.field_map
+        self._df_params = shaping.df_params
+        self._df_options = shaping.df_options
         self._backend = backend
         self._configured = configured
         self._logger = logger
@@ -83,24 +96,16 @@ class PostProcessor:
     # Public entry points
     # ------------------------------------------------------------------
 
-    def finalize_load_result(
-        self,
-        df: Any,
-        strategy: FrameStrategy,
-        persist: bool,
-        resilient: bool,
-        dry_run: bool,
-        diagnostics: bool,
-        started: float,
-    ) -> FrameResult:
-        result = strategy.normalize(df)
-        if persist and not dry_run and isinstance(result, dd.DataFrame):
-            if resilient:
+    def finalize_load_result(self, df: Any, plan: LoadPlan) -> FrameResult:
+        controls = plan.controls
+        result = plan.strategy.normalize(df)
+        if controls.persist and not controls.dry_run and isinstance(result, dd.DataFrame):
+            if controls.resilient:
                 result = safe_persist(result)
             else:
                 result = get_frame_strategy("dask").persist(result)
-        if diagnostics:
-            self._log_load_complete(result, elapsed=perf_counter() - started)
+        if controls.diagnostics:
+            self._log_load_complete(result, elapsed=perf_counter() - plan.started)
         return result
 
     def finalize_configured_result(
@@ -123,16 +128,7 @@ class PostProcessor:
             strategy=strategy,
         )
 
-    def log_load_start(
-        self,
-        *,
-        requested_return_type: ReturnType,
-        resolved_return_type: ResolvedReturnType,
-        requested_execution_mode: str | None,
-        resolved_execution_mode: str | None,
-        loader_return_type: Literal["pandas", "arrow", "dask"],
-        persist: bool,
-    ) -> None:
+    def log_load_start(self, plan: LoadPlan) -> None:
         logger = self._logger
         if logger is None:
             return
@@ -141,12 +137,12 @@ class PostProcessor:
         logger.info(
             "Gateway load starting "
             f"backend={self._backend} configured={self._configured} "
-            f"requested_return_type={requested_return_type} "
-            f"resolved_return_type={resolved_return_type} "
-            f"requested_execution_mode={requested_execution_mode} "
-            f"resolved_execution_mode={resolved_execution_mode} "
-            f"loader_return_type={loader_return_type} "
-            f"persist={persist}"
+            f"requested_return_type={plan.requested_return_type} "
+            f"resolved_return_type={plan.resolved_return_type} "
+            f"requested_execution_mode={plan.requested_execution_mode} "
+            f"resolved_execution_mode={plan.resolved_execution_mode} "
+            f"loader_return_type={plan.loader_return_type} "
+            f"persist={plan.controls.persist}"
         )
         client_summary = current_client_summary()
         if client_summary is not None:
@@ -169,11 +165,7 @@ class PostProcessor:
         strategy = strategy or strategy_for_frame(frame)
         if not self._field_map:
             return frame
-        columns = (
-            list(frame.column_names)
-            if isinstance(frame, pa.Table)
-            else list(frame.columns)
-        )
+        columns = list(frame.column_names) if isinstance(frame, pa.Table) else list(frame.columns)
         rename_map = {
             column: self._field_map.to_semantic(column)
             for column in columns
@@ -234,6 +226,4 @@ class PostProcessor:
         logger.info(
             f"Gateway load completed elapsed={elapsed:.2f}s metrics={describe_frame(frame)}"
         )
-        logger.info(
-            f"Gateway load graph metrics={describe_frame(frame)}"
-        )
+        logger.info(f"Gateway load graph metrics={describe_frame(frame)}")

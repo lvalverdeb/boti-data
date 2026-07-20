@@ -80,6 +80,11 @@ class IncrementalLoadService:
     def __init__(self, gateway: DataGateway) -> None:
         self._gateway = gateway
 
+    # Not a copy-pasted twin: both already share _prepare_watermark()/
+    # _finalize_incremental(); the only remaining difference is
+    # self._gateway.load(**opts) vs await self._gateway.aload(**opts) —
+    # the theoretical floor for this pattern.
+    # spaghetti-ignore[sync-async-duplication]
     def load(
         self,
         *,

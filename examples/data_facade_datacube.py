@@ -10,7 +10,7 @@ from boti_data.datacube import DatacubeConfig, DatacubeContract
 from boti_data.gateway import DataGateway
 
 
-def datacube_loader(request):
+def datacube_loader(request) -> pd.DataFrame:
     source = pd.DataFrame(
         {
             "id": [1, 2, 3],
@@ -40,7 +40,9 @@ def main() -> None:
 
     with DataGateway(config, table="orders", sticky_filters={"status__exact": "active"}) as gateway:
         dask_frame = gateway.load(return_type="dask", region__exact="na")
-        pandas_frame = gateway.load(return_type="pandas", region__exact="na", columns=["id", "status"])
+        pandas_frame = gateway.load(
+            return_type="pandas", region__exact="na", columns=["id", "status"]
+        )
 
     print("dask")
     print(dask_frame.compute())
@@ -50,4 +52,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

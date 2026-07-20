@@ -37,9 +37,7 @@ class DatacubeResource(PicklableLifecycleCoreMixin, LifecycleCore):
         return value
 
     def _with_defaults(self, request: Any) -> Any:
-        if getattr(request, "cube", None) is not None:
-            return request
-        if self.config.default_cube is None:
+        if getattr(request, "cube", None) is not None or self.config.default_cube is None:
             return request
         if hasattr(request, "model_copy"):
             return request.model_copy(update={"cube": self.config.default_cube})
@@ -112,4 +110,3 @@ class DatacubeResource(PicklableLifecycleCoreMixin, LifecycleCore):
             raise RuntimeError("Datacube async load requires loader or async_loader.")
         frame = self._validate_frame(await asyncio.to_thread(loader, prepared_request))
         return self._transform_frame(frame, prepared_request)
-

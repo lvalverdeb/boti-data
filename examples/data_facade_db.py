@@ -26,22 +26,74 @@ class User(Base):
     description: Mapped[str]
 
 
+def _seed_users_db(db_path: Path) -> None:
+    bootstrap_engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        Base.metadata.create_all(bootstrap_engine)
+        with Session(bootstrap_engine) as session:
+            session.add_all(
+                [
+                    User(status="active", description="urgent order"),
+                    User(status="inactive", description="routine followup"),
+                ]
+            )
+            session.commit()
+    finally:
+        bootstrap_engine.dispose()
+
+
+def _load_all_frames(facade: DataGateway) -> dict[str, object]:
+    active = {"status__exact": "active"}
+    return {
+        "dask": facade.load(statement=select(User), model=User, filters=active),
+        "pandas": facade.load(
+            statement=select(User), model=User, filters=active, return_type="pandas"
+        ),
+        "arrow": facade.load(
+            statement=select(User), model=User, filters=active, return_type="arrow"
+        ),
+        "polars": facade.load(
+            statement=select(User), model=User, filters=active, return_type="polars"
+        ),
+        "auto": facade.load(statement=select(User), model=User, filters=active, return_type="auto"),
+        "lazy_pandas": facade.load(
+            statement=select(User),
+            model=User,
+            filters=active,
+            return_type="pandas",
+            execution_mode="lazy",
+        ),
+        "auto_chunked": facade.load(
+            statement=select(User),
+            model=User,
+            filters={"id__in": [1, 2]},
+            as_pandas=True,
+            in_chunk_strategy="auto",
+        ),
+    }
+
+
+def _print_frames(frames: dict[str, object]) -> None:
+    print("dask")
+    print(frames["dask"].compute())
+    print("\npandas")
+    print(frames["pandas"])
+    print("\narrow")
+    print(frames["arrow"])
+    print("\npolars")
+    print(frames["polars"])
+    print("\nauto")
+    print(frames["auto"])
+    print("\npandas over lazy fetch")
+    print(frames["lazy_pandas"])
+    print("\nauto IN-chunking policy")
+    print(frames["auto_chunked"])
+
+
 def main() -> None:
     with TemporaryDirectory() as tmp_dir:
         db_path = Path(tmp_dir) / "users.db"
-        bootstrap_engine = create_engine(f"sqlite:///{db_path}")
-        try:
-            Base.metadata.create_all(bootstrap_engine)
-            with Session(bootstrap_engine) as session:
-                session.add_all(
-                    [
-                        User(status="active", description="urgent order"),
-                        User(status="inactive", description="routine followup"),
-                    ]
-                )
-                session.commit()
-        finally:
-            bootstrap_engine.dispose()
+        _seed_users_db(db_path)
 
         config = SqlDatabaseConfig(
             connection_url=f"sqlite:///{db_path}",
@@ -50,64 +102,8 @@ def main() -> None:
         )
 
         with DataGateway(config) as facade:
-            dask_frame = facade.load(
-                statement=select(User),
-                model=User,
-                filters={"status__exact": "active"},
-            )
-            pandas_frame = facade.load(
-                statement=select(User),
-                model=User,
-                filters={"status__exact": "active"},
-                return_type="pandas",
-            )
-            arrow_table = facade.load(
-                statement=select(User),
-                model=User,
-                filters={"status__exact": "active"},
-                return_type="arrow",
-            )
-            polars_frame = facade.load(
-                statement=select(User),
-                model=User,
-                filters={"status__exact": "active"},
-                return_type="polars",
-            )
-            auto_frame = facade.load(
-                statement=select(User),
-                model=User,
-                filters={"status__exact": "active"},
-                return_type="auto",
-            )
-            lazy_pandas_frame = facade.load(
-                statement=select(User),
-                model=User,
-                filters={"status__exact": "active"},
-                return_type="pandas",
-                execution_mode="lazy",
-            )
-            auto_chunked_frame = facade.load(
-                statement=select(User),
-                model=User,
-                filters={"id__in": [1, 2]},
-                as_pandas=True,
-                in_chunk_strategy="auto",
-            )
-
-            print("dask")
-            print(dask_frame.compute())
-            print("\npandas")
-            print(pandas_frame)
-            print("\narrow")
-            print(arrow_table)
-            print("\npolars")
-            print(polars_frame)
-            print("\nauto")
-            print(auto_frame)
-            print("\npandas over lazy fetch")
-            print(lazy_pandas_frame)
-            print("\nauto IN-chunking policy")
-            print(auto_chunked_frame)
+            frames = _load_all_frames(facade)
+            _print_frames(frames)
 
 
 if __name__ == "__main__":

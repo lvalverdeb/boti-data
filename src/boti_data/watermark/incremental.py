@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -98,13 +99,22 @@ def _advance_pyarrow(frame: pa.Table, watermark_field: str) -> Any | None:
     if frame.num_rows == 0:
         return None
     column_index = frame.schema.get_field_index(watermark_field)
-    if column_index < 0:
-        return None
-    result = frame.column(column_index).to_pylist()
-    non_null = [v for v in result if v is not None]
+    non_null = (
+        [v for v in frame.column(column_index).to_pylist() if v is not None]
+        if column_index >= 0
+        else []
+    )
     if not non_null:
         return None
     return max(non_null)
+
+
+_ADVANCE_WATERMARK_DISPATCH: list[tuple[type, Callable[[Any, str], Any | None]]] = [
+    (dd.DataFrame, _advance_dask),
+    (pd.DataFrame, _advance_pandas),
+    (pl.DataFrame, _advance_polars),
+    (pa.Table, _advance_pyarrow),
+]
 
 
 def advance_watermark(
@@ -119,25 +129,18 @@ def advance_watermark(
 
     Supports pandas, Dask, Polars, and PyArrow frames.
     """
-    if isinstance(frame, dd.DataFrame):
-        return _advance_dask(frame, watermark_field)
-    if isinstance(frame, pd.DataFrame):
-        return _advance_pandas(frame, watermark_field)
-    if isinstance(frame, pl.DataFrame):
-        return _advance_polars(frame, watermark_field)
-    if isinstance(frame, pa.Table):
-        return _advance_pyarrow(frame, watermark_field)
+    for frame_type, advance in _ADVANCE_WATERMARK_DISPATCH:
+        if isinstance(frame, frame_type):
+            return advance(frame, watermark_field)
     return None
 
 
 def _is_null(value: Any) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, float) and math.isnan(value):
-        return True
-    if hasattr(value, "isna") and value is pd.NA:
-        return True
-    return False
+    return (
+        value is None
+        or (isinstance(value, float) and math.isnan(value))
+        or (hasattr(value, "isna") and value is pd.NA)
+    )
 
 
 __all__ = [

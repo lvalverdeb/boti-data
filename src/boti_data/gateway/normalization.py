@@ -119,12 +119,10 @@ def prepare_period_filters(
 def _classify_series_keys(options: dict[str, Any]) -> tuple[list[str], list[str]]:
     """Returns (dask_keys, pandas_keys): the ``__in`` filter keys backed by a
     Dask or pandas Series, respectively (mutually exclusive)."""
-    dask_keys = [
-        k for k, v in options.items()
-        if k.endswith("__in") and isinstance(v, dd.Series)
-    ]
+    dask_keys = [k for k, v in options.items() if k.endswith("__in") and isinstance(v, dd.Series)]
     pandas_keys = [
-        k for k, v in options.items()
+        k
+        for k, v in options.items()
         if k.endswith("__in") and isinstance(v, pd.Series) and not isinstance(v, dd.Series)
     ]
     return dask_keys, pandas_keys
@@ -145,6 +143,11 @@ def _resolve_pandas_series_keys(
         resolved[key] = options[key].dropna().unique().tolist()
 
 
+# Not a copy-pasted twin: both already share _classify_series_keys()/
+# _apply_computed_dask_series()/_resolve_pandas_series_keys(); the remaining
+# difference is dask.compute(...) vs await asyncio.to_thread(dask.compute, ...)
+# — the offload boundary itself.
+# spaghetti-ignore[sync-async-duplication]
 def resolve_series_filters(options: dict[str, Any]) -> dict[str, Any]:
     dask_keys, pandas_keys = _classify_series_keys(options)
     if not dask_keys and not pandas_keys:

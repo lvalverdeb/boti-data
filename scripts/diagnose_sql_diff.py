@@ -9,6 +9,7 @@ Requires env vars SYNC_DB_DSN or ASYNC_DB_DSN with a working MySQL connection.
 import os
 import sys
 from pathlib import Path
+from types import MappingProxyType
 
 # Ensure we can resolve the package
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -27,14 +28,14 @@ dsn = os.getenv("SYNC_DB_DSN")
 if not dsn:
     async_dsn = os.getenv("ASYNC_DB_DSN", "")
     if async_dsn.startswith("mysql+aiomysql://"):
-        dsn = "mysql+pymysql://" + async_dsn[len("mysql+aiomysql://"):]
+        dsn = "mysql+pymysql://" + async_dsn[len("mysql+aiomysql://") :]
 if not dsn:
     print("ERROR: Set SYNC_DB_DSN or ASYNC_DB_DSN")
     sys.exit(1)
 
 print(f"DSN: {dsn.rsplit('@', 1)[0].rsplit(':', 1)[0]}:***@...")
 
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.dialects import mysql as mysql_dialect
 
 from boti_data.db.sql_config import SqlDatabaseConfig
@@ -47,8 +48,8 @@ from boti_data.db.partitioned_planner import SqlPartitionPlanner
 
 # -- Configuration (mirrors what the benchmark notebook sets up) --
 TABLE = "asm_tracking_productos"
-DB_COLUMNS = ["id_track_global", "id_producto", "cliente_id", "id_tipo_producto"]
-FILTERS = {"id_track_global__in": [1, 2, 3, 4], "id_tipo_producto": 1}
+DB_COLUMNS = ("id_track_global", "id_producto", "cliente_id", "id_tipo_producto")
+FILTERS = MappingProxyType({"id_track_global__in": [1, 2, 3, 4], "id_tipo_producto": 1})
 CHUNK_SIZE = 50000
 
 config = SqlDatabaseConfig(
@@ -79,12 +80,14 @@ with SqlDatabaseResource(config) as res:
     dask_limited = dask_base  # No LIMIT — avoids bad MySQL query plan
 
     # ===== PANDAS (EAGER) PATH =====
-    pandas_req = SqlLoadRequest.model_validate(dict(
-        statement=base_stmt,
-        model=model,
-        filters=FILTERS,
-        as_pandas=True,
-    ))
+    pandas_req = SqlLoadRequest.model_validate(
+        dict(
+            statement=base_stmt,
+            model=model,
+            filters=FILTERS,
+            as_pandas=True,
+        )
+    )
     pandas_stmt, _ = _prepare_sql_statement(pandas_req, logger=None, debug=False)
 
     # ===== COMPILE TO MYSQL DIALECT =====
@@ -135,7 +138,7 @@ with SqlDatabaseResource(config) as res:
                 rows = result.fetchall()
                 t1 = time.perf_counter()
                 times.append(t1 - t0)
-                print(f"  {label} run {i+1}: {t1-t0:.4f}s ({len(rows)} rows)")
+                print(f"  {label} run {i + 1}: {t1 - t0:.4f}s ({len(rows)} rows)")
         return times
 
     dask_times = time_query(dask_sql, "dask")

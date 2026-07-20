@@ -248,17 +248,7 @@ def _resolve_worker_connection_url(config: WorkerSqlConfig) -> str:
     return config.connection_url.get_secret_value()
 
 
-def _build_worker_sync_engine_kwargs(config: WorkerSqlConfig) -> dict[str, Any]:
-    return {
-        "pool_recycle": config.pool_recycle,
-        "pool_pre_ping": config.pool_pre_ping,
-        "poolclass": NullPool,
-        "connect_args": config.connect_args,
-        "execution_options": config.execution_options,
-    }
-
-
-def _build_worker_async_engine_kwargs(config: WorkerSqlConfig) -> dict[str, Any]:
+def _build_worker_engine_kwargs(config: WorkerSqlConfig) -> dict[str, Any]:
     return {
         "pool_recycle": config.pool_recycle,
         "pool_pre_ping": config.pool_pre_ping,
@@ -280,7 +270,7 @@ def _create_worker_async_engine(config: SqlDatabaseConfig | WorkerSqlConfig) -> 
 
     return create_async_engine(
         connection_url,
-        **_build_worker_async_engine_kwargs(worker_config),
+        **_build_worker_engine_kwargs(worker_config),
     )
 
 
@@ -296,7 +286,7 @@ def _create_worker_sync_engine(config: SqlDatabaseConfig | WorkerSqlConfig) -> E
 
     engine = create_engine(
         connection_url,
-        **_build_worker_sync_engine_kwargs(worker_config),
+        **_build_worker_engine_kwargs(worker_config),
     )
     if worker_config.query_only:
         _configure_query_only_engine(engine, parsed)

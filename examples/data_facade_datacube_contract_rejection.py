@@ -37,4 +37,3 @@ def main() -> dict[str, str]:
 
 if __name__ == "__main__":
     main()
-

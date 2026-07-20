@@ -21,8 +21,8 @@ def base_frame() -> dd.DataFrame:
 
 
 @pytest.mark.asyncio
-async def test_async_frame_enricher_enriches_selected_spec(base_frame):
-    async def attachment_fn(ids):
+async def test_async_frame_enricher_enriches_selected_spec(base_frame) -> None:
+    async def attachment_fn(ids) -> pd.DataFrame:
         return pd.DataFrame({"id": ids, "segment": [f"seg_{value}" for value in ids]})
 
     enricher = AsyncFrameEnricher(
@@ -45,8 +45,8 @@ async def test_async_frame_enricher_enriches_selected_spec(base_frame):
 
 
 @pytest.mark.asyncio
-async def test_async_frame_enricher_respects_requested_keys(base_frame):
-    async def attachment_fn(ids):
+async def test_async_frame_enricher_respects_requested_keys(base_frame) -> None:
+    async def attachment_fn(ids) -> pd.DataFrame:
         return pd.DataFrame({"id": ids, "segment": [f"seg_{value}" for value in ids]})
 
     enricher = AsyncFrameEnricher(
@@ -69,8 +69,8 @@ async def test_async_frame_enricher_respects_requested_keys(base_frame):
 
 
 @pytest.mark.asyncio
-async def test_async_frame_enricher_enforces_unique_limits(base_frame):
-    async def attachment_fn(ids):
+async def test_async_frame_enricher_enforces_unique_limits(base_frame) -> None:
+    async def attachment_fn(ids) -> pd.DataFrame:
         return pd.DataFrame({"id": ids, "segment": [f"seg_{value}" for value in ids]})
 
     enricher = AsyncFrameEnricher(

@@ -27,7 +27,7 @@ from boti_data.schema import (
 )
 
 
-def test_normalize_dtype_alias_handles_pyarrow_and_extension_variants():
+def test_normalize_dtype_alias_handles_pyarrow_and_extension_variants() -> None:
     assert normalize_dtype_alias("int64[pyarrow]") == "Int64"
     assert normalize_dtype_alias("string[pyarrow]") == "string"
     assert normalize_dtype_alias("boolean[pyarrow]") == "boolean"
@@ -38,7 +38,7 @@ def test_normalize_dtype_alias_handles_pyarrow_and_extension_variants():
     assert normalize_dtype_alias("datetime64[s]") == "datetime64[ns]"
 
 
-def test_apply_schema_map_and_validate_schema_for_pandas():
+def test_apply_schema_map_and_validate_schema_for_pandas() -> None:
     dataframe = pd.DataFrame(
         {
             "id": ["1", "2"],
@@ -64,7 +64,7 @@ def test_apply_schema_map_and_validate_schema_for_pandas():
     assert aligned["flag"].tolist() == [True, False]
 
 
-def test_validate_schema_accepts_second_resolution_utc_datetimes():
+def test_validate_schema_accepts_second_resolution_utc_datetimes() -> None:
     dataframe = pd.DataFrame(
         {
             "ts": pd.Series(
@@ -76,21 +76,21 @@ def test_validate_schema_accepts_second_resolution_utc_datetimes():
     validate_schema(dataframe, {"ts": "datetime64[ns, UTC]"}, require_columns=True)
 
 
-def test_validate_schema_raises_on_dtype_mismatch():
+def test_validate_schema_raises_on_dtype_mismatch() -> None:
     dataframe = pd.DataFrame({"id": [1, 2]})
 
     with pytest.raises(SchemaValidationError, match="expected 'string'"):
         validate_schema(dataframe, {"id": "string"})
 
 
-def test_apply_schema_map_raises_on_missing_required_columns():
+def test_apply_schema_map_raises_on_missing_required_columns() -> None:
     dataframe = pd.DataFrame({"id": [1, 2]})
 
     with pytest.raises(SchemaValidationError, match="Missing required column"):
         apply_schema_map(dataframe, {"missing": "Int64"}, require_columns=True)
 
 
-def test_align_frames_for_join_normalizes_dask_join_keys():
+def test_align_frames_for_join_normalizes_dask_join_keys() -> None:
     left_pdf = pd.DataFrame(
         {
             "id": pd.Series([1, 2], dtype="Int64"),
@@ -122,7 +122,7 @@ def test_align_frames_for_join_normalizes_dask_join_keys():
     assert merged["right_value"].tolist() == ["x", "y"]
 
 
-def test_arrow_schema_roundtrips_empty_utc_timestamp_dataframe():
+def test_arrow_schema_roundtrips_empty_utc_timestamp_dataframe() -> None:
     dataframe = pd.DataFrame(
         {
             "id": pd.Series(dtype="Int64"),
@@ -137,7 +137,7 @@ def test_arrow_schema_roundtrips_empty_utc_timestamp_dataframe():
     assert str(result["ts"].dtype) == "datetime64[ns, UTC]"
 
 
-def test_rows_to_arrow_table_coerces_date_values_to_utc_timestamps():
+def test_rows_to_arrow_table_coerces_date_values_to_utc_timestamps() -> None:
     schema = build_arrow_schema_from_meta_dtypes({"ts": "datetime64[ns, UTC]"})
 
     table = rows_to_arrow_table(
@@ -154,7 +154,7 @@ def test_rows_to_arrow_table_coerces_date_values_to_utc_timestamps():
     ]
 
 
-def test_rows_to_arrow_table_treats_blank_timestamp_strings_as_null():
+def test_rows_to_arrow_table_treats_blank_timestamp_strings_as_null() -> None:
     schema = build_arrow_schema_from_meta_dtypes({"ts": "datetime64[ns, UTC]"})
 
     table = rows_to_arrow_table(

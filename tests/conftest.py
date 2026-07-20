@@ -1,9 +1,11 @@
 """
 Shared pytest fixtures for boti_data tests.
 """
+
 import datetime
 import shutil
 import sqlite3
+from collections.abc import Generator
 from pathlib import Path
 from tempfile import mkdtemp
 
@@ -17,7 +19,7 @@ sqlite3.register_adapter(datetime.datetime, lambda dt: dt.isoformat())
 
 
 @pytest.fixture
-def temp_project_root():
+def temp_project_root() -> Generator[Path]:
     """Creates a temporary directory acting as a project root."""
     path = Path(mkdtemp())
     # Add a marker to ensure ProjectService detects it correctly
@@ -27,10 +29,8 @@ def temp_project_root():
 
 
 @pytest.fixture
-def temp_log_dir():
+def temp_log_dir() -> Generator[Path]:
     """Creates a temporary logging directory."""
     path = Path(mkdtemp())
     yield path
     shutil.rmtree(path)
-
-

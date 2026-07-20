@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, Protocol, Union
 
 import dask.dataframe as dd
@@ -14,20 +14,28 @@ from boti_data.enrichment.specs import AttachmentSpec
 FrameResult = Union[pd.DataFrame, dd.DataFrame, pa.Table, pl.DataFrame]
 
 
+_TO_DASK_FRAME_CONVERTERS: list[tuple[type, Callable[[FrameResult], dd.DataFrame]]] = [
+    (dd.DataFrame, lambda frame: frame),
+    (pd.DataFrame, lambda frame: dd.from_pandas(frame, npartitions=max(1, len(frame) or 1))),
+    (pa.Table, lambda frame: dd.from_pandas(frame.to_pandas(), npartitions=1)),
+    (pl.DataFrame, lambda frame: dd.from_pandas(frame.to_pandas(), npartitions=1)),
+]
+
+
 def _to_dask_frame(frame: FrameResult) -> dd.DataFrame:
-    if isinstance(frame, dd.DataFrame):
-        return frame
-    if isinstance(frame, pd.DataFrame):
-        return dd.from_pandas(frame, npartitions=max(1, len(frame) or 1))
-    if isinstance(frame, pa.Table):
-        return dd.from_pandas(frame.to_pandas(), npartitions=1)
-    if isinstance(frame, pl.DataFrame):
-        return dd.from_pandas(frame.to_pandas(), npartitions=1)
+    for frame_type, convert in _TO_DASK_FRAME_CONVERTERS:
+        if isinstance(frame, frame_type):
+            return convert(frame)
     raise TypeError(f"Unsupported frame type for enrichment: {type(frame)!r}")
 
 
 class FrameEnricher(Protocol):
-    def enrich(self, base_frame: FrameResult, *, cols: Sequence[str] | None = None) -> FrameResult: ...
+    # Not a copy-pasted twin: this is a Protocol interface stub (body is `...`),
+    # nothing to deduplicate.
+    # spaghetti-ignore[sync-async-duplication]
+    def enrich(
+        self, base_frame: FrameResult, *, cols: Sequence[str] | None = None
+    ) -> FrameResult: ...
 
     async def aenrich(
         self,
@@ -86,11 +94,12 @@ class AsyncFrameEnricher:
             out = self._merge_attachment(out, _to_dask_frame(attached), spec)
         return out
 
-    async def _run_attachment(
+    async def _collect_attachment_kwargs(
         self,
         base: dd.DataFrame,
         spec: AttachmentSpec,
-    ) -> FrameResult | None:
+    ) -> dict[str, Any] | None:
+        """Gather attachment_fn kwargs from *base*, or None if any input is missing/empty."""
         kwargs: dict[str, Any] = {}
         for column, kwarg_name in spec.col_to_kwarg.items():
             if column not in base.columns:
@@ -103,8 +112,15 @@ class AsyncFrameEnricher:
             if not values:
                 return None
             kwargs[kwarg_name] = values
+        return kwargs or None
 
-        if not kwargs:
+    async def _run_attachment(
+        self,
+        base: dd.DataFrame,
+        spec: AttachmentSpec,
+    ) -> FrameResult | None:
+        kwargs = await self._collect_attachment_kwargs(base, spec)
+        if kwargs is None:
             return None
         return await spec.attachment_fn(**kwargs)
 
@@ -117,16 +133,16 @@ class AsyncFrameEnricher:
     ) -> list[Any]:
         async with self._semaphore:
             if isinstance(series, pd.Series):
-                uniques = series.dropna().drop_duplicates().tolist()
+                deduped = series.dropna().drop_duplicates()
+                uniques = deduped.tolist()
             else:
                 # Bound extraction work: request max+1 unique values.
-                uniques = await asyncio.to_thread(
-                    lambda: series.dropna().drop_duplicates().head(
-                        max_unique + 1,
-                        npartitions=-1,
-                        compute=True,
-                    ).tolist()
-                )
+                def _extract_uniques() -> list[Any]:
+                    deduped = series.dropna().drop_duplicates()
+                    limited = deduped.head(max_unique + 1, npartitions=-1, compute=True)
+                    return limited.tolist()
+
+                uniques = await asyncio.to_thread(_extract_uniques)
             if len(uniques) > max_unique:
                 raise ValueError(
                     f"Column {column_name!r} exceeded unique-value limit ({max_unique})."

@@ -85,6 +85,55 @@ def _seed_tables(db_path: Path, *, user_rows: int, profile_rows: int, batch_size
         bootstrap_engine.dispose()
 
 
+def _load_and_join(config: SqlDatabaseConfig, settings: dict[str, int]) -> dict[str, object]:
+    with dask_session(
+        cluster_kwargs={
+            "n_workers": settings["workers"],
+            "threads_per_worker": settings["threads_per_worker"],
+            "processes": False,
+            "dashboard_address": ":0",
+        }
+    ) as client:
+        client_summary = describe_client(client)
+        with DataGateway(config) as facade:
+            users = facade.load(
+                statement=select(User),
+                model=User,
+                persist=True,
+                diagnostics=True,
+            )
+            profiles = facade.load(
+                statement=select(UserProfile),
+                model=UserProfile,
+                persist=True,
+                diagnostics=True,
+            )
+            joined = indexed_left_join(
+                users,
+                profiles,
+                join_key="id",
+                join_schema_map={"id": "Int64"},
+                persist=True,
+                diagnostics=True,
+            )
+            head = joined.head(5)
+            matched_rows = int(joined["tier"].count().compute())
+            unmatched_rows = int(joined["tier"].isna().sum().compute())
+            status_value_counts = users["status"].value_counts(split_out=1).compute()
+            status_counts = status_value_counts.sort_index().to_dict()
+
+    return {
+        "client": client_summary,
+        "head": head,
+        "user_partitions": users.npartitions,
+        "profile_partitions": profiles.npartitions,
+        "joined_partitions": joined.npartitions,
+        "status_counts": status_counts,
+        "matched_rows": matched_rows,
+        "unmatched_rows": unmatched_rows,
+    }
+
+
 def run_example() -> dict[str, object]:
     settings = _example_settings()
     with TemporaryDirectory() as tmp_dir:
@@ -102,54 +151,19 @@ def run_example() -> dict[str, object]:
             query_only=False,
         )
 
-        with dask_session(
-            cluster_kwargs={
-                "n_workers": settings["workers"],
-                "threads_per_worker": settings["threads_per_worker"],
-                "processes": False,
-                "dashboard_address": ":0",
-            }
-        ) as client:
-            client_summary = describe_client(client)
-            with DataGateway(config) as facade:
-                users = facade.load(
-                    statement=select(User),
-                    model=User,
-                    persist=True,
-                    diagnostics=True,
-                )
-                profiles = facade.load(
-                    statement=select(UserProfile),
-                    model=UserProfile,
-                    persist=True,
-                    diagnostics=True,
-                )
-                joined = indexed_left_join(
-                    users,
-                    profiles,
-                    join_key="id",
-                    join_schema_map={"id": "Int64"},
-                    persist=True,
-                    diagnostics=True,
-                )
-                head = joined.head(5)
-                matched_rows = int(joined["tier"].count().compute())
-                unmatched_rows = int(joined["tier"].isna().sum().compute())
-                status_counts = (
-                    users["status"].value_counts(split_out=1).compute().sort_index().to_dict()
-                )
+        pipeline = _load_and_join(config, settings)
 
     return {
-        "client": client_summary,
+        "client": pipeline["client"],
         "user_rows": settings["user_rows"],
         "profile_rows": settings["profile_rows"],
-        "head": head,
-        "user_partitions": users.npartitions,
-        "profile_partitions": profiles.npartitions,
-        "joined_partitions": joined.npartitions,
-        "status_counts": status_counts,
-        "matched_rows": matched_rows,
-        "unmatched_rows": unmatched_rows,
+        "head": pipeline["head"],
+        "user_partitions": pipeline["user_partitions"],
+        "profile_partitions": pipeline["profile_partitions"],
+        "joined_partitions": pipeline["joined_partitions"],
+        "status_counts": pipeline["status_counts"],
+        "matched_rows": pipeline["matched_rows"],
+        "unmatched_rows": pipeline["unmatched_rows"],
     }
 
 

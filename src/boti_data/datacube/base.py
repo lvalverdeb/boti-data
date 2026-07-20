@@ -12,14 +12,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
-import pandas as pd
-import pyarrow as pa
 from boti.core import Logger
 from boti.core.lifecycle import LifecycleCore
 from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 
-from boti_data.datacube.contract import DatacubeFrame
+from boti_data.datacube.contract import DatacubeFrame, frame_has_data
 
 if TYPE_CHECKING:
     from boti_data.helper import DataHelper
@@ -91,18 +88,7 @@ class BaseDataCube(PicklableLifecycleCoreMixin, LifecycleCore):
     # ── internals ───────────────────────────────────────────────────────
 
     def _has_data(self) -> bool:
-        """Check if dataframe has rows; avoids hidden heavy ops where possible."""
-        if self.df is None:
-            return False
-        if isinstance(self.df, dd.DataFrame):
-            return len(self.df.index) > 0
-        if isinstance(self.df, pd.DataFrame):
-            return len(self.df.index) > 0
-        if isinstance(self.df, pa.Table):
-            return len(self.df) > 0
-        if hasattr(self.df, "height"):
-            return self.df.height > 0
-        return True
+        return frame_has_data(self.df)
 
     def _afix_data_is_overridden(self) -> bool:
         """Check if subclass provided its own ``afix_data``."""
@@ -115,27 +101,35 @@ class BaseDataCube(PicklableLifecycleCoreMixin, LifecycleCore):
     def _log_no_data(self) -> None:
         self.logger.debug("No data was found by %s loader", self.__class__.__name__)
 
+    def _guard_has_data(self) -> bool:
+        """Returns True if data is present; otherwise logs and returns False."""
+        if self._has_data():
+            return True
+        self._log_no_data()
+        return False
+
     # ── public API ──────────────────────────────────────────────────────
 
+    # Not a copy-pasted twin: the shared _guard_has_data()/_fix_data_is_overridden()
+    # logic is already extracted; aload() has a genuine extra fallback branch
+    # (afix_data_is_overridden() -> afix_data()) that load() cannot have, since
+    # afix_data is async-only.
+    # spaghetti-ignore[sync-async-duplication]
     def load(self, **options: Any) -> DatacubeFrame:
         """Sync load path with optional ``fix_data`` hook."""
         self.df = self._helper.load(**options)
-        if self._has_data() and self._fix_data_is_overridden():
+        if self._guard_has_data() and self._fix_data_is_overridden():
             self.fix_data()
-        elif not self._has_data():
-            self._log_no_data()
         return self.df
 
     async def aload(self, **options: Any) -> DatacubeFrame:
         """Async load path with optional ``afix_data`` / ``fix_data`` hook."""
         self.df = await self._helper.aload(**options)
-        if self._has_data():
+        if self._guard_has_data():
             if self._afix_data_is_overridden():
                 await self.afix_data()
             elif self._fix_data_is_overridden():
                 self.fix_data()
-        else:
-            self._log_no_data()
         return self.df
 
     # ── lifecycle ───────────────────────────────────────────────────────

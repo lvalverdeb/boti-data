@@ -14,6 +14,7 @@ import functools
 import re
 import threading
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 import fsspec
 import pyarrow.fs as pafs
@@ -136,7 +137,7 @@ class ConnectionCatalog:
     def invalidate_filesystem(self, name: str) -> None:
         self.filesystem_adapter(name).invalidate()
 
-    def make_filesystem_factory(self, name: str):
+    def make_filesystem_factory(self, name: str) -> functools.partial[fsspec.AbstractFileSystem]:
         return functools.partial(create_filesystem, self.filesystem_config(name))
 
 
@@ -184,13 +185,13 @@ class S3Catalog:
     def storage_path(self) -> str:
         return self.adapter.storage_path
 
-    def fs(self):
+    def fs(self) -> fsspec.AbstractFileSystem:
         return self.adapter.get_filesystem()
 
-    def open(self, sub_key: str, mode: str = "rb"):
+    def open(self, sub_key: str, mode: str = "rb") -> Any:
         return self.fs().open(self._resolve_key(sub_key), mode)
 
-    def ls(self, path: str = ""):
+    def ls(self, path: str = "") -> Any:
         return self.fs().ls(self._resolve_key(path) if path else self.config.fs_path)
 
     def _resolve_key(self, sub_key: str) -> str:

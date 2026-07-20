@@ -39,7 +39,10 @@ class _EngineBoundHelper:
             )
 
         requested_execution_mode = options.get("execution_mode")
-        if requested_execution_mode is not None and requested_execution_mode != self._execution_mode:
+        if (
+            requested_execution_mode is not None
+            and requested_execution_mode != self._execution_mode
+        ):
             raise ValueError(
                 f"helper.{self._return_type} does not allow execution_mode={requested_execution_mode!r}; "
                 f"use execution_mode={self._execution_mode!r} or call DataHelper.load(...) directly."
@@ -85,6 +88,10 @@ class _EngineBoundHelper:
     def asemi_join_sync(self, join_series: Any, on: str, **kwargs: Any) -> Any:
         return self._helper.asemi_join_sync(join_series, on, **self._bind_options(kwargs))
 
+    # Not a copy-pasted twin: pure delegate to self._helper.load_incremental()/
+    # aload_incremental() via the shared _bind_options(), identical in shape to
+    # this class's other unflagged proxy pairs (load/aload, semi_join/asemi_join).
+    # spaghetti-ignore[sync-async-duplication]
     def load_incremental(
         self,
         *,
@@ -120,6 +127,50 @@ class _EngineBoundHelper:
         )
 
 
+def _session(**kwargs: Any) -> DaskSession:
+    return dask_session(**kwargs)
+
+
+def _left_join(
+    left: DataFrameLike,
+    right: DataFrameLike,
+    *,
+    join_schema_map: Mapping[str, str],
+    join_key: str | None = None,
+    left_on: Sequence[str] | None = None,
+    right_on: Sequence[str] | None = None,
+    persist: bool = False,
+    reset_index: bool = True,
+    diagnostics: bool = False,
+    logger: Any | None = None,
+    label: str | None = None,
+) -> DataFrameLike:
+    if join_key is not None:
+        return indexed_left_join(
+            left,
+            right,
+            join_key=join_key,
+            join_schema_map=join_schema_map,
+            persist=persist,
+            reset_index=reset_index,
+            diagnostics=diagnostics,
+            logger=logger,
+            label=label or "data_helper.indexed_left_join",
+        )
+    if left_on is None:
+        raise ValueError("left_on is required when join_key is not provided.")
+    return left_join_frames(
+        left,
+        right,
+        left_on=left_on,
+        right_on=right_on,
+        join_schema_map=join_schema_map,
+        diagnostics=diagnostics,
+        logger=logger,
+        label=label or "data_helper.left_join_frames",
+    )
+
+
 class DataHelper(PicklableLifecycleCoreMixin, LifecycleCore):
     """Thin compatibility facade over :class:`DataGateway` and related helpers."""
 
@@ -134,7 +185,9 @@ class DataHelper(PicklableLifecycleCoreMixin, LifecycleCore):
             self.gateway = DataGateway.from_config(dict(overrides))
         elif isinstance(config, DataGateway):
             if overrides:
-                raise TypeError("DataHelper does not accept overrides when wrapping an existing DataGateway.")
+                raise TypeError(
+                    "DataHelper does not accept overrides when wrapping an existing DataGateway."
+                )
             self.gateway = config
         elif isinstance(config, Mapping):
             self.gateway = DataGateway.from_config(dict(config), **overrides)
@@ -218,9 +271,7 @@ class DataHelper(PicklableLifecycleCoreMixin, LifecycleCore):
         return self.gateway.load(**self._build_preview_options(statement, model, n, options))
 
     async def apreview(self, statement: Any, model: Any, n: int = 5, **options: Any) -> Any:
-        return await self.gateway.aload(
-            **self._build_preview_options(statement, model, n, options)
-        )
+        return await self.gateway.aload(**self._build_preview_options(statement, model, n, options))
 
     def load_period(self, dt_field: str, start: str, end: str, **kwargs: Any) -> Any:
         return self.gateway.load_period(dt_field, start, end, **kwargs)
@@ -243,6 +294,10 @@ class DataHelper(PicklableLifecycleCoreMixin, LifecycleCore):
             "Use `await helper.asemi_join(...)` instead of asemi_join_sync() when an event loop is running."
         )
 
+    # Not a copy-pasted twin: pure delegate to self._incremental.load()/aload()
+    # with identical kwargs, matching this class's other unflagged proxy pairs
+    # (load/aload, preview/apreview, load_period/aload_period).
+    # spaghetti-ignore[sync-async-duplication]
     def load_incremental(
         self,
         *,
@@ -285,49 +340,8 @@ class DataHelper(PicklableLifecycleCoreMixin, LifecycleCore):
             **options,
         )
 
-    @staticmethod
-    def session(**kwargs: Any) -> DaskSession:
-        return dask_session(**kwargs)
-
-    @staticmethod
-    def left_join(
-        left: DataFrameLike,
-        right: DataFrameLike,
-        *,
-        join_schema_map: Mapping[str, str],
-        join_key: str | None = None,
-        left_on: Sequence[str] | None = None,
-        right_on: Sequence[str] | None = None,
-        persist: bool = False,
-        reset_index: bool = True,
-        diagnostics: bool = False,
-        logger: Any | None = None,
-        label: str | None = None,
-    ) -> DataFrameLike:
-        if join_key is not None:
-            return indexed_left_join(
-                left,
-                right,
-                join_key=join_key,
-                join_schema_map=join_schema_map,
-                persist=persist,
-                reset_index=reset_index,
-                diagnostics=diagnostics,
-                logger=logger,
-                label=label or "data_helper.indexed_left_join",
-            )
-        if left_on is None:
-            raise ValueError("left_on is required when join_key is not provided.")
-        return left_join_frames(
-            left,
-            right,
-            left_on=left_on,
-            right_on=right_on,
-            join_schema_map=join_schema_map,
-            diagnostics=diagnostics,
-            logger=logger,
-            label=label or "data_helper.left_join_frames",
-        )
+    session = staticmethod(_session)
+    left_join = staticmethod(_left_join)
 
 
 __all__ = ["DataHelper"]

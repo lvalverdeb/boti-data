@@ -3,8 +3,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 import dask.dataframe as dd
 import pandas as pd
@@ -14,123 +13,39 @@ from boti.core.lifecycle import LifecycleCore
 from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 from boti_dask import safe_persist
 
-from boti_data.datacube import DatacubeConfig
-from boti_data.db import SqlDatabaseConfig
+from boti_data.dataset.hybrid_support import (
+    BackendConfig,
+    FrameResult,
+    HybridSource,
+    ResolvedReturnType,
+    _HybridEngineBoundDataset,
+    _LoadPlan,
+    _MixedLoadPrep,
+    _to_arrow,
+    _to_dask,
+    _to_pandas,
+    _to_polars,
+)
 from boti_data.helper import DataHelper
-from boti_data.parquet.resource import ParquetDataConfig
 
-HybridSource = Literal["auto", "historical", "live"]
-ResolvedReturnType = Literal["pandas", "arrow", "dask", "polars"]
-BackendConfig = SqlDatabaseConfig | ParquetDataConfig | DatacubeConfig
-FrameResult = pd.DataFrame | dd.DataFrame | pa.Table | pl.DataFrame
-
-
-def _to_pandas(frame: FrameResult) -> pd.DataFrame:
-    if isinstance(frame, pd.DataFrame):
-        return frame
-    if isinstance(frame, dd.DataFrame):
-        return frame.compute()
-    if isinstance(frame, pa.Table):
-        return frame.to_pandas()
-    if isinstance(frame, pl.DataFrame):
-        return frame.to_pandas()
-    raise TypeError(f"Unsupported frame type: {type(frame)!r}")
+_MIXED_CONCAT_FNS: dict[ResolvedReturnType, Any] = {
+    "dask": lambda frames: dd.concat(
+        [_to_dask(frame) for frame in frames], ignore_unknown_divisions=True
+    ),
+    "pandas": lambda frames: pd.concat([_to_pandas(frame) for frame in frames], ignore_index=True),
+    "arrow": lambda frames: pa.concat_tables([_to_arrow(frame) for frame in frames]),
+    "polars": lambda frames: pl.concat(
+        [_to_polars(frame) for frame in frames], how="vertical_relaxed"
+    ),
+}
 
 
-def _to_arrow(frame: FrameResult) -> pa.Table:
-    if isinstance(frame, pa.Table):
-        return frame
-    if isinstance(frame, dd.DataFrame):
-        frame = frame.compute()
-    if isinstance(frame, pd.DataFrame):
-        return pa.Table.from_pandas(frame, preserve_index=False)
-    if isinstance(frame, pl.DataFrame):
-        return frame.to_arrow()
-    raise TypeError(f"Unsupported frame type: {type(frame)!r}")
-
-
-def _to_polars(frame: FrameResult) -> pl.DataFrame:
-    if isinstance(frame, pl.DataFrame):
-        return frame
-    return pl.from_arrow(_to_arrow(frame))
-
-
-def _to_dask(frame: FrameResult) -> dd.DataFrame:
-    if isinstance(frame, dd.DataFrame):
-        return frame
-    return dd.from_pandas(_to_pandas(frame), npartitions=1)
-
-
-@dataclass(slots=True)
-class _LoadPlan:
-    source: HybridSource
-    historical_start: str | None = None
-    historical_end: str | None = None
-    live_start: str | None = None
-    live_end: str | None = None
-
-
-@dataclass(slots=True)
-class _MixedLoadPrep:
-    return_type: ResolvedReturnType
-    branch_options: dict[str, Any]
-    persist: bool
-    resilient: bool
-    historical_start: Any
-    historical_end: Any
-    live_start: Any
-    live_end: Any
-
-
-class _HybridEngineBoundDataset:
-    """Engine-specific view over an existing :class:`HybridDataset`."""
-
-    def __init__(
-        self,
-        dataset: HybridDataset,
-        *,
-        return_type: ResolvedReturnType,
-        execution_mode: Literal["lazy", "eager"],
-    ) -> None:
-        self._dataset = dataset
-        self._return_type = return_type
-        self._execution_mode = execution_mode
-
-    def _bind_options(self, options: Mapping[str, Any]) -> dict[str, Any]:
-        bound = dict(options)
-        bound.setdefault("return_type", self._return_type)
-        bound.setdefault("execution_mode", self._execution_mode)
-        return bound
-
-    def load(
-        self,
-        *,
-        start: str,
-        end: str,
-        source: HybridSource = "auto",
-        **options: Any,
-    ) -> FrameResult:
-        return self._dataset.load(
-            start=start,
-            end=end,
-            source=source,
-            **self._bind_options(options),
-        )
-
-    async def aload(
-        self,
-        *,
-        start: str,
-        end: str,
-        source: HybridSource = "auto",
-        **options: Any,
-    ) -> FrameResult:
-        return await self._dataset.aload(
-            start=start,
-            end=end,
-            source=source,
-            **self._bind_options(options),
-        )
+def _persist_if_requested(combined: FrameResult, *, persist: bool, resilient: bool) -> FrameResult:
+    if not persist or not isinstance(combined, dd.DataFrame):
+        return combined
+    if resilient:
+        return safe_persist(combined)
+    return combined.persist()
 
 
 class HybridDataset(PicklableLifecycleCoreMixin, LifecycleCore):
@@ -215,6 +130,10 @@ class HybridDataset(PicklableLifecycleCoreMixin, LifecycleCore):
     def arrow(self) -> _HybridEngineBoundDataset:
         return _HybridEngineBoundDataset(self, return_type="arrow", execution_mode="eager")
 
+    # Not a copy-pasted twin: both already share _resolve_plan() and dispatch to
+    # the already-split historical/live load_period()/aload_period() twins and
+    # _load_mixed_sync()/_load_mixed_async() below — nothing further to extract.
+    # spaghetti-ignore[sync-async-duplication]
     def load(
         self,
         *,
@@ -274,14 +193,9 @@ class HybridDataset(PicklableLifecycleCoreMixin, LifecycleCore):
         if end_date < start_date:
             raise ValueError("end must be greater than or equal to start.")
 
-        if source == "historical":
+        if source == "historical" or (source == "auto" and end_date < self.split_date):
             return _LoadPlan(source="historical", historical_start=start, historical_end=end)
-        if source == "live":
-            return _LoadPlan(source="live", live_start=start, live_end=end)
-
-        if end_date < self.split_date:
-            return _LoadPlan(source="historical", historical_start=start, historical_end=end)
-        if start_date >= self.split_date:
+        if source == "live" or (source == "auto" and start_date >= self.split_date):
             return _LoadPlan(source="live", live_start=start, live_end=end)
 
         historical_end = (self.split_date - dt.timedelta(days=1)).isoformat()
@@ -327,27 +241,20 @@ class HybridDataset(PicklableLifecycleCoreMixin, LifecycleCore):
         persist: bool,
         resilient: bool,
     ) -> FrameResult:
-        if return_type == "dask":
-            combined = dd.concat([_to_dask(frame) for frame in frames], ignore_unknown_divisions=True)
-        elif return_type == "pandas":
-            combined = pd.concat([_to_pandas(frame) for frame in frames], ignore_index=True)
-        elif return_type == "arrow":
-            combined = pa.concat_tables([_to_arrow(frame) for frame in frames])
-        elif return_type == "polars":
-            combined = pl.concat([_to_polars(frame) for frame in frames], how="vertical_relaxed")
-        else:
-            raise ValueError(f"Unsupported return_type for HybridDataset mixed load: {return_type!r}")
-
-        if persist and isinstance(combined, dd.DataFrame):
-            if resilient:
-                return safe_persist(combined)
-            return combined.persist()
-        return combined
+        concat_fn = _MIXED_CONCAT_FNS.get(return_type)
+        if concat_fn is None:
+            raise ValueError(
+                f"Unsupported return_type for HybridDataset mixed load: {return_type!r}"
+            )
+        combined = concat_fn(frames)
+        return _persist_if_requested(combined, persist=persist, resilient=resilient)
 
     def _prepare_mixed_load(self, plan: _LoadPlan, options: Mapping[str, Any]) -> _MixedLoadPrep:
         return_type = self._resolved_mixed_return_type(options)
         branch_options, persist, resilient = self._branch_options(options, return_type=return_type)
-        historical_start, historical_end = self._require_bounds(plan.historical_start, plan.historical_end)
+        historical_start, historical_end = self._require_bounds(
+            plan.historical_start, plan.historical_end
+        )
         live_start, live_end = self._require_bounds(plan.live_start, plan.live_end)
         return _MixedLoadPrep(
             return_type=return_type,
@@ -360,6 +267,22 @@ class HybridDataset(PicklableLifecycleCoreMixin, LifecycleCore):
             live_end=live_end,
         )
 
+    def _combine_from_prep(
+        self, prep: _MixedLoadPrep, historical_frame: FrameResult, live_frame: FrameResult
+    ) -> FrameResult:
+        return self._combine_mixed_frames(
+            [historical_frame, live_frame],
+            return_type=prep.return_type,
+            persist=prep.persist,
+            resilient=prep.resilient,
+        )
+
+    # Not a copy-pasted twin: shared prep (_prepare_mixed_load) and shared
+    # combine (_combine_from_prep) are already extracted above; the remaining
+    # difference is a genuine behavioral one — _load_mixed_async fetches
+    # historical+live concurrently via asyncio.gather, _load_mixed_sync is
+    # sequential.
+    # spaghetti-ignore[sync-async-duplication]
     def _load_mixed_sync(self, plan: _LoadPlan, options: Mapping[str, Any]) -> FrameResult:
         prep = self._prepare_mixed_load(plan, options)
         historical_frame = self.historical.load_period(
@@ -374,12 +297,7 @@ class HybridDataset(PicklableLifecycleCoreMixin, LifecycleCore):
             prep.live_end,
             **prep.branch_options,
         )
-        return self._combine_mixed_frames(
-            [historical_frame, live_frame],
-            return_type=prep.return_type,
-            persist=prep.persist,
-            resilient=prep.resilient,
-        )
+        return self._combine_from_prep(prep, historical_frame, live_frame)
 
     async def _load_mixed_async(self, plan: _LoadPlan, options: Mapping[str, Any]) -> FrameResult:
         prep = self._prepare_mixed_load(plan, options)
@@ -396,13 +314,7 @@ class HybridDataset(PicklableLifecycleCoreMixin, LifecycleCore):
             **prep.branch_options,
         )
         historical_frame, live_frame = await asyncio.gather(historical_task, live_task)
-        return self._combine_mixed_frames(
-            [historical_frame, live_frame],
-            return_type=prep.return_type,
-            persist=prep.persist,
-            resilient=prep.resilient,
-        )
+        return self._combine_from_prep(prep, historical_frame, live_frame)
 
 
 __all__ = ["HybridDataset"]
-

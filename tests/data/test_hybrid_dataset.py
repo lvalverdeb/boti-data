@@ -71,7 +71,7 @@ def _build_hybrid(tmp_path) -> HybridDataset:
     )
 
 
-def test_hybrid_dataset_load_routes_mixed_ranges_to_dask(tmp_path):
+def test_hybrid_dataset_load_routes_mixed_ranges_to_dask(tmp_path) -> None:
     dataset = _build_hybrid(tmp_path)
     try:
         frame = dataset.load(start="2026-04-15", end="2026-04-20")
@@ -84,7 +84,7 @@ def test_hybrid_dataset_load_routes_mixed_ranges_to_dask(tmp_path):
     assert computed["status"].tolist() == ["hist", "hist", "live", "live"]
 
 
-def test_hybrid_dataset_load_routes_single_source_when_window_is_live_only(tmp_path):
+def test_hybrid_dataset_load_routes_single_source_when_window_is_live_only(tmp_path) -> None:
     dataset = _build_hybrid(tmp_path)
     try:
         frame = dataset.load(start="2026-04-18", end="2026-04-20", return_type="auto")
@@ -96,7 +96,7 @@ def test_hybrid_dataset_load_routes_single_source_when_window_is_live_only(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_hybrid_dataset_aload_supports_explicit_eager_return_types(tmp_path):
+async def test_hybrid_dataset_aload_supports_explicit_eager_return_types(tmp_path) -> None:
     dataset = _build_hybrid(tmp_path)
     try:
         frame = await dataset.aload(
@@ -109,4 +109,3 @@ async def test_hybrid_dataset_aload_supports_explicit_eager_return_types(tmp_pat
 
     assert isinstance(frame, pd.DataFrame)
     assert frame.sort_values("id")["id"].tolist() == [1, 2, 10, 11]
-

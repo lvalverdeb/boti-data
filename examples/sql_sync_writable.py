@@ -24,7 +24,9 @@ def main() -> None:
             conn.exec_driver_sql("INSERT INTO writable_users (id, name) VALUES (1, 'Alice')")
 
         with second.session() as session:
-            names = session.execute(text("SELECT name FROM writable_users ORDER BY id")).scalars().all()
+            names = (
+                session.execute(text("SELECT name FROM writable_users ORDER BY id")).scalars().all()
+            )
 
         print(f"rows={names}")
 
