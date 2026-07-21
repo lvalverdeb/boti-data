@@ -137,7 +137,7 @@ class SqlPartitionPlanner:
     # concurrently (asyncio.gather) with _async_get_filtered_bounds() in
     # _async_plan_range, while this owns its own connection — a genuine
     # signature difference, not just sync/async syntax.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def count_rows(self, statement: Select[Any]) -> int:
         statement_to_run = count_statement(statement)
         with self.resource.engine.connect() as conn:
@@ -146,7 +146,7 @@ class SqlPartitionPlanner:
     # Not a copy-pasted twin: same reasoning as count_rows() above, vs.
     # _async_count_rows_up_to()'s externally-managed conn used inside
     # _async_plan_offset's connection scoping.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def count_rows_up_to(self, statement: Select[Any], max_rows: int) -> int:
         statement_to_run = count_up_to_statement(statement, max_rows)
         with self.resource.engine.connect() as conn:
@@ -218,7 +218,7 @@ class SqlPartitionPlanner:
     # this takes an externally-managed conn for concurrent use in
     # _async_plan_range's asyncio.gather, while get_filtered_bounds() owns its
     # own connection — a genuine signature difference, not just sync/async syntax.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     async def _async_get_filtered_bounds(
         self,
         statement: Select[Any],

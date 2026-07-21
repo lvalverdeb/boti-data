@@ -167,7 +167,7 @@ class BaseArtifact(PicklableLifecycleCoreMixin, LifecycleCore):
     # they call this class's separately-overridable sync/async hooks
     # (before_load/after_load vs abefore_load/aafter_load), which must stay
     # distinct so subclasses can override each independently.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def load(self, **options: Any) -> DatacubeFrame:
         """Sync load path with ``before_load`` / ``after_load`` hooks."""
         self.before_load(**options)

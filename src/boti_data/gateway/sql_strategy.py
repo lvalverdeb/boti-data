@@ -358,7 +358,7 @@ class SqlAlchemyStrategy(BackendStrategy):
     # Not a copy-pasted twin: both are 3-line isinstance dispatchers to
     # already-shared plain functions in sql_size_estimation.py; the real
     # dedup already happened one layer down.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def estimate_result_size(
         self,
         ctx: StructuredLoadContext | ConfiguredLoadContext,

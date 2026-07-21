@@ -147,7 +147,7 @@ def _resolve_pandas_series_keys(
 # _apply_computed_dask_series()/_resolve_pandas_series_keys(); the remaining
 # difference is dask.compute(...) vs await asyncio.to_thread(dask.compute, ...)
 # — the offload boundary itself.
-# spaghetti-ignore[sync-async-duplication]
+# spaghetti-ignore[sync-async-duplication]: see above
 def resolve_series_filters(options: dict[str, Any]) -> dict[str, Any]:
     dask_keys, pandas_keys = _classify_series_keys(options)
     if not dask_keys and not pandas_keys:

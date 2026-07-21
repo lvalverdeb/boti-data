@@ -114,7 +114,7 @@ class BaseDataCube(PicklableLifecycleCoreMixin, LifecycleCore):
     # logic is already extracted; aload() has a genuine extra fallback branch
     # (afix_data_is_overridden() -> afix_data()) that load() cannot have, since
     # afix_data is async-only.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def load(self, **options: Any) -> DatacubeFrame:
         """Sync load path with optional ``fix_data`` hook."""
         self.df = self._helper.load(**options)

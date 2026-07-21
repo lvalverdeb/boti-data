@@ -124,7 +124,7 @@ class SinkPipeline(PicklableLifecycleCoreMixin, LifecycleCore):
     # remaining body is 3 calls to already-split twin methods (load/aload,
     # _maybe_enrich_sync/_maybe_enrich_async, sink.write/awrite) — duplication
     # is a byproduct of composing other twins, not new copy-paste.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def write(
         self,
         *,
@@ -183,7 +183,7 @@ class SinkPipeline(PicklableLifecycleCoreMixin, LifecycleCore):
     # Not a copy-pasted twin: thin guard-and-delegate to the injected
     # self.enricher's own enrich()/aenrich() (a Protocol, already marked as a
     # false positive at its own definition) — nothing to unify here either.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def _maybe_enrich_sync(
         self,
         frame: FrameResult,

@@ -91,7 +91,7 @@ class _EngineBoundHelper:
     # Not a copy-pasted twin: pure delegate to self._helper.load_incremental()/
     # aload_incremental() via the shared _bind_options(), identical in shape to
     # this class's other unflagged proxy pairs (load/aload, semi_join/asemi_join).
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def load_incremental(
         self,
         *,
@@ -297,7 +297,7 @@ class DataHelper(PicklableLifecycleCoreMixin, LifecycleCore):
     # Not a copy-pasted twin: pure delegate to self._incremental.load()/aload()
     # with identical kwargs, matching this class's other unflagged proxy pairs
     # (load/aload, preview/apreview, load_period/aload_period).
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def load_incremental(
         self,
         *,

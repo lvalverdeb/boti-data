@@ -133,7 +133,7 @@ class HybridDataset(PicklableLifecycleCoreMixin, LifecycleCore):
     # Not a copy-pasted twin: both already share _resolve_plan() and dispatch to
     # the already-split historical/live load_period()/aload_period() twins and
     # _load_mixed_sync()/_load_mixed_async() below — nothing further to extract.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def load(
         self,
         *,
@@ -282,7 +282,7 @@ class HybridDataset(PicklableLifecycleCoreMixin, LifecycleCore):
     # difference is a genuine behavioral one — _load_mixed_async fetches
     # historical+live concurrently via asyncio.gather, _load_mixed_sync is
     # sequential.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def _load_mixed_sync(self, plan: _LoadPlan, options: Mapping[str, Any]) -> FrameResult:
         prep = self._prepare_mixed_load(plan, options)
         historical_frame = self.historical.load_period(

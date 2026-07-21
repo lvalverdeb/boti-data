@@ -203,7 +203,7 @@ class SqlModelRegistry:
     # concurrency-primitive difference, not copy-paste. _resolve_or_build_model()
     # is a further shared helper — it does no locking/IO of its own, only the
     # already-shared _find_existing_model_for_table()/_build_model_class().
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def get_model(
         self,
         engine: Engine,
@@ -306,7 +306,7 @@ class SqlModelRegistry:
 
     # Not a copy-pasted twin: threading.Lock vs asyncio.Lock is a genuine
     # concurrency-primitive difference (see get_model()'s comment above).
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def _check_cache(self, model_key: tuple, *, refresh: bool) -> type[Any] | None:
         if refresh:
             with self._lock:
@@ -324,7 +324,7 @@ class SqlModelRegistry:
     # Not a copy-pasted twin: sync md.reflect() vs conn.run_sync(md.reflect) is
     # a genuine concurrency-primitive difference (see get_model()'s comment above).
     @staticmethod
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def _reflect_table(
         engine: Engine,
         md: MetaData,

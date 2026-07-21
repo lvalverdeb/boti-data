@@ -69,7 +69,7 @@ def probe_sync(
 # probe_async() fallback via ctx.async_sql_resource that this has no
 # equivalent for; only the leading early_structured_estimate() call is
 # literally shared, too trivial to extract further.
-# spaghetti-ignore[sync-async-duplication]
+# spaghetti-ignore[sync-async-duplication]: see above
 def estimate_structured(
     ctx: StructuredLoadContext,
 ) -> tuple[int | None, int | None] | None:

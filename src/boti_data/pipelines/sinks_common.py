@@ -165,7 +165,7 @@ class PipelineSink(Protocol):
     # The real implementations (CsvSink/JsonlSink/ParquetSink) already share
     # _AsyncWriteViaThreadMixin, whose awrite() is a thin asyncio.to_thread()
     # wrapper around write().
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def write(
         self,
         frame: FrameResult,

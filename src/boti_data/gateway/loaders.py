@@ -253,7 +253,7 @@ def _select_from_model(model: Any, db_column_names: list[str] | None) -> Any:
 # Not a copy-pasted twin: both already share _select_from_model(); the
 # remaining difference is the irreducible await builder.build_model_async()
 # vs builder.build_model() call.
-# spaghetti-ignore[sync-async-duplication]
+# spaghetti-ignore[sync-async-duplication]: see above
 async def reflect_and_select_async(
     resource: Any,
     table: str,

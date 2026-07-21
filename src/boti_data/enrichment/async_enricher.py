@@ -32,7 +32,7 @@ def _to_dask_frame(frame: FrameResult) -> dd.DataFrame:
 class FrameEnricher(Protocol):
     # Not a copy-pasted twin: this is a Protocol interface stub (body is `...`),
     # nothing to deduplicate.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def enrich(
         self, base_frame: FrameResult, *, cols: Sequence[str] | None = None
     ) -> FrameResult: ...

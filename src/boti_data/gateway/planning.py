@@ -87,7 +87,7 @@ class LoadPlanner:
     # finish (_finish_plan) are already extracted; the remaining difference is
     # the irreducible self._resolve_execution_plan(...) vs
     # await ..._async(...) call.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def plan(
         self, options: dict[str, Any], *, request: GatewayLoadRequest | None = None
     ) -> LoadPlan:
@@ -249,7 +249,7 @@ class LoadPlanner:
     # Not a copy-pasted twin: the shared tail is already extracted into
     # _finish_execution_plan(); the remaining difference is the irreducible
     # self._resolve_return_type(...) vs await ..._async(...) call.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def _resolve_execution_plan(
         self,
         *,
@@ -301,7 +301,7 @@ class LoadPlanner:
     # _requested_or_fixed_return_type(); the remaining difference is the
     # irreducible self._resolve_auto_return_type(options) vs
     # await ..._async(options) call.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def _resolve_return_type(
         self,
         *,

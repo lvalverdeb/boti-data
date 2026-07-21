@@ -51,7 +51,7 @@ class ConfiguredSelectCache:
     # Not a copy-pasted twin: shared _cache_key()/_lru_get()/_lru_put() are
     # already extracted; the remaining difference is reflect_and_select(...)
     # vs await reflect_and_select_async(...) plus a sync-only defensive assert.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def get(
         self, resource: Any, table: str | None, db_columns: list[str] | None
     ) -> tuple[Any, Any]:

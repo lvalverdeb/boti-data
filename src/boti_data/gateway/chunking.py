@@ -137,7 +137,7 @@ class ChunkedLoadExecutor:
     # (asyncio.gather+Semaphore fan-out here vs ThreadPoolExecutor/serial loop
     # in load()), not copy-paste.
     @classmethod
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     async def aload(
         cls,
         execute_fn: AsyncExecuteFn,

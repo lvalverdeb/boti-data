@@ -101,7 +101,7 @@ class _HybridEngineBoundDataset:
 
     # Not a copy-pasted twin: pure pass-through to the already-split
     # HybridDataset.load()/aload() twins, using the shared _bind_options().
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def load(
         self,
         *,

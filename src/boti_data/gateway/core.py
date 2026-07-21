@@ -138,7 +138,7 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
 
     # Not a copy-pasted twin: pure pass-through to self._auto_resolver.resolve()/
     # resolve_async(), which already share the real decision logic.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def _resolve_auto_return_type(
         self,
         options: dict[str, Any],
@@ -225,7 +225,7 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
     # asyncio.to_thread() wrapper around safe_head(); the other half
     # (self.load vs await self.aload) is genuinely-different async I/O that
     # the codebase deliberately keeps separate.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def preview(
         self, statement: Any, model: Any, n: int = 5, npartitions: int = 1, **options: Any
     ) -> pd.DataFrame:
@@ -320,7 +320,7 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
     # Kept as real methods (not module-function aliases): bound-method
     # pickling for distributed use and test monkeypatching of
     # `self._chunked_in_load` both need `self` bound under this exact name.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     async def _chunked_in_load(
         self,
         execute_fn: Any,

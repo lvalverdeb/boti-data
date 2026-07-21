@@ -69,7 +69,7 @@ class DatacubeStrategy(BackendStrategy):
     # async calls the resource's native ctx.resource.aload() — a genuinely-async
     # collaborator method, not a thread-wrap; request-building is already
     # shared via _payloads.datacube_request_from_options().
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def load_structured_sync(self, ctx: StructuredLoadContext) -> FrameResult:
         assert isinstance(ctx.resource, DatacubeResource) or hasattr(ctx.resource, "load")
         # Use ctx.opts (includes runtime filter values) rather than ctx.request
@@ -95,7 +95,7 @@ class DatacubeStrategy(BackendStrategy):
     # Not a copy-pasted twin: _build_configured_datacube_request() is already
     # shared; sync calls resource.load, async calls the native resource.aload —
     # nothing left to hoist beyond that irreducible call.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def load_configured_sync(self, ctx: ConfiguredLoadContext) -> FrameResult:
         request = self._build_configured_datacube_request(ctx)
         df = ctx.resource.load(request)

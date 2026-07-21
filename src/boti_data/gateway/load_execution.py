@@ -131,7 +131,7 @@ class LoadExecutor:
     # configured_call_kwargs(); the remaining difference (ctx-building +
     # asyncio.wait_for timeout wrapping in the async path) is a real, timeout
     # feature that only the async path supports.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def perform_load_sync(
         self,
         opts: dict[str, Any],

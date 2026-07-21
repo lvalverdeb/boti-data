@@ -35,7 +35,7 @@ _log = logging.getLogger(__name__)
 # call (.plan vs await .aplan, resolve_series_filters vs its _async twin,
 # perform_load_sync vs perform_load_async, _chunked_in_load_sync vs
 # _chunked_in_load) — there's no further shared logic left to hoist.
-# spaghetti-ignore[sync-async-duplication]
+# spaghetti-ignore[sync-async-duplication]: see above
 def load_sync(gateway: DataGateway, options: dict[str, Any]) -> FrameResult:
     request = load_execution.resolve_control_and_request(options)
     plan = gateway._load_executor.load_planner().plan(options, request=request)
@@ -49,7 +49,7 @@ def load_sync(gateway: DataGateway, options: dict[str, Any]) -> FrameResult:
     # Not a copy-pasted twin: this closure and load_async()'s _execute() both
     # call perform_load_sync()/perform_load_async() with the same plan —
     # exactly the intended shared-helper pattern, already applied.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def _execute_sync(**opts: Any) -> pd.DataFrame | dd.DataFrame | pa.Table:
         return gateway._load_executor.perform_load_sync(opts, plan=plan, request=request)
 
@@ -94,7 +94,7 @@ async def load_async(gateway: DataGateway, options: dict[str, Any]) -> FrameResu
 # ChunkedLoadExecutor.aload()/load() (which carry the real, already
 # reviewed, sync-async-duplication finding); the only other difference is
 # the sync side passing an extra logger=gateway.logger kwarg.
-# spaghetti-ignore[sync-async-duplication]
+# spaghetti-ignore[sync-async-duplication]: see above
 async def chunked_in_load(
     gateway: DataGateway,
     execute_fn: Any,
@@ -169,7 +169,7 @@ def has_any_rows(df: FrameResult) -> bool:
 # directly, the async path runs the same blocking call via asyncio.to_thread()
 # and awaits gateway.aload() instead of gateway.load() — a genuine sync/async
 # I/O difference, not copy-paste.
-# spaghetti-ignore[sync-async-duplication]
+# spaghetti-ignore[sync-async-duplication]: see above
 def semi_join_sync(
     gateway: DataGateway,
     join_series: Any,

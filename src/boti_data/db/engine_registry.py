@@ -56,7 +56,7 @@ class EngineRegistry:
     # difference is the irreducible create_engine() vs create_async_engine() and
     # dispose() vs await dispose() calls.
     @classmethod
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def get_or_create(cls, key: tuple, url: str, **kwargs: Any) -> tuple[Engine, bool]:
         cached = cls._check_registered(key)
         if cached is not None:
@@ -134,7 +134,7 @@ class EngineRegistry:
     # _log_release_error(); the remaining difference is the irreducible
     # engine.dispose() vs await engine.dispose() call.
     @classmethod
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def release(cls, key: tuple, logger: Logger | None = None) -> None:
         if cls._lock is None:
             return

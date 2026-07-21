@@ -71,7 +71,7 @@ class ParquetPipeline(SinkPipeline):
 
     # Not a copy-pasted twin: pure .path-unwrapping delegate to the
     # already-split write()/awrite() pair on SinkPipeline.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def to_parquet(
         self,
         *,
@@ -152,7 +152,7 @@ class ParquetPipeline(SinkPipeline):
     # Not a copy-pasted twin: pure watermark-presence dispatcher delegating to
     # already-split _materialize_full()/_amaterialize_full() and
     # _materialize_incremental()/_amaterialize_incremental() below.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def materialize(
         self,
         *,

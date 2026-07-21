@@ -243,7 +243,7 @@ def test_facade_preview_uses_safe_head_for_lazy_sql(tmp_path, monkeypatch) -> No
     # below monkeypatch two genuinely different targets (safe_head vs
     # async_safe_head); the bodies match because both just record args and
     # delegate to frame.head(), not because of duplication.
-    # spaghetti-ignore[duplicate-function-body]
+    # spaghetti-ignore[duplicate-function-body]: see above
     def tracking_safe_head(
         frame, *, n=5, npartitions=1, dask_client=None, logger=None, dry_run=False
     ) -> pd.DataFrame:

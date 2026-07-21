@@ -92,7 +92,7 @@ class SqlPartitionedLoader(PicklableLifecycleCoreMixin, LifecycleCore):
 
     # Not a copy-pasted twin: aplan() is already a thin asyncio.to_thread()
     # wrapper delegating to this function via the shared _coerce_request().
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def plan(
         self,
         request: SqlPartitionedLoadRequest | None = None,
@@ -110,7 +110,7 @@ class SqlPartitionedLoader(PicklableLifecycleCoreMixin, LifecycleCore):
 
     # Not a copy-pasted twin: aload() is already a thin asyncio.to_thread()
     # wrapper delegating to this function via the shared _coerce_request().
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def load(
         self,
         request: SqlPartitionedLoadRequest | None = None,

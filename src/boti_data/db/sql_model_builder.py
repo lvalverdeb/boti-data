@@ -61,7 +61,7 @@ class SqlAlchemyModelBuilder:
     # Not a copy-pasted twin: the shared kwargs are already extracted into
     # _registry_kwargs(); the remaining difference is the irreducible
     # registry.get_model() vs await registry.get_model_async() call.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def build_model(self) -> type[Any]:
         """Reflects the table and returns the stable mapped ORM class."""
         registry = get_global_registry()

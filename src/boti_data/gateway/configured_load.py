@@ -153,7 +153,7 @@ class ConfiguredLoadService:
     # via _build_configured_load_context(); the remaining difference
     # (self._strategy.load_configured_sync(ctx) vs await ...load_configured_async(ctx))
     # is the theoretical floor for this pattern.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def load(
         self,
         options: dict[str, Any],

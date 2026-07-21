@@ -44,7 +44,7 @@ class AutoReturnTypeResolver:
     # Not a copy-pasted twin: already the thinnest possible sync/async
     # dispatch to the (also already-deduplicated) _resolve_configured(_async)/
     # _resolve_structured(_async) pairs below.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def resolve(self, options: dict[str, Any]) -> ResolvedReturnType:
         if self._configured:
             return self._resolve_configured(options)
@@ -98,7 +98,7 @@ class AutoReturnTypeResolver:
     # _build_structured_probe_context() are already extracted; the remaining
     # difference is the irreducible self._strategy.estimate_result_size(ctx)
     # vs await ..._async(ctx) call.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def _resolve_structured(
         self, options: dict[str, Any], *, request: GatewayLoadRequest | None = None
     ) -> ResolvedReturnType:
@@ -173,7 +173,7 @@ class AutoReturnTypeResolver:
     # extracted into _prepare_configured_probe(); async also has a genuine
     # extra asyncio.to_thread(self._resolve_configured, ...) short-circuit
     # when ctx.resource is set, which sync has no equivalent for.
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def _resolve_configured(self, options: dict[str, Any]) -> ResolvedReturnType:
         decision, ctx = self._prepare_configured_probe(options)
         if decision is not None:

@@ -206,7 +206,7 @@ class SqlPartitionExecutor:
     # vs a reused-loop async engine + exec_driver_sql await) is an irreducible
     # I/O-boundary difference, deliberately avoiding asyncio.run() overhead.
     @staticmethod
-    # spaghetti-ignore[sync-async-duplication]
+    # spaghetti-ignore[sync-async-duplication]: see above
     def fetch_partition(
         *,
         config: WorkerSqlConfig,

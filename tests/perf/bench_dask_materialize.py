@@ -52,7 +52,7 @@ def _build_config(**overrides: str) -> dict[str, Any]:
 # Not a copy-pasted twin: the only difference is fn() vs await fn() — a
 # genuine sync/async call difference for a benchmark helper measuring both
 # code paths, not copy-paste.
-# spaghetti-ignore[sync-async-duplication]
+# spaghetti-ignore[sync-async-duplication]: see above
 def _measure_sync(label: str, fn, iterations: int) -> list[float]:
     times: list[float] = []
     for i in range(iterations):
@@ -141,7 +141,7 @@ async def _bench_polars_async(db_url_async: str, iterations: int) -> list[float]
 # Not a copy-pasted twin: measures the same dask.aload()+compute() path over
 # an async DSN vs a sync DSN (genuinely different connection/engine setup),
 # not copy-paste.
-# spaghetti-ignore[sync-async-duplication]
+# spaghetti-ignore[sync-async-duplication]: see above
 async def _bench_dask_async(
     db_url_async: str, iterations: int
 ) -> tuple[list[float], list[float], list[float]]:
