@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from boti_data.db.sql_config import SqlDatabaseConfig
 from boti_data.db.sql_model_registry import get_global_registry
+from boti_data.db.sql_readonly import ReadOnlyAsyncSession, ReadOnlySession
 from boti_data.db.sql_resource import AsyncSqlDatabaseResource, SqlDatabaseResource
 
 __all__ = ["AsyncSqlRepository", "AsyncSqlUnitOfWork", "SqlRepository", "SqlUnitOfWork"]
@@ -297,10 +298,13 @@ class SqlUnitOfWork:
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         try:
-            if exc_type is None:
-                self._session.commit()
-            else:
+            if exc_type is not None:
                 self._session.rollback()
+            elif not isinstance(self._session, ReadOnlySession):
+                self._session.commit()
+            # else: read-only session, exited cleanly — a read never needs a
+            # commit, and ReadOnlySession.commit() always raises regardless
+            # of whether anything was actually written.
         finally:
             # Each handed-out repository has its own GC leak-warning
             # finalizer (see boti.core.lifecycle) even though its own
@@ -340,10 +344,13 @@ class AsyncSqlUnitOfWork:
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         try:
-            if exc_type is None:
-                await self._session.commit()
-            else:
+            if exc_type is not None:
                 await self._session.rollback()
+            elif not isinstance(self._session, ReadOnlyAsyncSession):
+                await self._session.commit()
+            # else: read-only session, exited cleanly — a read never needs a
+            # commit, and ReadOnlyAsyncSession.commit() always raises
+            # regardless of whether anything was actually written.
         finally:
             # See SqlUnitOfWork.__exit__'s comment: each handed-out repository
             # has its own GC leak-warning finalizer even though its _acleanup()

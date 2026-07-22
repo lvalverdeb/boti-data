@@ -327,6 +327,33 @@ def test_sql_unit_of_work_query_only_defaults_true(tmp_path) -> None:
         SqlUnitOfWork(config)
 
 
+def test_sql_unit_of_work_read_only_exits_cleanly_with_no_writes() -> None:
+    """Regression: __exit__ used to call session.commit() unconditionally on
+    a clean exit, and ReadOnlySession.commit() always raises regardless of
+    whether anything was actually written — so a pure-read query_only=True
+    (the default) unit of work could never exit cleanly."""
+
+    def create_db(path) -> None:
+        engine = create_engine(f"sqlite:///{path}")
+        with engine.begin() as conn:
+            conn.exec_driver_sql("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
+            conn.exec_driver_sql("INSERT INTO users (id, name) VALUES (1, 'Alice')")
+        engine.dispose()
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        db_path = Path(tmp_dir) / "readonly.db"
+        create_db(db_path)
+        read_only_url = f"sqlite:///file:{db_path}?mode=ro&uri=true"
+        config = SqlDatabaseConfig(
+            connection_url=read_only_url, poolclass="sqlalchemy.pool.NullPool"
+        )
+
+        with SqlUnitOfWork(config) as uow:
+            users = uow.repository("users")
+            assert users.get(1) == {"id": 1, "name": "Alice"}
+        # No exception on __exit__ is the actual regression test.
+
+
 def test_sync_repository_injected_session_ignores_its_own_query_only(tmp_path) -> None:
     """A session's own class (ReadOnlySession or not) governs writability when
     a session is injected — the repository's query_only parameter is inert
@@ -426,6 +453,31 @@ async def test_async_sql_unit_of_work_rolls_back_multiple_tables_together(tmp_pa
         async with setup.session() as session:
             assert (await session.execute(text("SELECT * FROM audit_log"))).fetchall() == []
             assert (await session.execute(text("SELECT * FROM embeddings"))).fetchall() == []
+
+
+@pytest.mark.asyncio
+async def test_async_sql_unit_of_work_read_only_exits_cleanly_with_no_writes() -> None:
+    """Async equivalent of the sync regression test above."""
+
+    def create_db(path) -> None:
+        engine = create_engine(f"sqlite:///{path}")
+        with engine.begin() as conn:
+            conn.exec_driver_sql("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
+            conn.exec_driver_sql("INSERT INTO users (id, name) VALUES (1, 'Alice')")
+        engine.dispose()
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        db_path = Path(tmp_dir) / "readonly.db"
+        create_db(db_path)
+        read_only_url = f"sqlite+aiosqlite:///file:{db_path}?mode=ro&uri=true"
+        config = SqlDatabaseConfig(
+            connection_url=read_only_url, poolclass="sqlalchemy.pool.NullPool"
+        )
+
+        async with AsyncSqlUnitOfWork(config) as uow:
+            users = await uow.repository("users")
+            assert await users.get(1) == {"id": 1, "name": "Alice"}
+        # No exception on __aexit__ is the actual regression test.
 
 
 def test_repository_dependency_free_import() -> None:
