@@ -4,9 +4,13 @@ Tests for the dynamic SQLAlchemy model registry logic.
 
 from __future__ import annotations
 
+import asyncio
+import threading
+
 import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from boti_data.db.sql_model_registry import RegistryConfig, SqlModelRegistry
 
@@ -125,3 +129,57 @@ def test_registry_rejects_existing_non_dynamic_module_namespace() -> None:
 
     with pytest.raises(ValueError, match="unused or registry-managed dynamic module namespace"):
         registry.get_model(engine, "existing_module_users", module_label="boti_data")
+
+
+def test_registry_concurrent_first_access_maps_table_once(tmp_path) -> None:
+    """Regression: reflect -> resolve-or-build -> cache-write used to be three
+    separately-locked (or unlocked) steps, so two threads racing on the very
+    first get_model() call for a table could each build and cache a distinct
+    Python class mapped to the same underlying Table. File-based SQLite (not
+    :memory:) so every thread shares the real, persisted schema."""
+    db_path = tmp_path / "widgets.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.exec_driver_sql("CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT)")
+
+    registry = SqlModelRegistry()
+    thread_count = 16
+    results: list[type | None] = [None] * thread_count
+    errors: list[Exception | None] = [None] * thread_count
+    start_barrier = threading.Barrier(thread_count)
+
+    def worker(index: int) -> None:
+        start_barrier.wait()
+        try:
+            results[index] = registry.get_model(engine, "widgets")
+        except Exception as exc:  # noqa: BLE001
+            errors[index] = exc
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(thread_count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert not any(errors), errors
+    assert len(set(results)) == 1
+
+
+@pytest.mark.asyncio
+async def test_async_registry_concurrent_first_access_maps_table_once(tmp_path) -> None:
+    """Async equivalent of the sync regression test above."""
+    db_path = tmp_path / "async_widgets.db"
+    sync_engine = create_engine(f"sqlite:///{db_path}")
+    with sync_engine.begin() as conn:
+        conn.exec_driver_sql("CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT)")
+    sync_engine.dispose()
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    registry = SqlModelRegistry()
+
+    results = await asyncio.gather(
+        *(registry.get_model_async(engine, "widgets") for _ in range(16))
+    )
+
+    assert len({id(result) for result in results}) == 1
+    await engine.dispose()

@@ -18,7 +18,19 @@ _ALLOWED_POOLCLASS_IMPORTS = {
 
 
 class SqlDatabaseConfig(ResourceConfig):
-    """Immutable configuration for SQLAlchemy engine initialization."""
+    """Immutable configuration for SQLAlchemy engine initialization.
+
+    ``query_only=True`` enforces read-only access at the database level (via
+    a ``SET ... READ ONLY``-style statement issued on the SQLAlchemy
+    ``"connect"`` event, not just by blocking ORM methods in Python) — this
+    assumes ``connection_url`` points directly at Postgres/MySQL, or at a
+    *session*-pooling-mode connection pooler (one physical backend connection
+    dedicated to one logical client for its whole lifetime). It does **not**
+    cover a *transaction*-pooling-mode pooler (e.g. PgBouncer in ``transaction``
+    mode): there, a single physical connection can be handed to a different,
+    unrelated logical client between transactions, and session-level state set
+    once at physical-connect time is not guaranteed to survive that handoff.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -27,7 +39,9 @@ class SqlDatabaseConfig(ResourceConfig):
         default=True,
         description=(
             "When true, native database-enforced read-only access is required. "
-            "Set explicitly to false to allow writes."
+            "Set explicitly to false to allow writes. Assumes a direct connection "
+            "or a session-pooling-mode proxy — transaction-pooling-mode poolers "
+            "(e.g. PgBouncer 'transaction' mode) are out of scope; see class docstring."
         ),
     )
     worker_connection_env_var: str | None = Field(

@@ -238,22 +238,34 @@ class SqlModelRegistry:
         md = self._get_or_create_metadata(ekey, schema)
         md_lock = self._get_or_create_md_lock(md_key)
         qname = self._qualified_key(schema, tname)
-        tbl = self._reflect_table(engine, md, md_lock, qname=qname, tname=tname, schema=schema)
 
-        context = ModelBuildContext(
-            qname=qname,
-            tname=tname,
-            base_class=base_class,
-            module_label=module_label,
-            prefer_stable_names=prefer_stable_names,
-            ekey=ekey,
-            schema=schema,
-            missing_pk_warning_suffix="Ensure ORM mutation sequences validate bounds manually.",
-        )
-        model_cls = self._resolve_or_build_model(tbl, qname, context, target_label="DB target")
-        with self._lock:
-            self._model_cache[model_key] = model_cls
-        return model_cls
+        # The whole reflect -> resolve-or-build -> cache-write sequence must
+        # be one atomic unit per md_key: reflection alone was already
+        # serialized via md_lock, but resolve-or-build and the cache write
+        # previously ran outside it, so two concurrent first-accesses for the
+        # same table could both pass "does a mapped class already exist?"
+        # before either finished building — each got a distinct Python class
+        # mapped to the same Table.
+        with md_lock:
+            cached = self._check_cache(model_key, refresh=False)
+            if cached is not None:
+                return cached
+
+            tbl = self._reflect_table(engine, md, qname=qname, tname=tname, schema=schema)
+            context = ModelBuildContext(
+                qname=qname,
+                tname=tname,
+                base_class=base_class,
+                module_label=module_label,
+                prefer_stable_names=prefer_stable_names,
+                ekey=ekey,
+                schema=schema,
+                missing_pk_warning_suffix="Ensure ORM mutation sequences validate bounds manually.",
+            )
+            model_cls = self._resolve_or_build_model(tbl, qname, context, target_label="DB target")
+            with self._lock:
+                self._model_cache[model_key] = model_cls
+            return model_cls
 
     async def get_model_async(
         self,
@@ -278,26 +290,33 @@ class SqlModelRegistry:
         md = self._get_or_create_metadata(ekey, schema)
         md_lock = await self._get_or_create_md_lock_async(md_key)
         qname = self._qualified_key(schema, tname)
-        tbl = await self._reflect_table_async(
-            engine, md, md_lock, qname=qname, tname=tname, schema=schema
-        )
 
-        context = ModelBuildContext(
-            qname=qname,
-            tname=tname,
-            base_class=base_class,
-            module_label=module_label,
-            prefer_stable_names=prefer_stable_names,
-            ekey=ekey,
-            schema=schema,
-            missing_pk_warning_suffix="Ensure Async ORM validation sequences capture bounds correctly.",
-        )
-        model_cls = self._resolve_or_build_model(
-            tbl, qname, context, target_label="Async DB target"
-        )
-        async with self._async_lock:
-            self._model_cache[model_key] = model_cls
-        return model_cls
+        # See get_model()'s comment: the whole sequence must be one atomic
+        # unit per md_key, not just the reflection step.
+        async with md_lock:
+            cached = await self._check_cache_async(model_key, refresh=False)
+            if cached is not None:
+                return cached
+
+            tbl = await self._reflect_table_async(
+                engine, md, qname=qname, tname=tname, schema=schema
+            )
+            context = ModelBuildContext(
+                qname=qname,
+                tname=tname,
+                base_class=base_class,
+                module_label=module_label,
+                prefer_stable_names=prefer_stable_names,
+                ekey=ekey,
+                schema=schema,
+                missing_pk_warning_suffix="Ensure Async ORM validation sequences capture bounds correctly.",
+            )
+            model_cls = self._resolve_or_build_model(
+                tbl, qname, context, target_label="Async DB target"
+            )
+            async with self._async_lock:
+                self._model_cache[model_key] = model_cls
+            return model_cls
 
     def _resolve_or_build_model(
         self,
@@ -335,12 +354,15 @@ class SqlModelRegistry:
 
     # Not a copy-pasted twin: sync md.reflect() vs conn.run_sync(md.reflect) is
     # a genuine concurrency-primitive difference (see get_model()'s comment above).
+    # Both callers (get_model/get_model_async) already hold this md_key's
+    # md_lock/md_async_lock for the whole reflect -> resolve-or-build -> cache
+    # sequence, so no locking happens here — acquiring the same (non-reentrant)
+    # lock again inside would deadlock.
     @staticmethod
     # spaghetti-ignore[sync-async-duplication]: see above
     def _reflect_table(
         engine: Engine,
         md: MetaData,
-        md_lock: threading.Lock,
         *,
         qname: str,
         tname: str,
@@ -348,18 +370,14 @@ class SqlModelRegistry:
     ) -> Table | None:
         tbl = md.tables.get(qname)
         if tbl is None:
-            with md_lock:
-                tbl = md.tables.get(qname)
-                if tbl is None:
-                    md.reflect(bind=engine, only=[tname], schema=schema)
-                tbl = md.tables.get(qname)
+            md.reflect(bind=engine, only=[tname], schema=schema)
+            tbl = md.tables.get(qname)
         return tbl
 
     @staticmethod
     async def _reflect_table_async(
         engine: AsyncEngine,
         md: MetaData,
-        md_lock: asyncio.Lock,
         *,
         qname: str,
         tname: str,
@@ -367,12 +385,9 @@ class SqlModelRegistry:
     ) -> Table | None:
         tbl = md.tables.get(qname)
         if tbl is None:
-            async with md_lock:
-                tbl = md.tables.get(qname)
-                if tbl is None:
-                    async with engine.begin() as conn:
-                        await conn.run_sync(md.reflect, only=[tname], schema=schema)
-                tbl = md.tables.get(qname)
+            async with engine.begin() as conn:
+                await conn.run_sync(md.reflect, only=[tname], schema=schema)
+            tbl = md.tables.get(qname)
         return tbl
 
     def clear(self) -> None:
