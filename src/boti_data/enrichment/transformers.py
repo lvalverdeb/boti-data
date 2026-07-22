@@ -149,7 +149,9 @@ class Deduplicator:
         removed = before - len(df)
         if removed:
             import logging
+
             logging.getLogger(__name__).debug(
-                "Deduplicator removed %d duplicate rows", removed,
+                "Deduplicator removed %d duplicate rows",
+                removed,
             )
         return df

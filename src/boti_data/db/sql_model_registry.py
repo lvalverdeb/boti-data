@@ -25,6 +25,18 @@ from boti_data.db.sql_model_module_injection import register_as_module_attribute
 from boti_data.db.sql_model_registry_types import DefaultBase, ModelBuildContext, RegistryConfig
 from boti_data.db.sqlalchemy_async import ensure_greenlet_available
 
+try:
+    # Importing this module has the side effect of registering pgvector's
+    # 'vector' type name into SQLAlchemy's Postgres dialect
+    # (sqlalchemy.dialects.postgresql.base.ischema_names), so reflection below
+    # maps a pgvector column to pgvector.sqlalchemy.Vector (dimension included)
+    # instead of falling back to an unusable NullType. Optional: boti-data
+    # works the same as before for consumers who never touch pgvector and
+    # haven't installed boti-data[pgvector].
+    import pgvector.sqlalchemy  # noqa: F401
+except ImportError:
+    pass
+
 
 class SqlModelRegistry:
     """

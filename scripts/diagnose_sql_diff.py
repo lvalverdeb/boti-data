@@ -38,13 +38,16 @@ print(f"DSN: {dsn.rsplit('@', 1)[0].rsplit(':', 1)[0]}:***@...")
 from sqlalchemy import text
 from sqlalchemy.dialects import mysql as mysql_dialect
 
+from boti_data.db.partitioned_planner import SqlPartitionPlanner
 from boti_data.db.sql_config import SqlDatabaseConfig
 from boti_data.db.sql_resource import SqlDatabaseResource
-from boti_data.gateway.loaders import reflect_and_select, _prepare_sql_statement
-from boti_data.gateway.requests import SqlLoadRequest
+from boti_data.gateway.loaders import (
+    _prepare_sql_statement,
+    build_sql_partitioned_request,
+    reflect_and_select,
+)
 from boti_data.gateway.normalization import build_partitioned_load_options
-from boti_data.gateway.loaders import build_sql_partitioned_request
-from boti_data.db.partitioned_planner import SqlPartitionPlanner
+from boti_data.gateway.requests import SqlLoadRequest
 
 # -- Configuration (mirrors what the benchmark notebook sets up) --
 TABLE = "asm_tracking_productos"
@@ -148,7 +151,7 @@ with SqlDatabaseResource(config) as res:
     pandas_avg = sum(pandas_times) / len(pandas_times)
     ratio = dask_avg / pandas_avg if pandas_avg > 0 else float("inf")
 
-    print(f"\n--- Summary ---")
+    print("\n--- Summary ---")
     print(f"Dask avg:   {dask_avg:.4f}s")
     print(f"Pandas avg: {pandas_avg:.4f}s")
     print(f"Ratio:      {ratio:.2f}x")

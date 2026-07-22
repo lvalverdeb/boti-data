@@ -4,6 +4,7 @@ Bidirectional translator between raw DB column names and clean semantic names.
 field_map convention:  {db_column_name: semantic_name}
   e.g. {'id_tipo_producto': 'product_type_id'}
 """
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -33,8 +34,7 @@ class FieldMap:
         for db_col, sem in mapping.items():
             if sem in seen:
                 raise ValueError(
-                    f"Duplicate semantic name '{sem}' maps to both "
-                    f"'{seen[sem]}' and '{db_col}'."
+                    f"Duplicate semantic name '{sem}' maps to both '{seen[sem]}' and '{db_col}'."
                 )
             seen[sem] = db_col
         self._semantic_to_db: dict[str, str] = {v: k for k, v in mapping.items()}

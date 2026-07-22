@@ -10,6 +10,7 @@ python examples/sql_model_registry.py
 python examples/sql_model_builder.py
 python examples/sql_async_resource.py
 python examples/sql_partitioned_loader.py
+python examples/sql_pgvector.py
 python examples/parquet_resource.py
 python examples/data_facade_db.py
 python examples/data_facade_parquet.py
@@ -56,6 +57,13 @@ Sink/plugin walkthroughs:
 Enrichment walkthrough:
 
 - `examples/data_enrichment_v1.py` (`AsyncFrameEnricher` + `AttachmentSpec`)
+
+pgvector walkthrough (needs a real Postgres with the pgvector extension — see
+the module docstring; skips gracefully otherwise, including inside
+`smoke_all_examples.py`):
+
+- `examples/sql_pgvector.py` (`Vector` column reflection + `nearest_neighbors`)
+- `notebooks/23_pgvector.ipynb` (interactive notebook flow)
 
 See [`docs/BIG_DATA_READYNESS.md`](../docs/BIG_DATA_READYNESS.md) for operating guidance.
 Datacube contract guidance: [`docs/DATACUBE_CONTRACT.md`](../docs/DATACUBE_CONTRACT.md).

@@ -91,6 +91,27 @@ Or install through the core package extra:
 pip install "boti[data]"
 ```
 
+`boti-data` doesn't bundle a database driver by default — SQLAlchemy resolves the driver package from your connection URL's scheme (`mysql+pymysql://`, `postgresql+asyncpg://`, ...), so install the one matching your database:
+
+```bash
+pip install "boti-data[mysql]"      # asyncmy + pymysql
+pip install "boti-data[postgres]"   # asyncpg + psycopg[binary]
+```
+
+If a Postgres table has a [pgvector](https://github.com/pgvector/pgvector) `vector` column, install `boti-data[pgvector]` too — this registers pgvector's `Vector` type with SQLAlchemy's reflection so `SqlAlchemyModelBuilder`/`SqlRepository`/`DataGateway` map that column to a usable `list[float]` (with its dimension preserved) instead of an unreflectable `NullType`:
+
+```bash
+pip install "boti-data[pgvector]"
+```
+
+The base install is deliberately light: single-row transactional access (`SqlRepository`/`AsyncSqlRepository`, see below) works out of the box, with no dask/pandas/polars pulled in. The dataframe-shaped, bulk-oriented side of the package (`DataGateway`/`DataHelper`, `ParquetPipeline`, `HybridDataset`, the sink pipelines, ...) needs the `dataframes` extra:
+
+```bash
+pip install "boti-data[dataframes]"  # dask + pandas + polars + boti-dask
+```
+
+Every name importable from `boti_data` is loaded lazily on first access, so `import boti_data` alone never touches dask/pandas/polars — only accessing a dataframe-shaped name does.
+
 ## Imports
 
 `boti-data` uses the top-level Python package `boti_data`. Dask runtime/session/resilience helpers live in `boti_dask` and are not re-exported here.
@@ -118,9 +139,11 @@ from boti_data import (
     available_sinks,
     create_sink,
     register_sink,
+    AsyncSqlRepository,
     SqlAlchemyModelBuilder,
     SqlDatabaseConfig,
     SqlDatabaseResource,
+    SqlRepository,
 )
 ```
 
@@ -826,6 +849,61 @@ Use the following as a guide:
 ---
 
 ## Examples
+
+### Repository (lightest-weight, no dataframe dependencies)
+
+For single-row transactional access — get/insert/update/delete by primary key — without pulling in dask/pandas/polars at all. Rows come back as plain `dict[str, Any]`, never a DataFrame.
+
+`query_only` defaults to `True` on `SqlRepository`/`AsyncSqlRepository` themselves and always wins over whatever the passed-in `config.query_only` says — insert/update/delete raise until you opt in explicitly with `query_only=False`. This is deliberate: a `config` object might be shared with or reused from a context where writes are already enabled, and a repository shouldn't silently inherit write access nobody asked it for.
+
+```python
+from boti_data import SqlDatabaseConfig, SqlRepository
+
+config = SqlDatabaseConfig(connection_url="sqlite:///example.db")
+
+with SqlRepository(config, "users", query_only=False) as users:
+    row = users.insert({"id": 1, "name": "Ada"})
+    row = users.get(1)              # -> dict | None
+    row = users.update(1, {"name": "Grace"})
+    deleted = users.delete(1)       # -> bool
+```
+
+Omit `query_only=False` (or read-only access is all you need) and writes raise instead of silently succeeding:
+
+```python
+with SqlRepository(config, "users") as users:
+    users.get(1)                    # fine
+    users.insert({"id": 2, "name": "Bob"})  # raises SQLAlchemyError
+```
+
+An async counterpart, `AsyncSqlRepository`, mirrors the same four methods as coroutines and is used as an async context manager:
+
+```python
+from boti_data import AsyncSqlRepository
+
+async with AsyncSqlRepository(config, "users", query_only=False) as users:
+    row = await users.get(1)
+```
+
+### Nearest-neighbour search (pgvector)
+
+`boti_data.db.nearest_neighbors`/`vector_distance` build an `ORDER BY <distance> LIMIT k` statement against a pgvector column, with the query vector bound as a driver parameter — never string-interpolated into the SQL, regardless of how large the vector is. Requires `boti-data[pgvector]` (see [Installation](#installation)) and a table reflected via `SqlAlchemyModelBuilder`/`SqlRepository`/`DataGateway`.
+
+```python
+from boti_data import DataGateway, SqlDatabaseConfig
+from boti_data.db import SqlAlchemyModelBuilder, nearest_neighbors
+
+config = SqlDatabaseConfig(connection_url="postgresql+psycopg://user:pass@host/mydb", query_only=True)
+gateway = DataGateway(config)
+
+model = SqlAlchemyModelBuilder(gateway.resource.engine, "embeddings").build_model()
+query_vector = [...]  # e.g. a 512-float face embedding
+
+stmt = nearest_neighbors(model, model.vector, query_vector, k=10, metric="cosine")
+matches = gateway.load(statement=stmt, model=model, as_pandas=True)
+```
+
+Supported `metric` values map directly to pgvector's operators: `"cosine"` (`<=>`), `"l2"` (`<->`), `"inner_product"` (`<#>`), `"l1"` (`<+>`). Add ordinary filtering with `.where(...)` on the statement before passing it to `gateway.load(...)`.
 
 ### SQL resource (low-level)
 

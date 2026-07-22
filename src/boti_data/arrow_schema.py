@@ -7,6 +7,7 @@ Provides a canonical ``ArrowSchema`` class that wraps ``pa.Schema`` with:
 - Dict-compatible constructor for migration from existing schema maps
 - DataFrame ↔ Table conversion helpers
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -66,10 +67,7 @@ class ArrowSchema:
         from boti_data.schema import normalize_schema_map
 
         normalized = normalize_schema_map(dtype_map)
-        fields = [
-            (col, pandas_dtype_to_arrow(dtype))
-            for col, dtype in normalized.items()
-        ]
+        fields = [(col, pandas_dtype_to_arrow(dtype)) for col, dtype in normalized.items()]
         return cls(pa.schema(fields))
 
     @classmethod
@@ -135,6 +133,7 @@ class ArrowSchema:
         pandas operations. Handles type mismatches via safe/unsafe casting.
         """
         from boti_data.db.arrow_schema_mapper import coerce_arrow_table
+
         return coerce_arrow_table(table, self._schema)
 
     def to_arrow_table(self, df: Any) -> pa.Table:
@@ -268,9 +267,11 @@ class ArrowSchema:
 # Helper functions
 # ---------------------------------------------------------------------------
 
+
 def _pandas_dtype_to_arrow(dtype_str: str) -> pa.DataType:
     """Convert a pandas dtype string to PyArrow type."""
     from boti_data.db.arrow_schema_mapper import pandas_dtype_to_arrow
+
     return pandas_dtype_to_arrow(dtype_str)
 
 
@@ -288,6 +289,7 @@ def _pandas_meta_to_arrow_schema(df: Any) -> pa.Schema:
 # Convenience functions (drop-in replacements for schema.py functions)
 # ---------------------------------------------------------------------------
 
+
 def apply_arrow_schema_map(
     dataframe: Any,
     schema_map: Mapping[str, str],
@@ -304,10 +306,12 @@ def apply_arrow_schema_map(
     # Validate required columns
     if require_columns:
         missing = arrow_schema.validate_columns(
-            dataframe, require_all=True,
+            dataframe,
+            require_all=True,
         )
         if missing:
             from boti_data.schema import SchemaValidationError
+
             raise SchemaValidationError(f"Missing required column(s): {missing}.")
 
     return arrow_schema.coerce_dataframe(dataframe)
@@ -325,8 +329,10 @@ def validate_arrow_schema(
     """
     arrow_schema = ArrowSchema.from_dict(expected_schema_map)
     errors = arrow_schema.validate_dataframe(
-        dataframe, require_columns=require_columns,
+        dataframe,
+        require_columns=require_columns,
     )
     if errors:
         from boti_data.schema import SchemaValidationError
+
         raise SchemaValidationError("Schema validation failed:\n" + "\n".join(errors))

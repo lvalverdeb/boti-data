@@ -36,7 +36,9 @@ class AttachmentSpec:
     drop_cols: list[str]
     max_unique_values: int | None = None
 
-    def is_applicable(self, available_cols: set[str], *, requested_keys: set[str] | None = None) -> bool:
+    def is_applicable(
+        self, available_cols: set[str], *, requested_keys: set[str] | None = None
+    ) -> bool:
         if requested_keys is not None and self.key not in requested_keys:
             return False
         return self.required_cols.issubset(available_cols)

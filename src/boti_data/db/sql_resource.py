@@ -47,7 +47,9 @@ class SqlDatabaseResource(ManagedResource):
 
     def _initialize_sql_environment(self) -> None:
         try:
-            connection_url = _normalize_connection_url(self.config.connection_url.get_secret_value())
+            connection_url = _normalize_connection_url(
+                self.config.connection_url.get_secret_value()
+            )
             parsed = _validate_sync_driver_url(connection_url)
             if self.config.query_only:
                 _validate_query_only_support(parsed)

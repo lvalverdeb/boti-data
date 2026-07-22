@@ -2,7 +2,27 @@
 Parquet-backed data resources.
 """
 
-from boti_data.parquet.reader import ParquetReader
+from __future__ import annotations
+
+import importlib
+from typing import Any
+
 from boti_data.parquet.resource import ParquetDataConfig, ParquetDataResource
 
 __all__ = ["ParquetDataConfig", "ParquetDataResource", "ParquetReader"]
+
+# ParquetReader is deferred (PEP 562): it depends on boti_data.gateway, which in
+# turn depends on this package's own ParquetDataConfig/ParquetDataResource (for
+# gateway.requests's BackendConfig/BackendResource unions) — importing it eagerly
+# here would make boti_data.parquet.resource unreachable without first fully
+# resolving boti_data.gateway, a genuine package-level circular import.
+_LAZY = {"ParquetReader": ("boti_data.parquet.reader", "ParquetReader")}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _LAZY:
+        module_name, attr = _LAZY[name]
+        value = getattr(importlib.import_module(module_name), attr)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

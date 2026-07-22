@@ -2,78 +2,16 @@
 Data modules and interfaces for the Boti pipeline context.
 """
 
-from boti_data.db import (
-    AsyncSqlDatabaseResource,
-    BuilderConfig,
-    DefaultBase,
-    EngineRegistry,
-    RegistryConfig,
-    SqlAlchemyModelBuilder,
-    SqlDatabaseConfig,
-    SqlDatabaseResource,
-    SqlPartitionPlan,
-    SqlPartitionSpec,
-    SqlPartitionedLoadRequest,
-    SqlPartitionedLoader,
-    SqlModelRegistry,
-    ensure_greenlet_available,
-    get_global_registry,
-)
-from boti_data.connection_catalog import ConnectionCatalog
-from boti_data.parquet import ParquetDataConfig, ParquetDataResource, ParquetReader
-from boti_data.filters import (
-    FilterHandler,
-    Expr,
-    TrueExpr,
-    And,
-    Or,
-    Not,
-)
-from boti_data.gateway import DataGateway, ParquetLoadRequest, SqlLoadRequest
-from boti_data.helper import DataHelper
-from boti_data.field_map import FieldMap
-from boti_data.gateway import DataFrameOptions, DataFrameParams
-from boti_data.joins import indexed_left_join, left_join_frames
-from boti_data.schema import (
-    SchemaValidationError,
-    align_frames_for_join,
-    apply_schema_map,
-    infer_schema_map,
-    normalize_dtype_alias,
-    normalize_schema_map,
-    validate_schema,
-)
-from boti_data.datacube import BaseDataCube, BaseArtifact, DatacubeConfig, DatacubeContract
-from boti_data.dataset import HybridDataset
-from boti_data.enrichment import AsyncFrameEnricher, AttachmentSpec, FrameEnricher
-from boti_data.pipelines import (
-    CsvSink,
-    CsvSinkConfig,
-    JsonlSink,
-    JsonlSinkConfig,
-    ParquetMaterializationResult,
-    ParquetPipeline,
-    ParquetSink,
-    SinkPipeline,
-    SinkRegistry,
-    SinkWriteResult,
-    available_sinks,
-    create_sink,
-    register_sink,
-)
-from boti_data.watermark import (
-    FileWatermarkStore,
-    FsspecWatermarkStore,
-    IncrementalResult,
-    WatermarkStore,
-    advance_watermark,
-    build_incremental_filters,
-)
+from __future__ import annotations
+
+import importlib
+from typing import Any
 
 __all__ = [
     "And",
     "AsyncFrameEnricher",
     "AsyncSqlDatabaseResource",
+    "AsyncSqlRepository",
     "AttachmentSpec",
     "BaseDataCube",
     "BaseArtifact",
@@ -122,7 +60,9 @@ __all__ = [
     "SqlPartitionedLoadRequest",
     "SqlPartitionedLoader",
     "SqlModelRegistry",
+    "SqlRepository",
     "TrueExpr",
+    "VectorMetric",
     "WatermarkStore",
     "advance_watermark",
     "align_frames_for_join",
@@ -135,8 +75,103 @@ __all__ = [
     "indexed_left_join",
     "infer_schema_map",
     "left_join_frames",
+    "nearest_neighbors",
     "normalize_dtype_alias",
     "normalize_schema_map",
     "register_sink",
     "validate_schema",
+    "vector_distance",
 ]
+
+# Every public name is loaded lazily (PEP 562) so that importing boti_data (or
+# any of its dependency-clean pieces, e.g. SqlRepository) never pulls in the
+# dask/pandas/polars/pyarrow chain used by the dataframe-shaped, bulk-oriented
+# side of the package (DataGateway/DataHelper, ParquetPipeline, etc.) unless a
+# consumer actually touches one of those names.
+_LAZY = {
+    # db.* — dependency-clean.
+    "AsyncSqlDatabaseResource": ("boti_data.db.sql_manager", "AsyncSqlDatabaseResource"),
+    "EngineRegistry": ("boti_data.db.sql_manager", "EngineRegistry"),
+    "SqlDatabaseConfig": ("boti_data.db.sql_manager", "SqlDatabaseConfig"),
+    "SqlDatabaseResource": ("boti_data.db.sql_manager", "SqlDatabaseResource"),
+    "BuilderConfig": ("boti_data.db.sql_model_builder", "BuilderConfig"),
+    "SqlAlchemyModelBuilder": ("boti_data.db.sql_model_builder", "SqlAlchemyModelBuilder"),
+    "DefaultBase": ("boti_data.db.sql_model_registry", "DefaultBase"),
+    "RegistryConfig": ("boti_data.db.sql_model_registry", "RegistryConfig"),
+    "SqlModelRegistry": ("boti_data.db.sql_model_registry", "SqlModelRegistry"),
+    "get_global_registry": ("boti_data.db.sql_model_registry", "get_global_registry"),
+    "ensure_greenlet_available": ("boti_data.db.sqlalchemy_async", "ensure_greenlet_available"),
+    "SqlPartitionPlan": ("boti_data.db.partitioned_types", "SqlPartitionPlan"),
+    "SqlPartitionSpec": ("boti_data.db.partitioned_types", "SqlPartitionSpec"),
+    "SqlRepository": ("boti_data.db.sql_repository", "SqlRepository"),
+    "AsyncSqlRepository": ("boti_data.db.sql_repository", "AsyncSqlRepository"),
+    "nearest_neighbors": ("boti_data.db.vector_search", "nearest_neighbors"),
+    "vector_distance": ("boti_data.db.vector_search", "vector_distance"),
+    "VectorMetric": ("boti_data.db.vector_search", "VectorMetric"),
+    "FieldMap": ("boti_data.field_map", "FieldMap"),
+    # dask+pandas — the one heavy import inside the otherwise-clean db package.
+    "SqlPartitionedLoader": ("boti_data.db.partitioned_loader", "SqlPartitionedLoader"),
+    "SqlPartitionedLoadRequest": ("boti_data.db.partitioned_loader", "SqlPartitionedLoadRequest"),
+    # dask/pandas/polars/pyarrow-touching — the dataframe-shaped, bulk-oriented side.
+    "ConnectionCatalog": ("boti_data.connection_catalog", "ConnectionCatalog"),
+    "ParquetDataConfig": ("boti_data.parquet", "ParquetDataConfig"),
+    "ParquetDataResource": ("boti_data.parquet", "ParquetDataResource"),
+    "ParquetReader": ("boti_data.parquet", "ParquetReader"),
+    "FilterHandler": ("boti_data.filters", "FilterHandler"),
+    "Expr": ("boti_data.filters", "Expr"),
+    "TrueExpr": ("boti_data.filters", "TrueExpr"),
+    "And": ("boti_data.filters", "And"),
+    "Or": ("boti_data.filters", "Or"),
+    "Not": ("boti_data.filters", "Not"),
+    "DataGateway": ("boti_data.gateway", "DataGateway"),
+    "ParquetLoadRequest": ("boti_data.gateway", "ParquetLoadRequest"),
+    "SqlLoadRequest": ("boti_data.gateway", "SqlLoadRequest"),
+    "DataFrameOptions": ("boti_data.gateway", "DataFrameOptions"),
+    "DataFrameParams": ("boti_data.gateway", "DataFrameParams"),
+    "DataHelper": ("boti_data.helper", "DataHelper"),
+    "indexed_left_join": ("boti_data.joins", "indexed_left_join"),
+    "left_join_frames": ("boti_data.joins", "left_join_frames"),
+    "SchemaValidationError": ("boti_data.schema", "SchemaValidationError"),
+    "align_frames_for_join": ("boti_data.schema", "align_frames_for_join"),
+    "apply_schema_map": ("boti_data.schema", "apply_schema_map"),
+    "infer_schema_map": ("boti_data.schema", "infer_schema_map"),
+    "normalize_dtype_alias": ("boti_data.schema", "normalize_dtype_alias"),
+    "normalize_schema_map": ("boti_data.schema", "normalize_schema_map"),
+    "validate_schema": ("boti_data.schema", "validate_schema"),
+    "BaseDataCube": ("boti_data.datacube", "BaseDataCube"),
+    "BaseArtifact": ("boti_data.datacube", "BaseArtifact"),
+    "DatacubeConfig": ("boti_data.datacube", "DatacubeConfig"),
+    "DatacubeContract": ("boti_data.datacube", "DatacubeContract"),
+    "HybridDataset": ("boti_data.dataset", "HybridDataset"),
+    "AsyncFrameEnricher": ("boti_data.enrichment", "AsyncFrameEnricher"),
+    "AttachmentSpec": ("boti_data.enrichment", "AttachmentSpec"),
+    "FrameEnricher": ("boti_data.enrichment", "FrameEnricher"),
+    "CsvSink": ("boti_data.pipelines", "CsvSink"),
+    "CsvSinkConfig": ("boti_data.pipelines", "CsvSinkConfig"),
+    "JsonlSink": ("boti_data.pipelines", "JsonlSink"),
+    "JsonlSinkConfig": ("boti_data.pipelines", "JsonlSinkConfig"),
+    "ParquetMaterializationResult": ("boti_data.pipelines", "ParquetMaterializationResult"),
+    "ParquetPipeline": ("boti_data.pipelines", "ParquetPipeline"),
+    "ParquetSink": ("boti_data.pipelines", "ParquetSink"),
+    "SinkPipeline": ("boti_data.pipelines", "SinkPipeline"),
+    "SinkRegistry": ("boti_data.pipelines", "SinkRegistry"),
+    "SinkWriteResult": ("boti_data.pipelines", "SinkWriteResult"),
+    "available_sinks": ("boti_data.pipelines", "available_sinks"),
+    "create_sink": ("boti_data.pipelines", "create_sink"),
+    "register_sink": ("boti_data.pipelines", "register_sink"),
+    "FileWatermarkStore": ("boti_data.watermark", "FileWatermarkStore"),
+    "FsspecWatermarkStore": ("boti_data.watermark", "FsspecWatermarkStore"),
+    "IncrementalResult": ("boti_data.watermark", "IncrementalResult"),
+    "WatermarkStore": ("boti_data.watermark", "WatermarkStore"),
+    "advance_watermark": ("boti_data.watermark", "advance_watermark"),
+    "build_incremental_filters": ("boti_data.watermark", "build_incremental_filters"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _LAZY:
+        module_name, attr = _LAZY[name]
+        value = getattr(importlib.import_module(module_name), attr)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

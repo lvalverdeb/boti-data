@@ -102,9 +102,7 @@ class SqlDatabaseConfig(ResourceConfig):
         if value is None:
             return None
         if not is_valid_env_var_name(value):
-            raise ValueError(
-                "worker_connection_env_var must be a valid environment variable name."
-            )
+            raise ValueError("worker_connection_env_var must be a valid environment variable name.")
         return value
 
 

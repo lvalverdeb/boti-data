@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from boti_data.gateway.core import DataGateway
 from boti_data.gateway.normalization import LOAD_CONTROL_KEYS
 from boti_data.gateway.requests import BackendConfig, ExecutionMode, ReturnType
 from boti_data.helper import DataHelper
+
+if TYPE_CHECKING:
+    # Only used in a type annotation (postponed via `from __future__ import
+    # annotations`, so never evaluated at runtime) — importing this at module
+    # level would create a circular import with boti_data.gateway.requests,
+    # which imports boti_data.parquet.resource.
+    from boti_data.gateway.core import DataGateway
 from boti_data.parquet.reader_config import (
     UNSET,
     ParquetReaderConfigBuilder,

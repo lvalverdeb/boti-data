@@ -26,6 +26,4 @@ class DataFrameTransformer(Protocol):
     boti-data knowing about it.
     """
 
-    async def transform(
-        self, df: pd.DataFrame, **kwargs: Any
-    ) -> pd.DataFrame: ...
+    async def transform(self, df: pd.DataFrame, **kwargs: Any) -> pd.DataFrame: ...
