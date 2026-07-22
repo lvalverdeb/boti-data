@@ -885,6 +885,44 @@ async with AsyncSqlRepository(config, "users", query_only=False) as users:
     row = await users.get(1)
 ```
 
+#### Multi-table atomic transactions
+
+By default each `SqlRepository` owns its own connection and commits after every write — fine for independent single-row operations, but not when several writes (potentially across different tables) need to succeed or fail together. Pass an already-open `session` instead of `config` to bind a repository to a transaction you control; writes `flush()` instead of committing, so nothing is durable until you commit the session yourself:
+
+```python
+with SqlDatabaseResource(config) as db, db.session() as session:
+    with SqlRepository(session=session, table_name="audit_log") as audit_log:
+        with SqlRepository(session=session, table_name="embeddings") as embeddings:
+            audit_log.insert({"event": "enroll"})
+            embeddings.insert({"subject_id": 1, "vector": [...]})
+    session.commit()  # both rows commit together, or neither does on an exception
+```
+
+`SqlUnitOfWork` wraps this pattern for the common case — one config, several tables, one commit/rollback:
+
+```python
+from boti_data import SqlDatabaseConfig, SqlUnitOfWork
+
+config = SqlDatabaseConfig(connection_url="postgresql+psycopg://user:pass@host/mydb")
+
+with SqlUnitOfWork(config, query_only=False) as uow:
+    uow.repository("audit_log").insert({"event": "enroll"})
+    uow.repository("embeddings").insert({"subject_id": 1, "vector": [...]})
+# commits both on clean exit; rolls back both on any exception
+```
+
+`query_only` on a `session`-bound `SqlRepository` is inert — the session's own class (e.g. a `ReadOnlySession`) already determines writability, since this path never builds a new guarded session itself. `AsyncSqlUnitOfWork` mirrors `SqlUnitOfWork`, with an async `repository()` method (returns an already-set-up `AsyncSqlRepository`, so callers don't need to `async with` each one individually):
+
+```python
+from boti_data import AsyncSqlUnitOfWork
+
+async with AsyncSqlUnitOfWork(config, query_only=False) as uow:
+    audit_log = await uow.repository("audit_log")
+    embeddings = await uow.repository("embeddings")
+    await audit_log.insert({"event": "enroll"})
+    await embeddings.insert({"subject_id": 1, "vector": [...]})
+```
+
 ### Nearest-neighbour search (pgvector)
 
 `boti_data.db.nearest_neighbors`/`vector_distance` build an `ORDER BY <distance> LIMIT k` statement against a pgvector column, with the query vector bound as a driver parameter — never string-interpolated into the SQL, regardless of how large the vector is. Requires `boti-data[pgvector]` (see [Installation](#installation)) and a table reflected via `SqlAlchemyModelBuilder`/`SqlRepository`/`DataGateway`.

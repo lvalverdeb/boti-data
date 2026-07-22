@@ -21,13 +21,19 @@ from boti_data.db.sql_model_registry import (
     SqlModelRegistry,
     get_global_registry,
 )
-from boti_data.db.sql_repository import AsyncSqlRepository, SqlRepository
+from boti_data.db.sql_repository import (
+    AsyncSqlRepository,
+    AsyncSqlUnitOfWork,
+    SqlRepository,
+    SqlUnitOfWork,
+)
 from boti_data.db.sqlalchemy_async import ensure_greenlet_available
 from boti_data.db.vector_search import nearest_neighbors, vector_distance
 
 __all__ = [
     "AsyncSqlDatabaseResource",
     "AsyncSqlRepository",
+    "AsyncSqlUnitOfWork",
     "BuilderConfig",
     "DefaultBase",
     "EngineRegistry",
@@ -41,6 +47,7 @@ __all__ = [
     "SqlPartitionedLoader",
     "SqlModelRegistry",
     "SqlRepository",
+    "SqlUnitOfWork",
     "ensure_greenlet_available",
     "get_global_registry",
     "nearest_neighbors",
