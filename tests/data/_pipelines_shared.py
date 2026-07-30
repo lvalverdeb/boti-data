@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+from fsspec.spec import AbstractFileSystem
 from sqlalchemy import Date, Integer, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
@@ -106,3 +107,71 @@ def _build_hybrid_dataset(tmp_path) -> HybridDataset:
         date_field="event_date",
         split_date="2026-04-18",
     )
+
+
+class PrefixOnlyFakeFileSystem(AbstractFileSystem):
+    """In-memory fsspec filesystem modelling a prefix-only S3-compatible store.
+
+    Unlike a real directory, no object exists at a bare "directory" key --
+    only leaf object keys are real. ``find(..., withdirs=True)`` on such a
+    backend can surface a synthetic entry for the bare prefix itself even
+    though nothing exists there, which is exactly the wishlist #1 MinIO
+    reproduction: ``expand_path(recursive=True)`` returning a phantom
+    directory "file" alongside the real objects.
+    """
+
+    protocol = "prefixonly"
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.store: dict[str, bytes] = {}
+
+    def _strip_protocol(self, path):
+        return str(path).rstrip("/")
+
+    def ls(self, path, detail=True, **kwargs):
+        path = self._strip_protocol(path)
+        prefix = path + "/"
+        names = sorted(key for key in self.store if key == path or key.startswith(prefix))
+        if detail:
+            return [{"name": name, "type": "file", "size": len(self.store[name])} for name in names]
+        return names
+
+    def find(self, path, maxdepth=None, withdirs=False, detail=False, **kwargs):
+        path = self._strip_protocol(path)
+        prefix = path + "/"
+        keys = sorted(key for key in self.store if key == path or key.startswith(prefix))
+        if withdirs and path not in keys:
+            keys = [path, *keys]
+        return keys
+
+    def exists(self, path, **kwargs) -> bool:
+        path = self._strip_protocol(path)
+        prefix = path + "/"
+        return path in self.store or any(key.startswith(prefix) for key in self.store)
+
+    def isdir(self, path) -> bool:
+        path = self._strip_protocol(path)
+        return path not in self.store and self.exists(path)
+
+    def cp_file(self, path1, path2, **kwargs) -> None:
+        path1 = self._strip_protocol(path1)
+        path2 = self._strip_protocol(path2)
+        if path1 not in self.store:
+            raise FileNotFoundError(path1)
+        self.store[path2] = self.store[path1]
+
+    def rm(self, path, recursive=False, **kwargs) -> None:
+        path = self._strip_protocol(path)
+        if recursive:
+            prefix = path + "/"
+            for key in [k for k in self.store if k == path or k.startswith(prefix)]:
+                del self.store[key]
+        else:
+            self.store.pop(path, None)
+
+    def makedirs(self, path, exist_ok=True) -> None:
+        pass
+
+    def mkdir(self, path, **kwargs) -> None:
+        pass

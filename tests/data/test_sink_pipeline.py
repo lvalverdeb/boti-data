@@ -21,7 +21,7 @@ from boti_data import (
     SinkWriteResult,
 )
 
-from ._pipelines_shared import _build_hybrid_dataset, _build_source_helper
+from ._pipelines_shared import PrefixOnlyFakeFileSystem, _build_hybrid_dataset, _build_source_helper
 
 
 def test_sink_pipeline_writes_csv_dataset_with_partition_derivation(temp_project_root) -> None:
@@ -261,3 +261,40 @@ def test_prepare_partitioned_frame_rejects_meta_corrupted_by_unrelated_reassignm
             date_field=None,
             sink_name="TestSink",
         )
+
+
+def test_write_with_staging_swap_avoids_expand_path_phantom_entry() -> None:
+    """Regression for wishlist #1: MinIO/prefix-only-S3 overwrite swap.
+
+    A single recursive ``fs.mv(staging_path, target_path, recursive=True)``
+    re-expands the staging directory and, on a prefix-only backend, that
+    expansion can surface a phantom entry for the bare directory prefix
+    itself -- no object actually exists there -- which 404s the whole swap.
+    ``_write_with_staging`` must move the already-enumerated file list one by
+    one instead, so the phantom entry never gets a chance to appear.
+    """
+    from boti_data.pipelines.sinks_common import _write_with_staging
+
+    fs = PrefixOnlyFakeFileSystem()
+    target = "bucket/some/dir"
+    fs.store[f"{target}/old_part.0.parquet"] = b"stale"
+
+    # Sanity: the bug is real against this backend shape -- a bare recursive
+    # mv over the same layout raises via the phantom expand_path entry.
+    fs.store[f"{target}.staging/part.0.parquet"] = b"new"
+    with pytest.raises(FileNotFoundError):
+        fs.mv(f"{target}.staging", target, recursive=True)
+    fs.store.pop(f"{target}.staging/part.0.parquet")
+
+    def _write_fn(directory: str) -> list[str]:
+        fs.store[f"{directory}/part.0.parquet"] = b"new"
+        fs.store[f"{directory}/part.1.parquet"] = b"new2"
+        return sorted(fs.find(directory))
+
+    files = _write_with_staging(fs=fs, target_path=target, overwrite=True, write_fn=_write_fn)
+
+    assert sorted(files) == [f"{target}/part.0.parquet", f"{target}/part.1.parquet"]
+    assert fs.store == {
+        f"{target}/part.0.parquet": b"new",
+        f"{target}/part.1.parquet": b"new2",
+    }

@@ -146,6 +146,36 @@ def _rm_recursive(fs: fsspec.AbstractFileSystem, path: str) -> None:
         fs.rm(path)
 
 
+def _move_staged_files(
+    fs: fsspec.AbstractFileSystem,
+    staged_files: Sequence[str],
+    staging_path: str,
+    target_root: str,
+) -> None:
+    """Move each enumerated staged file individually into *target_root*.
+
+    Deliberately avoids a single recursive ``fs.mv(staging_path, target_root,
+    recursive=True)``. On prefix-only S3-compatible backends (e.g. MinIO),
+    ``expand_path(recursive=True)`` can return the bare directory prefix
+    itself as a phantom "file" alongside the real objects -- no object
+    actually exists at that literal key -- and ``mv()`` forces
+    ``on_error="raise"`` on the resulting copy, so that one phantom entry
+    404s the entire swap even though every real file would have copied fine.
+    Moving the already-known file list one by one never expands a directory,
+    so the phantom entry never gets a chance to appear.
+    """
+    for staged_file in staged_files:
+        destination = staged_file.replace(staging_path, target_root, 1)
+        parent = destination.rsplit("/", 1)[0]
+        if parent and parent != destination:
+            fs.makedirs(parent, exist_ok=True)
+        fs.mv(staged_file, destination)
+    if fs.exists(staging_path):
+        # Empty leftover directory structure (local-disk backends only --
+        # prefix-only stores have nothing left here once every file moved).
+        _rm_recursive(fs, staging_path)
+
+
 def _write_with_staging(
     *,
     fs: fsspec.AbstractFileSystem,
@@ -171,20 +201,18 @@ def _write_with_staging(
         _rm_recursive(fs, staging_path)
 
     files = write_fn(staging_path)
+    target_root = target_path.rstrip("/")
 
     try:
         _rm_recursive(fs, target_path)
-        try:
-            fs.mv(staging_path, target_path, recursive=True)
-        except TypeError:
-            fs.mv(staging_path, target_path)
+        _move_staged_files(fs, files, staging_path, target_root)
     except Exception as exc:
         raise RuntimeError(
             f"Failed to swap staged sink output into {target_path!r}. "
             f"The newly written data is intact at {staging_path!r}."
         ) from exc
 
-    return [file.replace(staging_path, target_path.rstrip("/"), 1) for file in files]
+    return [file.replace(staging_path, target_root, 1) for file in files]
 
 
 @dataclass(slots=True)
