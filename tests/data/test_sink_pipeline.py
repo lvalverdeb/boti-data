@@ -222,3 +222,42 @@ def test_prepare_partitioned_frame_preserves_explicit_bool_meta_after_assign() -
 
     assert result.dtypes["dispatched"] == bool  # noqa: E721
     assert type(result._meta_nonempty["dispatched"].iloc[0]) is not object
+
+
+def test_prepare_partitioned_frame_rejects_meta_corrupted_by_unrelated_reassignment() -> None:
+    """Systemic guard for wishlist #2/#7: catch dask-expr meta corruption at write time.
+
+    Unlike the regression above (corruption from this module's own internal
+    partition_date .assign()), this reproduces the corruption happening
+    entirely in *caller* code -- a bare dd.to_datetime() reassignment of one
+    column silently turning an unrelated, already-correctly-typed bool
+    column's meta into `object` -- with no partitioning involved at all. The
+    sink must raise a clear, actionable error instead of shipping a
+    corrupted frame through to a cryptic pyarrow failure later.
+    """
+    from boti_data.pipelines.sinks import prepare_partitioned_frame
+
+    pdf = pd.DataFrame(
+        {
+            "dispatched": [True, False, True],
+            "event_date": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
+        }
+    )
+    ddf = dd.from_pandas(pdf, npartitions=1)
+    ddf["dispatched"] = ddf["dispatched"].map_partitions(
+        lambda s: s.astype(bool), meta=("dispatched", bool)
+    )
+    assert ddf.dtypes["dispatched"] == bool  # noqa: E721
+
+    # Bare reassignment elsewhere in the pipeline -- the actual trigger from
+    # the wishlist reproduction -- corrupts the unrelated bool column's meta.
+    ddf["event_date"] = dd.to_datetime(ddf["event_date"])
+    assert ddf.dtypes["dispatched"] != bool  # noqa: E721 -- meta already corrupted here
+
+    with pytest.raises(ValueError, match="meta/real dtype mismatch"):
+        prepare_partitioned_frame(
+            ddf,
+            partition_on=None,
+            date_field=None,
+            sink_name="TestSink",
+        )

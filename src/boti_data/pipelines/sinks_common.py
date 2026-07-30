@@ -71,6 +71,43 @@ def _derive_partition_date_column(
     return frame
 
 
+def _validate_meta_matches_real_dtypes(frame: dd.DataFrame, *, sink_name: str) -> None:
+    """Guard against dask-expr's meta/real dtype divergence (wishlist #2/#7).
+
+    A bare `dd.to_datetime()`/`pd.to_numeric()` reassignment or an unannotated
+    `map_partitions()` call anywhere upstream in a pipeline -- not just inside
+    this module's own partition_date derivation -- can silently corrupt an
+    *unrelated* column's synthetic `_meta_nonempty` sample without touching
+    the real per-partition data. Left unchecked, that divergence doesn't fail
+    here: it surfaces later as an opaque pyarrow `ArrowInvalid` at write time
+    with nothing pointing back to the real cause. Catch it against one real
+    computed partition before any sink commits to a write.
+    """
+    meta_dtypes = frame.dtypes
+    try:
+        real_dtypes = frame.head(1, npartitions=-1, compute=True).dtypes
+    except ValueError:
+        return  # empty frame -- nothing real to validate meta against
+    mismatched = {
+        column: (meta_dtypes[column], real_dtypes[column])
+        for column in real_dtypes.index
+        if meta_dtypes[column] != real_dtypes[column]
+    }
+    if not mismatched:
+        return
+    details = ", ".join(
+        f"{column!r} (meta={meta!s}, real={real!s})" for column, (meta, real) in mismatched.items()
+    )
+    raise ValueError(
+        f"{sink_name} detected a dask meta/real dtype mismatch before write: {details}. "
+        "This usually means a column elsewhere in the pipeline was reassigned via a bare "
+        "dd.to_datetime()/pd.to_numeric() call or an unannotated map_partitions(), which can "
+        "silently corrupt _meta_nonempty for unrelated columns. Pass an explicit meta= to "
+        "map_partitions() (or route the coercion through it) instead of reassigning via a "
+        "bare top-level pandas/dask function."
+    )
+
+
 def prepare_partitioned_frame(
     frame: dd.DataFrame,
     *,
@@ -78,20 +115,20 @@ def prepare_partitioned_frame(
     date_field: str | None,
     sink_name: str,
 ) -> dd.DataFrame:
-    if not partition_on:
-        return frame
-
-    partition_columns = list(partition_on)
-    missing = [name for name in partition_columns if name not in frame.columns]
-    if "partition_date" in missing:
-        frame = _derive_partition_date_column(frame, date_field, sink_name)
+    if partition_on:
+        partition_columns = list(partition_on)
         missing = [name for name in partition_columns if name not in frame.columns]
+        if "partition_date" in missing:
+            frame = _derive_partition_date_column(frame, date_field, sink_name)
+            missing = [name for name in partition_columns if name not in frame.columns]
 
-    if missing:
-        raise ValueError(
-            f"{sink_name} partition columns must already exist in the loaded frame or be derivable "
-            f"from date_field. Missing columns: {missing!r}."
-        )
+        if missing:
+            raise ValueError(
+                f"{sink_name} partition columns must already exist in the loaded frame or be "
+                f"derivable from date_field. Missing columns: {missing!r}."
+            )
+
+    _validate_meta_matches_real_dtypes(frame, sink_name=sink_name)
     return frame
 
 
