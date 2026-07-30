@@ -14,7 +14,7 @@ from boti.core.lifecycle import LifecycleCore
 from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 from boti_dask import async_safe_head, safe_head
 
-from . import core_load
+from . import core_describe, core_load
 from ._gateway_init import (
     GatewayInitOptions,
     build_gateway_from_backend,
@@ -31,6 +31,7 @@ from .requests import (
     ExecutionMode,
     ResolvedReturnType,
     ReturnType,
+    TableDescription,
 )
 
 
@@ -245,6 +246,31 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
             statement=statement, model=model, limit=n, return_type="dask", **options
         )
         return await async_safe_head(frame, n=n, npartitions=npartitions)
+
+    def describe(
+        self, table: str | None = None, *, row_count_limit: int = 10_000
+    ) -> TableDescription:
+        """Cheaply inspect a table's schema and an approximate row count.
+
+        Runs a bounded introspection query — reflecting column dtypes without
+        loading any rows, then counting up to *row_count_limit* rows — instead
+        of requiring callers to know to self-impose ``limit=`` on a full
+        :meth:`load` before exploring an unfamiliar table.
+
+        Args:
+            table: DB table name. Defaults to the table configured at
+                construction time (configured mode).
+            row_count_limit: Row count is exact up to this many rows; beyond
+                it, :attr:`TableDescription.row_count_is_exact` is ``False``
+                and :attr:`TableDescription.row_count` reports this cap.
+        """
+        return core_describe.describe(self, table, row_count_limit=row_count_limit)
+
+    async def adescribe(
+        self, table: str | None = None, *, row_count_limit: int = 10_000
+    ) -> TableDescription:
+        """Async variant of :meth:`describe`."""
+        return await core_describe.describe_async(self, table, row_count_limit=row_count_limit)
 
     def load(self, **options: Any) -> FrameResult:
         """Load data from the configured backend.

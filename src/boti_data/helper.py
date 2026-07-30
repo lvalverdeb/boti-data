@@ -10,7 +10,7 @@ from boti_dask import DaskSession, dask_session
 
 from boti_data.gateway import DataGateway
 from boti_data.gateway.incremental import IncrementalLoadService
-from boti_data.gateway.requests import BackendConfig
+from boti_data.gateway.requests import BackendConfig, TableDescription
 from boti_data.joins import indexed_left_join, left_join_frames
 from boti_data.schema import DataFrameLike
 from boti_data.watermark.incremental import IncrementalResult
@@ -272,6 +272,20 @@ class DataHelper(PicklableLifecycleCoreMixin, LifecycleCore):
 
     async def apreview(self, statement: Any, model: Any, n: int = 5, **options: Any) -> Any:
         return await self.gateway.aload(**self._build_preview_options(statement, model, n, options))
+
+    # Not a copy-pasted twin: pure delegate to self.gateway.describe()/
+    # adescribe() with identical kwargs, matching this class's other
+    # unflagged proxy pairs (load/aload, preview/apreview).
+    # spaghetti-ignore[sync-async-duplication]: see above
+    def describe(
+        self, table: str | None = None, *, row_count_limit: int = 10_000
+    ) -> TableDescription:
+        return self.gateway.describe(table, row_count_limit=row_count_limit)
+
+    async def adescribe(
+        self, table: str | None = None, *, row_count_limit: int = 10_000
+    ) -> TableDescription:
+        return await self.gateway.adescribe(table, row_count_limit=row_count_limit)
 
     def load_period(self, dt_field: str, start: str, end: str, **kwargs: Any) -> Any:
         return self.gateway.load_period(dt_field, start, end, **kwargs)

@@ -50,6 +50,7 @@ from .requests import (
     BackendResource,
     ResolvedExecutionMode,
     ReturnType,
+    TableDescription,
 )
 
 _log = logging.getLogger(__name__)
@@ -243,6 +244,33 @@ class BackendStrategy(ABC):
         Default implementation delegates to the sync method.
         """
         return self.estimate_result_size(ctx)
+
+    # -- Schema/row-count discovery ------------------------------------------
+
+    def describe(
+        self,
+        resource: BackendResource | None,
+        table: str,
+        *,
+        row_count_limit: int,
+    ) -> TableDescription:
+        """Cheaply inspect *table*'s schema and an approximate row count.
+
+        Raises ``NotImplementedError`` by default — only backends with a
+        cheap, bounded introspection path (no full-table load) should
+        override this.
+        """
+        raise NotImplementedError(f"{self.name} backend does not support describe().")
+
+    async def describe_async(
+        self,
+        resource: BackendResource | None,
+        table: str,
+        *,
+        row_count_limit: int,
+    ) -> TableDescription:
+        """Async variant of :meth:`describe`. Default delegates to the sync method."""
+        return self.describe(resource, table, row_count_limit=row_count_limit)
 
 
 # ---------------------------------------------------------------------------

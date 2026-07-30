@@ -34,7 +34,8 @@ from .frame_strategies import FrameResult
 from .loaders import build_sql_partitioned_request, read_sql_async
 from .normalization import build_partitioned_load_options
 from .planning import InChunkPolicy
-from .requests import BackendConfig, BackendName, BackendResource, SqlLoadRequest
+from .requests import BackendConfig, BackendName, BackendResource, SqlLoadRequest, TableDescription
+from .sql_describe import describe_table
 from .sql_partitioned_exec import run_async_partitioned_request
 from .sql_size_estimation import (
     _DEFAULT_PARTITION_CHUNK_SIZE,
@@ -376,3 +377,32 @@ class SqlAlchemyStrategy(BackendStrategy):
                 return await asyncio.to_thread(self.estimate_result_size, ctx)
             return await estimate_configured_async(ctx)
         return await estimate_structured_async(ctx)
+
+    # -- Schema/row-count discovery ------------------------------------------
+
+    def describe(
+        self,
+        resource: BackendResource | None,
+        table: str,
+        *,
+        row_count_limit: int,
+    ) -> TableDescription:
+        if resource is None:
+            raise ValueError("describe() requires an active SQL resource.")
+        return describe_table(resource, table, row_count_limit=row_count_limit)
+
+    # describe() is already a single quick, bounded query -- offloading it to
+    # a thread (like estimate_result_size_async's sync-resource branch above)
+    # is enough; no separate async reflection/count path is worth the
+    # duplication for something this cheap.
+    # spaghetti-ignore[sync-async-duplication]: see above
+    async def describe_async(
+        self,
+        resource: BackendResource | None,
+        table: str,
+        *,
+        row_count_limit: int,
+    ) -> TableDescription:
+        return await asyncio.to_thread(
+            self.describe, resource, table, row_count_limit=row_count_limit
+        )

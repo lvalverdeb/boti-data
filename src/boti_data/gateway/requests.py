@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -207,3 +208,18 @@ class ParquetLoadRequest(BaseModel):
                 "Use as_pandas=True, return_type='arrow', or apply Dask head()/partitions explicitly."
             )
         return self
+
+
+@dataclass(frozen=True, slots=True)
+class TableDescription:
+    """Result of :meth:`~boti_data.gateway.core.DataGateway.describe`.
+
+    ``row_count`` is exact when ``row_count_is_exact`` is ``True``; otherwise
+    it reports the ``row_count_limit`` cap that was hit, meaning "at least
+    this many rows" rather than the real total.
+    """
+
+    table: str
+    columns: dict[str, str]
+    row_count: int
+    row_count_is_exact: bool
