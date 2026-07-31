@@ -356,14 +356,26 @@ def test_write_with_staging_swap_avoids_expand_path_phantom_entry() -> None:
 
     fs = PrefixOnlyFakeFileSystem()
     target = "bucket/some/dir"
-    fs.store[f"{target}/old_part.0.parquet"] = b"stale"
 
-    # Sanity: the bug is real against this backend shape -- a bare recursive
-    # mv over the same layout raises via the phantom expand_path entry.
+    # Sanity: the naive approach is unsafe against this backend shape.
+    # Depending on the installed fsspec version, a bare recursive mv over
+    # this layout either raises outright via the phantom expand_path entry
+    # (observed on fsspec 2026.6.0) or silently mis-nests the phantom entry
+    # as a real path without removing the stale target (observed on fsspec
+    # 2026.3.0) -- it never produces the clean result our fix does either way.
+    fs.store[f"{target}/old_part.0.parquet"] = b"stale"
     fs.store[f"{target}.staging/part.0.parquet"] = b"new"
-    with pytest.raises(FileNotFoundError):
+    try:
         fs.mv(f"{target}.staging", target, recursive=True)
-    fs.store.pop(f"{target}.staging/part.0.parquet")
+        naive_result_is_correct = fs.store == {f"{target}/part.0.parquet": b"new"}
+    except Exception:
+        naive_result_is_correct = False
+    assert not naive_result_is_correct, (
+        "expected the naive recursive mv to fail or corrupt the layout, not succeed cleanly"
+    )
+
+    fs.store.clear()
+    fs.store[f"{target}/old_part.0.parquet"] = b"stale"
 
     def _write_fn(directory: str) -> list[str]:
         fs.store[f"{directory}/part.0.parquet"] = b"new"
