@@ -575,13 +575,13 @@ with apply_recommended_dask_config():
 
 ### Dry-run and preview on gateway loads
 
-Use `dry_run=True` to build and inspect a lazy Dask load graph without materializing it, and `preview(...)` / `apreview(...)` to safely sample rows inside the session:
+Use `dry_run=True` to build and inspect a lazy Dask load graph without materializing it, and `limit=` to safely sample rows inside the session:
 
 ```python
 with DataHelper.session(scheduler_address="tcp://scheduler:8786", verify_connectivity=True) as client:
     with DataHelper(config, table="transactions") as helper:
         ddf = helper.dask.load(year=2024, dry_run=True, diagnostics=True)
-        preview = helper.dask.preview(year=2024, n=5)
+        sample = helper.dask.load(year=2024, limit=5).compute()
 ```
 
 ### Resilient joins
@@ -667,7 +667,7 @@ with DataHelper.session(scheduler_address="tcp://scheduler:8786") as client:
         by_region = ddf.groupby("region").size().compute()
 
         # Preview persisted data before the managed session closes.
-        preview = helper.preview(year=2024, n=5, persist=True)
+        sample = helper.load(year=2024, limit=5, persist=True).compute()
 ```
 
 ### Shared sessions for repeated notebook cells
@@ -961,8 +961,7 @@ with SqlDatabaseResource(config) as db:
 from boti_data import DataGateway, SqlDatabaseConfig
 
 gateway = DataGateway(
-    backend="sqlalchemy",
-    config=SqlDatabaseConfig(connection_url="sqlite:///example.db", query_only=True),
+    SqlDatabaseConfig(connection_url="sqlite:///example.db", query_only=True),
 )
 ```
 
@@ -1010,7 +1009,7 @@ config = SqlDatabaseConfig(
     worker_connection_env_var="DB_URL",
 )
 
-with DataHelper.session(cluster_factory=LocalCluster, n_workers=4) as client:
+with DataHelper.session(cluster_factory=LocalCluster, cluster_kwargs={"n_workers": 4}) as client:
     with DataHelper(config, table="events") as helper:
         ddf = helper.dask.load(event_type="purchase", persist=True)
         result = ddf.groupby("user_id").size().compute()
