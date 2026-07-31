@@ -146,6 +146,30 @@ def _rm_recursive(fs: fsspec.AbstractFileSystem, path: str) -> None:
         fs.rm(path)
 
 
+def _rebase_staged_path(
+    fs: fsspec.AbstractFileSystem,
+    path: str,
+    staging_path: str,
+    target_root: str,
+) -> str:
+    """Rewrite *path* from the staging tree to the target tree.
+
+    ``glob()``/``find()`` on most fsspec backends (S3, memory, ...) return
+    protocol-stripped paths (``bucket/key``) even when queried with a
+    scheme-prefixed directory (``s3://bucket/key``) -- but *staging_path*/
+    *target_root* here are whatever the caller originally passed in, which
+    for a ``Datasources``-resolved destination is scheme-prefixed. A naive
+    ``path.replace(staging_path, target_root)`` then silently no-ops (no
+    substring match, string returned unchanged) instead of raising, so both
+    sides are normalized through ``_strip_protocol()`` first to guarantee the
+    replace actually matches regardless of which form *path* arrived in.
+    """
+    normalized_path = fs._strip_protocol(path)
+    normalized_staging = fs._strip_protocol(staging_path)
+    normalized_target = fs._strip_protocol(target_root)
+    return normalized_path.replace(normalized_staging, normalized_target, 1)
+
+
 def _move_staged_files(
     fs: fsspec.AbstractFileSystem,
     staged_files: Sequence[str],
@@ -165,7 +189,7 @@ def _move_staged_files(
     so the phantom entry never gets a chance to appear.
     """
     for staged_file in staged_files:
-        destination = staged_file.replace(staging_path, target_root, 1)
+        destination = _rebase_staged_path(fs, staged_file, staging_path, target_root)
         parent = destination.rsplit("/", 1)[0]
         if parent and parent != destination:
             fs.makedirs(parent, exist_ok=True)
@@ -212,7 +236,7 @@ def _write_with_staging(
             f"The newly written data is intact at {staging_path!r}."
         ) from exc
 
-    return [file.replace(staging_path, target_root, 1) for file in files]
+    return [_rebase_staged_path(fs, file, staging_path, target_root) for file in files]
 
 
 @dataclass(slots=True)

@@ -389,3 +389,42 @@ def test_write_with_staging_swap_avoids_expand_path_phantom_entry() -> None:
         f"{target}/part.0.parquet": b"new",
         f"{target}/part.1.parquet": b"new2",
     }
+
+
+def test_write_with_staging_swap_survives_scheme_prefixed_target_path() -> None:
+    """Regression: wishlist #1 reopened -- scheme-prefixed target destroyed data.
+
+    Real fsspec backends (S3, GCS, the built-in ``memory://``, ...) return
+    protocol-stripped paths from ``glob()``/``find()`` even when queried with
+    a scheme-prefixed directory. When ``target_path`` carries a scheme (as a
+    ``Datasources``-resolved destination like ``s3://bucket/key`` does), a
+    naive ``staged_file.replace(staging_path, target_root)`` silently no-ops
+    (no substring match) instead of rewriting the path. That made
+    ``fs.mv(staged_file, staged_file)`` a same-path no-op -- so the file
+    never actually left the staging tree -- and the following "clean up the
+    now-empty staging leftover" step then deleted the still-populated
+    staging directory outright, on top of the old target having already been
+    removed. Net effect: **total data loss**, reported as a success with the
+    un-rewritten ``.staging`` path still in the result. Uses the real
+    fsspec ``memory://`` backend (not a hand-rolled fake) since this bug only
+    surfaces through fsspec's own protocol-stripping behavior.
+    """
+    import fsspec
+
+    from boti_data.pipelines.sinks_common import _write_with_staging
+
+    fs = fsspec.filesystem("memory")
+    target = "memory://bucket/prefixed_target_regression"
+    fs.pipe_file(f"{target}/old_part.0.parquet", b"stale")
+
+    def _write_fn(directory: str) -> list[str]:
+        fs.pipe_file(f"{directory}/part.0.parquet", b"new")
+        return sorted(fs.glob(f"{directory.rstrip('/')}/*"))
+
+    files = _write_with_staging(fs=fs, target_path=target, overwrite=True, write_fn=_write_fn)
+
+    assert files == ["/bucket/prefixed_target_regression/part.0.parquet"]
+    assert fs.find("/bucket/prefixed_target_regression") == [
+        "/bucket/prefixed_target_regression/part.0.parquet"
+    ]
+    assert fs.cat("/bucket/prefixed_target_regression/part.0.parquet") == b"new"
