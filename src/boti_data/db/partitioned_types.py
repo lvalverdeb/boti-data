@@ -123,8 +123,8 @@ class SqlPartitionedLoadRequest(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     partitioned: bool = True
     partition_strategy: PartitionStrategy = "offset"
-    partition_column: str | None = None
-    order_column: str | None = None
+    partition_column: str | None = Field(default=None, max_length=256)
+    order_column: str | None = Field(default=None, max_length=256)
     chunk_size: int = Field(default=50_000, ge=1)
     single_fetch_threshold: int | None = Field(default=None, ge=0)
     limit: int | None = Field(default=None, ge=1)

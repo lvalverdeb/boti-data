@@ -65,9 +65,9 @@ class DatacubeRequest(BaseModel):
     model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
     filters: dict[str, Any] = Field(default_factory=dict)
-    cube: str | None = Field(default=None)
+    cube: str | None = Field(default=None, max_length=256)
     limit: int | None = Field(default=None)
-    return_type: str | None = Field(default=None)
+    return_type: str | None = Field(default=None, max_length=32)
 
 
 class DatacubeConfig(ResourceConfig):

@@ -50,8 +50,8 @@ class DataFrameParams(BaseModel):
     fieldnames: tuple[str, ...] | None = None
     column_names: list[str] | None = None
     chunk_size: int | None = Field(default=None, ge=1)
-    index_col: str | None = None
-    datetime_index: str | None = None
+    index_col: str | None = Field(default=None, max_length=256)
+    datetime_index: str | None = Field(default=None, max_length=256)
     return_type: ReturnType = "dask"
     execution_mode: ExecutionMode = "auto"
 
@@ -133,7 +133,7 @@ class SqlLoadRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
-    sql: str | None = None
+    sql: str | None = Field(default=None, max_length=100_000)
     statement: Any | None = None
     model: Any | None = None
     filters: dict[str, Any] = Field(default_factory=dict)

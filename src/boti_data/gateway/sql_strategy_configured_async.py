@@ -52,7 +52,7 @@ async def aload_configured_execute_async_resource(
     model, stmt = await ctx.get_configured_select_async(resource, ctx.db_columns)
     t1 = perf_counter()
     if diagnostics:
-        resource.logger.info(f"Configured async select reflect_select={t1 - t0:.3f}s")
+        resource.logger.info(f"Configured async select reflect_select={t1 - t0:.3f}s")  # nosec CWE-117 -- float only
     if ctx.execution_mode == "lazy":
         t2 = perf_counter()
         partitioned_options = build_partitioned_load_options(
@@ -67,7 +67,7 @@ async def aload_configured_execute_async_resource(
         request = build_sql_partitioned_request(options_dict)
         t3 = perf_counter()
         if diagnostics:
-            resource.logger.info(f"Build partitioned request elapsed={t3 - t2:.3f}s")
+            resource.logger.info(f"Build partitioned request elapsed={t3 - t2:.3f}s")  # nosec CWE-117 -- float only
         return await run_async_partitioned_request(ctx, resource, request)
 
     df = await read_sql_async(resource, trusted_sql_request(ctx, statement=stmt, model=model))

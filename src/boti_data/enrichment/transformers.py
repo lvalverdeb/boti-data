@@ -82,7 +82,7 @@ class RowFilter:
     async def transform(self, df: pd.DataFrame, **kwargs: Any) -> pd.DataFrame:
         for expr in self._predicates:
             _reject_dunder_expr(expr)
-            mask = df.eval(expr)
+            mask = df.eval(expr)  # nosec CWE-94 -- dunder-chain rejected above; see class docstring's Security section
             df = df.loc[mask].reset_index(drop=True)
         return df
 
@@ -116,7 +116,7 @@ class DerivedColumn:
     async def transform(self, df: pd.DataFrame, **kwargs: Any) -> pd.DataFrame:
         for name, expr in self._columns.items():
             _reject_dunder_expr(expr)
-            df[name] = df.eval(expr)
+            df[name] = df.eval(expr)  # nosec CWE-94 -- dunder-chain rejected above; see class docstring's Security section
         return df
 
 

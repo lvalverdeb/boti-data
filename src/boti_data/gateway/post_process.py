@@ -226,4 +226,4 @@ class PostProcessor:
         logger.info(
             f"Gateway load completed elapsed={elapsed:.2f}s metrics={describe_frame(frame)}"
         )
-        logger.info(f"Gateway load graph metrics={describe_frame(frame)}")
+        logger.info(f"Gateway load graph metrics={describe_frame(frame)}")  # nosec CWE-117 -- counts/engine-name only, never data-derived

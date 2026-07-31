@@ -17,7 +17,7 @@ class GatewayLoadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
     # Source
-    sql: str | None = None
+    sql: str | None = Field(default=None, max_length=100_000)
     statement: Any = None
     model: Any = None
     filters: dict[str, Any] = Field(default_factory=dict)
@@ -43,13 +43,13 @@ class GatewayLoadRequest(BaseModel):
     # IN-chunking controls
     in_chunk_size: int | None = None
     in_chunk_concurrency: int | None = None
-    in_chunk_strategy: str = "auto"
+    in_chunk_strategy: str = Field(default="auto", max_length=32)
 
     # Partitioned load controls
     partitioned: bool | None = None
-    partition_strategy: str | None = None
-    partition_column: str | None = None
-    order_column: str | None = None
+    partition_strategy: str | None = Field(default=None, max_length=32)
+    partition_column: str | None = Field(default=None, max_length=256)
+    order_column: str | None = Field(default=None, max_length=256)
     chunk_size: int | None = Field(default=None, ge=1)
     single_fetch_threshold: int | None = Field(default=None, ge=0)
     max_concurrent_fetches: int | None = None

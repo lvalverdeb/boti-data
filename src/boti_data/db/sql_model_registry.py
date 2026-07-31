@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import re
 import sys
 import threading
@@ -25,6 +26,8 @@ from boti_data.db.sql_model_module_injection import register_as_module_attribute
 from boti_data.db.sql_model_registry_types import DefaultBase, ModelBuildContext, RegistryConfig
 from boti_data.db.sqlalchemy_async import ensure_greenlet_available
 
+_logger = logging.getLogger(__name__)
+
 try:
     # Importing this module has the side effect of registering pgvector's
     # 'vector' type name into SQLAlchemy's Postgres dialect
@@ -34,8 +37,10 @@ try:
     # works the same as before for consumers who never touch pgvector and
     # haven't installed boti-data[pgvector].
     import pgvector.sqlalchemy  # noqa: F401
-except ImportError:
-    pass
+except ImportError as exc:
+    # Debug level only — this is an expected/best-effort probe for the
+    # overwhelming majority of consumers who never install the pgvector extra.
+    _logger.debug("pgvector.sqlalchemy not available, vector type registration skipped: %s", exc)
 
 
 class SqlModelRegistry:
