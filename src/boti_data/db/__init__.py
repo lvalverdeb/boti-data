@@ -63,6 +63,12 @@ _LAZY = {
 }
 
 
+# Deliberately identical to the __getattr__ in boti_data/__init__.py and
+# boti_data/parquet/__init__.py -- this is PEP 562's own documented
+# module-level lazy-import boilerplate. Each copy needs its own private
+# _LAZY dict/globals()/__name__, so sharing an implementation would need an
+# awkward globals()-passing helper for no real gain over these 6 lines.
+# spaghetti-ignore[duplicate-function-body]: see above
 def __getattr__(name: str) -> Any:
     if name in _LAZY:
         module_name, attr = _LAZY[name]
