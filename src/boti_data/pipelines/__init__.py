@@ -3,7 +3,16 @@ from __future__ import annotations
 from .base import SinkPipeline
 from .parquet_pipeline import ParquetMaterializationResult, ParquetPipeline
 from .registry import SinkRegistry, available_sinks, create_sink, register_sink
-from .sinks import CsvSink, CsvSinkConfig, JsonlSink, JsonlSinkConfig, ParquetSink, SinkWriteResult
+from .sinks import (
+    CsvSink,
+    CsvSinkConfig,
+    JsonlSink,
+    JsonlSinkConfig,
+    ParquetSink,
+    SinkWriteResult,
+    awrite_parquet,
+    write_parquet,
+)
 
 __all__ = [
     "CsvSink",
@@ -17,6 +26,8 @@ __all__ = [
     "SinkPipeline",
     "SinkWriteResult",
     "available_sinks",
+    "awrite_parquet",
     "create_sink",
     "register_sink",
+    "write_parquet",
 ]

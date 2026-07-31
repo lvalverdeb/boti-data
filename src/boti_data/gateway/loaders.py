@@ -14,6 +14,7 @@ from boti_data.db import (
     SqlPartitionedLoadRequest,
 )
 from boti_data.db.arrow_schema_mapper import (
+    arrow_table_from_pylist_with_fallback,
     arrow_table_to_pandas,
     build_arrow_schema_from_sqlalchemy_types,
     rows_to_arrow_table,
@@ -61,10 +62,15 @@ def _arrow_table_from_sql_result(
     *,
     statement: Any | None,
 ) -> pa.Table:
-    if statement is None:
+    # A raw-SQL-text load's statement is a SQLAlchemy TextClause, which has no
+    # .selected_columns (that's Select-only) -- treat it the same as no
+    # statement at all rather than letting the attribute lookup below crash.
+    if statement is None or not hasattr(statement, "selected_columns"):
         if not rows:
             return pa.table({name: [] for name in columns})
-        return pa.Table.from_pylist([dict(zip(columns, row)) for row in rows])
+        return arrow_table_from_pylist_with_fallback(
+            [dict(zip(columns, row)) for row in rows], columns
+        )
 
     sql_types = [getattr(selected, "type", None) for selected in statement.selected_columns]
     schema = build_arrow_schema_from_sqlalchemy_types(columns, sql_types)

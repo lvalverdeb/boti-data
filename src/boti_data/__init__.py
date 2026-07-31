@@ -71,6 +71,7 @@ __all__ = [
     "align_frames_for_join",
     "apply_schema_map",
     "available_sinks",
+    "awrite_parquet",
     "build_incremental_filters",
     "create_sink",
     "ensure_greenlet_available",
@@ -84,6 +85,7 @@ __all__ = [
     "register_sink",
     "validate_schema",
     "vector_distance",
+    "write_parquet",
 ]
 
 # Every public name is loaded lazily (PEP 562) so that importing boti_data (or
@@ -163,8 +165,10 @@ _LAZY = {
     "SinkRegistry": ("boti_data.pipelines", "SinkRegistry"),
     "SinkWriteResult": ("boti_data.pipelines", "SinkWriteResult"),
     "available_sinks": ("boti_data.pipelines", "available_sinks"),
+    "awrite_parquet": ("boti_data.pipelines", "awrite_parquet"),
     "create_sink": ("boti_data.pipelines", "create_sink"),
     "register_sink": ("boti_data.pipelines", "register_sink"),
+    "write_parquet": ("boti_data.pipelines", "write_parquet"),
     "FileWatermarkStore": ("boti_data.watermark", "FileWatermarkStore"),
     "FsspecWatermarkStore": ("boti_data.watermark", "FsspecWatermarkStore"),
     "IncrementalResult": ("boti_data.watermark", "IncrementalResult"),

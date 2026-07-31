@@ -7,9 +7,8 @@ Split out of test_regressions.py purely for god-module/long-file headroom.
 
 from __future__ import annotations
 
-import warnings
-
 import pytest
+from boti.core.logger import Logger
 
 from boti_data.db.sql_config import SqlDatabaseConfig, WorkerSqlConfig
 from boti_data.db.sql_manager import AsyncSqlDatabaseResource, EngineRegistry, SqlDatabaseResource
@@ -102,24 +101,24 @@ def test_worker_config_uses_env_var_when_set() -> None:
     assert worker.connection_url is None, "DSN must not be serialized when env var is set"
 
 
-def test_worker_config_warns_when_no_env_var_set() -> None:
-    """WorkerSqlConfig.from_database_config must emit a UserWarning when falling back to raw DSN."""
+def test_worker_config_warns_when_no_env_var_set(monkeypatch) -> None:
+    """WorkerSqlConfig.from_database_config must log a WARNING via boti's
+    structured Logger when falling back to raw DSN -- not warnings.warn(),
+    which is too easy to filter/suppress for a security-relevant condition
+    (real credentials landing in every worker task payload)."""
     config = SqlDatabaseConfig(
         connection_url="mysql+pymysql://user:secret@localhost/test_db",
         query_only=True,
         poolclass="sqlalchemy.pool.NullPool",
     )
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        worker = WorkerSqlConfig.from_database_config(config)
+    logger = Logger.default_logger(logger_name="WorkerSqlConfig")
+    warnings_seen: list[str] = []
+    monkeypatch.setattr(logger, "warning", lambda msg, *a, **kw: warnings_seen.append(msg))
 
-    credential_warnings = [
-        w
-        for w in caught
-        if issubclass(w.category, UserWarning) and "worker_connection_env_var" in str(w.message)
-    ]
-    assert credential_warnings, (
-        "Expected a UserWarning about worker_connection_env_var not being set"
+    worker = WorkerSqlConfig.from_database_config(config)
+
+    assert any("worker_connection_env_var" in msg for msg in warnings_seen), (
+        "Expected a structured WARNING log about worker_connection_env_var not being set"
     )
     assert worker.connection_url is not None  # fallback still works
 
@@ -131,9 +130,7 @@ def test_worker_config_raw_dsn_fallback_carries_credentials() -> None:
         query_only=True,
         poolclass="sqlalchemy.pool.NullPool",
     )
-    with warnings.catch_warnings(record=True):
-        warnings.simplefilter("always")
-        worker = WorkerSqlConfig.from_database_config(config)
+    worker = WorkerSqlConfig.from_database_config(config)
 
     assert worker.connection_env_var is None
     secret_val = worker.connection_url.get_secret_value()  # type: ignore[union-attr]

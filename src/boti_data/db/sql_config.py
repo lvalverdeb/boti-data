@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 from typing import Any, Union
 
+from boti.core.logger import Logger
 from boti.core.models import ResourceConfig
 from boti.core.security import is_valid_env_var_name
 from boti.core.settings import SqlDatabaseSettings, load_prefixed_model
@@ -162,11 +162,9 @@ class WorkerSqlConfig(BaseModel):
         if config.worker_connection_env_var is not None:
             payload["connection_env_var"] = config.worker_connection_env_var
         else:
-            warnings.warn(
+            Logger.default_logger(logger_name=cls.__name__).warning(
                 "worker_connection_env_var is not set; falling back to raw DSN. "
-                "Credentials may be visible in scheduler logs.",
-                UserWarning,
-                stacklevel=2,
+                "Credentials may be visible in scheduler logs."
             )
             payload["connection_url"] = config.connection_url
         return cls(**payload)

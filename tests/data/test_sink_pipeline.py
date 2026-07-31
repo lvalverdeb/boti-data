@@ -17,11 +17,26 @@ from boti_data import (
     CsvSink,
     CsvSinkConfig,
     JsonlSink,
+    ParquetDataConfig,
     SinkPipeline,
     SinkWriteResult,
+    awrite_parquet,
+    write_parquet,
 )
+from boti_data.pipelines.sinks_parquet import ParquetSink
 
 from ._pipelines_shared import PrefixOnlyFakeFileSystem, _build_hybrid_dataset, _build_source_helper
+
+
+class _StubLogger:
+    def debug(self, *_args, **_kwargs) -> None:
+        pass
+
+    def warning(self, *_args, **_kwargs) -> None:
+        pass
+
+    def error(self, *_args, **_kwargs) -> None:
+        pass
 
 
 def test_sink_pipeline_writes_csv_dataset_with_partition_derivation(temp_project_root) -> None:
@@ -261,6 +276,70 @@ def test_prepare_partitioned_frame_rejects_meta_corrupted_by_unrelated_reassignm
             date_field=None,
             sink_name="TestSink",
         )
+
+
+def test_write_parquet_closes_the_sink_automatically(temp_project_root, monkeypatch) -> None:
+    """Wishlist #5: a one-shot write must not require an explicit `with ParquetSink(...):`."""
+    close_calls: list[bool] = []
+    original_cleanup = ParquetSink._cleanup
+
+    def _tracking_cleanup(self) -> None:
+        close_calls.append(True)
+        original_cleanup(self)
+
+    monkeypatch.setattr(ParquetSink, "_cleanup", _tracking_cleanup)
+
+    frame = pd.DataFrame({"id": [1, 2], "partition_date": ["2026-04-15", "2026-04-16"]})
+    config = ParquetDataConfig(
+        project_root=temp_project_root,
+        logger=_StubLogger(),
+        parquet_storage_path=str(temp_project_root / "write_parquet_output"),
+    )
+
+    result = write_parquet(config, frame)
+
+    assert close_calls == [True]
+    assert isinstance(result, SinkWriteResult)
+    assert (temp_project_root / "write_parquet_output" / "partition_date=2026-04-15").exists()
+    assert (temp_project_root / "write_parquet_output" / "partition_date=2026-04-16").exists()
+
+
+@pytest.mark.asyncio
+async def test_awrite_parquet_closes_the_sink_automatically(temp_project_root, monkeypatch) -> None:
+    close_calls: list[bool] = []
+    original_acleanup = ParquetSink._acleanup
+
+    async def _tracking_acleanup(self) -> None:
+        close_calls.append(True)
+        await original_acleanup(self)
+
+    monkeypatch.setattr(ParquetSink, "_acleanup", _tracking_acleanup)
+
+    frame = pd.DataFrame({"id": [1], "partition_date": ["2026-04-17"]})
+    config = ParquetDataConfig(
+        project_root=temp_project_root,
+        logger=_StubLogger(),
+        parquet_storage_path=str(temp_project_root / "awrite_parquet_output"),
+    )
+
+    result = await awrite_parquet(config, frame)
+
+    assert close_calls == [True]
+    assert isinstance(result, SinkWriteResult)
+    assert (temp_project_root / "awrite_parquet_output" / "partition_date=2026-04-17").exists()
+
+
+def test_write_parquet_rejects_materialized_file_destination(temp_project_root) -> None:
+    """write_parquet() must surface ParquetSink's own destination validation, not swallow it."""
+    config = ParquetDataConfig(
+        project_root=temp_project_root,
+        logger=_StubLogger(),
+        parquet_storage_path=str(temp_project_root / "single_file"),
+        parquet_filename="single_file",
+    )
+
+    with pytest.raises(ValueError, match="parquet_filename is not supported"):
+        write_parquet(config, pd.DataFrame({"id": [1], "partition_date": ["2026-04-15"]}))
 
 
 def test_write_with_staging_swap_avoids_expand_path_phantom_entry() -> None:

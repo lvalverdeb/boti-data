@@ -125,3 +125,42 @@ class ParquetSink(_AsyncWriteViaThreadMixin, PicklableLifecycleCoreMixin, Lifecy
     @staticmethod
     def _restore_protocol(path: str) -> str:
         return str(path)
+
+
+# Not a copy-pasted twin: `with`/`async with` + sink.write()/await sink.awrite()
+# is the irreducible sync/async difference; there's no further shared logic to
+# hoist for what's just a construct+write+close convenience.
+# spaghetti-ignore[sync-async-duplication]: see above
+def write_parquet(
+    destination: ParquetDestination,
+    frame: FrameResult,
+    *,
+    partition_on: Sequence[str] | None = ("partition_date",),
+    **kwargs: Any,
+) -> SinkWriteResult:
+    """One-shot convenience: construct a ParquetSink, write *frame*, and close it.
+
+    A ``ParquetSink`` is typically built, used for exactly one ``write()``,
+    and discarded — forgetting ``with ParquetSink(...) as sink:`` leaks the
+    underlying ``DataGateway``/``ParquetDataResource``, surfaced only as a
+    background GC warning well after the fact, not at the call site. Callers
+    who genuinely reuse one ``ParquetSink`` instance across multiple writes
+    should keep using the class directly instead.
+
+    ``**kwargs`` are forwarded to :meth:`ParquetSink.write` (``date_field``,
+    ``write_index``, ``overwrite``, ``persist``).
+    """
+    with ParquetSink(destination, partition_on=partition_on) as sink:
+        return sink.write(frame, **kwargs)
+
+
+async def awrite_parquet(
+    destination: ParquetDestination,
+    frame: FrameResult,
+    *,
+    partition_on: Sequence[str] | None = ("partition_date",),
+    **kwargs: Any,
+) -> SinkWriteResult:
+    """Async variant of :func:`write_parquet`."""
+    async with ParquetSink(destination, partition_on=partition_on) as sink:
+        return await sink.awrite(frame, **kwargs)

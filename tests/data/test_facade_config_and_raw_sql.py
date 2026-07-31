@@ -175,6 +175,47 @@ async def test_facade_aloads_sql_with_async_resource(monkeypatch) -> None:
     assert frame["status"].tolist() == ["active"]
 
 
+def test_facade_raw_sql_arrow_return_type(tmp_path) -> None:
+    """Wishlist #3: raw-SQL-text loads must not crash on return_type='arrow'.
+
+    A raw SQL string has no SQLAlchemy Select to derive column types from, so
+    the statement is a plain TextClause -- which has no .selected_columns
+    (that's Select-only). Regression for a real bug where this crashed with
+    an unrelated AttributeError instead of building the arrow Table from the
+    raw rows directly.
+    """
+    db_path = tmp_path / "raw_sql_arrow.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        metadata = MetaData()
+        table = Table(
+            "users",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("status", String),
+        )
+        metadata.create_all(engine)
+        with engine.begin() as conn:
+            conn.execute(table.insert(), [{"id": 1, "status": "active"}])
+    finally:
+        engine.dispose()
+
+    config = SqlDatabaseConfig(
+        connection_url=f"sqlite:///{db_path}",
+        poolclass="sqlalchemy.pool.NullPool",
+        query_only=False,
+    )
+
+    with DataGateway(config) as facade:
+        table = facade.load(
+            sql="SELECT id, status FROM users",
+            allow_raw_sql=True,
+            return_type="arrow",
+        )
+
+    assert table.column("status").to_pylist() == ["active"]
+
+
 def test_facade_rejects_lazy_raw_sql_without_statement_model() -> None:
     config = SqlDatabaseConfig(
         connection_url="sqlite:///:memory:",

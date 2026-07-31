@@ -274,6 +274,37 @@ def build_empty_arrow_table(schema: pa.Schema) -> pa.Table:
     return pa.Table.from_arrays(arrays, schema=schema)
 
 
+def arrow_table_from_pylist_with_fallback(
+    rows: list[dict[str, Any]],
+    columns: list[str],
+) -> pa.Table:
+    """Build a Table from raw dict rows with no SQLAlchemy schema to guide it.
+
+    Used for raw-SQL-text loads, where there is no ``Select`` statement to
+    derive column types from, so pyarrow must infer everything from the
+    Python values themselves. A column of otherwise-uniform values pyarrow's
+    inference can't place (``uuid.UUID``, ``decimal.Decimal``, ...) fails the
+    *entire* table with an opaque ``ArrowInvalid`` naming the value, never the
+    column. Isolate any such column and fall back to stringifying just that
+    column instead of failing the whole load.
+    """
+    try:
+        return pa.Table.from_pylist(rows)
+    except (pa.ArrowInvalid, pa.ArrowTypeError):
+        _logger.debug("Whole-table inference failed, falling back to per-column coercion")
+
+    arrays: dict[str, pa.Array] = {}
+    for column in columns:
+        values = [row.get(column) for row in rows]
+        try:
+            arrays[column] = pa.array(values)
+        except (pa.ArrowInvalid, pa.ArrowTypeError):
+            arrays[column] = pa.array(
+                [str(value) if value is not None else None for value in values]
+            )
+    return pa.Table.from_pydict(arrays)
+
+
 # ---------------------------------------------------------------------------
 # Arrow → pandas conversion with type preservation
 # ---------------------------------------------------------------------------

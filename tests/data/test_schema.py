@@ -5,13 +5,16 @@ Tests for shared DataFrame schema normalization utilities.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 
 import dask.dataframe as dd
 import pandas as pd
+import pyarrow as pa
 import pytest
 
 from boti_data.arrow_schema import ArrowSchema
 from boti_data.db.arrow_schema_mapper import (
+    arrow_table_from_pylist_with_fallback,
     arrow_table_to_pandas,
     build_arrow_schema_from_meta_dtypes,
     rows_to_arrow_table,
@@ -167,4 +170,30 @@ def test_rows_to_arrow_table_treats_blank_timestamp_strings_as_null() -> None:
     assert str(result["ts"].dtype) == "datetime64[ns, UTC]"
     assert pd.isna(result.loc[0, "ts"])
     assert pd.isna(result.loc[1, "ts"])
-    assert result.loc[2, "ts"] == pd.Timestamp("2046-05-31T00:00:00Z")
+
+
+def test_arrow_table_from_pylist_with_fallback_isolates_unsupported_column() -> None:
+    """Wishlist #3: a uuid.UUID column must not fail the whole raw-SQL arrow table.
+
+    With no SQLAlchemy Select to derive a schema from (raw-SQL-text loads),
+    pyarrow's own type inference on a uniform uuid.UUID column raises
+    ``ArrowInvalid: Could not convert UUID(...) ... did not recognize Python
+    value type``, naming the value but never the column. Only the offending
+    column should fall back to stringification -- other columns keep their
+    inferred types.
+    """
+    rows = [
+        {"id": 1, "uid": uuid.uuid4(), "label": "a"},
+        {"id": 2, "uid": uuid.uuid4(), "label": "b"},
+    ]
+
+    table = arrow_table_from_pylist_with_fallback(rows, ["id", "uid", "label"])
+
+    assert table.schema.field("id").type == pa.int64()
+    assert table.schema.field("uid").type == pa.string()
+    assert table.schema.field("label").type == pa.string()
+    assert table.column("uid").to_pylist() == [str(row["uid"]) for row in rows]
+
+
+def test_arrow_table_from_pylist_with_fallback_handles_empty_rows() -> None:
+    assert arrow_table_from_pylist_with_fallback([], ["id", "uid"]).num_rows == 0

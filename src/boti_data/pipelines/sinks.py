@@ -16,7 +16,7 @@ from boti_data.pipelines.sinks_common import (
     prepare_partitioned_frame,
     to_dask_frame,
 )
-from boti_data.pipelines.sinks_parquet import ParquetSink
+from boti_data.pipelines.sinks_parquet import ParquetSink, awrite_parquet, write_parquet
 from boti_data.pipelines.sinks_text import CsvSink, CsvSinkConfig, JsonlSink, JsonlSinkConfig
 
 __all__ = [
@@ -29,6 +29,8 @@ __all__ = [
     "ParquetSink",
     "PipelineSink",
     "SinkWriteResult",
+    "awrite_parquet",
     "prepare_partitioned_frame",
     "to_dask_frame",
+    "write_parquet",
 ]
