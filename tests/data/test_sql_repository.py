@@ -17,6 +17,7 @@ from boti_data.db.sql_repository import (
     AsyncSqlUnitOfWork,
     SqlRepository,
     SqlUnitOfWork,
+    _require_unique_key_for_clickhouse,
 )
 from boti_data.db.sql_resource import AsyncSqlDatabaseResource, SqlDatabaseResource
 
@@ -501,3 +502,43 @@ def test_repository_dependency_free_import() -> None:
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "OK" in result.stdout
+
+
+def test_sql_unit_of_work_rejects_clickhouse() -> None:
+    """ClickHouse has no real cross-table transactional guarantees, so
+    SqlUnitOfWork must reject it instead of silently offering an atomicity
+    it can't back."""
+    config = SqlDatabaseConfig(connection_url="clickhousedb://user:pass@localhost:8123/test_db")
+
+    with pytest.raises(SQLAlchemyError, match="does not support ClickHouse"):
+        SqlUnitOfWork(config)
+
+
+@pytest.mark.asyncio
+async def test_async_sql_unit_of_work_rejects_clickhouse() -> None:
+    """Async counterpart of test_sql_unit_of_work_rejects_clickhouse."""
+    config = SqlDatabaseConfig(connection_url="clickhousedb://user:pass@localhost:8123/test_db")
+
+    with pytest.raises(SQLAlchemyError, match="does not support ClickHouse"):
+        AsyncSqlUnitOfWork(config)
+
+
+def test_require_unique_key_for_clickhouse_blocks_without_assertion() -> None:
+    """ClickHouse's ORDER BY/primary key is a sort prefix, not a uniqueness
+    constraint, so get()/update()/delete() must refuse to run against it
+    unless the caller explicitly asserts the key is actually unique.
+    create_engine() is lazy (no connection dialed), so this is hermetic."""
+    engine = create_engine("clickhousedb://user:pass@localhost:8123/test_db")
+
+    with pytest.raises(SQLAlchemyError, match="assume_unique_key"):
+        _require_unique_key_for_clickhouse(engine, assume_unique_key=False, operation="x")
+
+    _require_unique_key_for_clickhouse(engine, assume_unique_key=True, operation="x")
+
+
+def test_require_unique_key_for_clickhouse_ignores_other_backends() -> None:
+    """Non-ClickHouse backends have real primary-key guarantees, so the guard
+    must never fire for them regardless of assume_unique_key."""
+    engine = create_engine("sqlite://")
+
+    _require_unique_key_for_clickhouse(engine, assume_unique_key=False, operation="x")

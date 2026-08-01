@@ -7,6 +7,7 @@ Split out of test_sql_manager.py purely for god-module/long-file headroom.
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.engine import url as sqlalchemy_url
 from sqlalchemy.exc import SQLAlchemyError
 
 from boti_data.db.sql_config import SqlDatabaseConfig
@@ -14,6 +15,7 @@ from boti_data.db.sql_manager import (
     AsyncSqlDatabaseResource,
     EngineRegistry,
     SqlDatabaseResource,
+    _validate_query_only_support,
 )
 from boti_data.db.sqlalchemy_async import ensure_greenlet_available
 
@@ -219,3 +221,38 @@ def test_async_sqlalchemy_requires_greenlet(monkeypatch) -> None:
 
     with pytest.raises(SQLAlchemyError, match="require the 'greenlet' package"):
         ensure_greenlet_available()
+
+
+def test_sync_resource_accepts_clickhouse_dsn() -> None:
+    """Verify SqlDatabaseResource resolves the clickhouse-connect dialect."""
+    config = SqlDatabaseConfig(
+        connection_url="clickhousedb://user:pass@localhost:8123/test_db",
+        query_only=False,
+        poolclass="sqlalchemy.pool.NullPool",
+    )
+
+    db = SqlDatabaseResource(config)
+
+    try:
+        assert db.engine.url.get_backend_name() == "clickhousedb"
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_async_resource_rejects_clickhouse_dsn_with_actionable_error() -> None:
+    """ClickHouse has no maintained async SQLAlchemy driver, so the async resource
+    must reject it up front instead of failing deep inside engine construction."""
+    config = SqlDatabaseConfig(connection_url="clickhousedb://user:pass@localhost:8123/test_db")
+
+    with pytest.raises(SQLAlchemyError, match="does not support ClickHouse"):
+        async with AsyncSqlDatabaseResource(config):
+            pass
+
+
+def test_validate_query_only_support_accepts_clickhouse() -> None:
+    """Verify query_only=True is allowed for clickhouse, enforced via the driver's
+    native readonly setting rather than a Postgres/MySQL-style SET statement."""
+    parsed = sqlalchemy_url.make_url("clickhousedb://user:pass@localhost:8123/test_db")
+
+    _validate_query_only_support(parsed)

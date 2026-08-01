@@ -96,7 +96,16 @@ pip install "boti[data]"
 ```bash
 pip install "boti-data[mysql]"      # asyncmy + pymysql
 pip install "boti-data[postgres]"   # asyncpg + psycopg[binary]
+pip install "boti-data[clickhouse]" # clickhouse-connect (sync only)
 ```
+
+ClickHouse support is sync-only: there is no maintained async SQLAlchemy driver for ClickHouse, so `AsyncSqlDatabaseResource` rejects a ClickHouse connection URL — use `SqlDatabaseResource` instead. `SqlUnitOfWork`/`AsyncSqlUnitOfWork` also reject ClickHouse outright, since ClickHouse's transaction support is experimental, single-node, and MergeTree-only, with no real cross-table ACID guarantees to back a multi-table unit of work — use `SqlRepository`/`AsyncSqlRepository` directly, one table at a time, instead.
+
+Verified against a real ClickHouse instance:
+
+- `SqlRepository`/`AsyncSqlRepository` are a get/insert/update/delete-**by-primary-key** API, but MergeTree's `ORDER BY` is a sort/index prefix, not a uniqueness constraint — many real ClickHouse tables have several rows per `ORDER BY` key. Because of that, `get()`/`update()`/`delete()` each **refuse to run against a ClickHouse table unless called with `assume_unique_key=True`** (e.g. `repo.get(pk, assume_unique_key=True)`). This flag is a per-call caller assertion, not something boti-data verifies or enforces: it does not check the data, and if the key genuinely isn't unique, `get(key, assume_unique_key=True)` will still return one arbitrary matching row and `delete(key, assume_unique_key=True)`/`update(key, ..., assume_unique_key=True)` will still affect *every* row sharing that key, not just one. Only pass it once you've confirmed the key is actually unique for that table. `insert()` has no such parameter — appending a row is never ambiguous.
+- `.update()` also fails outright on a table without `enable_block_number_column` enabled (`ALTER TABLE ... MODIFY SETTING enable_block_number_column = 1`, off by default) — ClickHouse raises `Lightweight updates are not supported` otherwise.
+- `query_only=True` is enforced server-side (ClickHouse's `readonly` setting, applied via `set_client_setting` on connect), not just by boti-data's own read-only session guard.
 
 If a Postgres table has a [pgvector](https://github.com/pgvector/pgvector) `vector` column, install `boti-data[pgvector]` too — this registers pgvector's `Vector` type with SQLAlchemy's reflection so `SqlAlchemyModelBuilder`/`SqlRepository`/`DataGateway` map that column to a usable `list[float]` (with its dimension preserved) instead of an unreflectable `NullType`:
 

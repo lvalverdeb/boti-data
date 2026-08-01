@@ -70,6 +70,7 @@ def _build_driver_example(parsed_url: sqlalchemy_url.URL, *, async_mode: bool) -
         "mysql": "mysql+pymysql://",
         "postgresql": "postgresql+psycopg://",
         "sqlite": "sqlite://",
+        "clickhousedb": "clickhousedb://",
     }
     return sync_examples.get(backend, f"{backend}://")
 
@@ -104,6 +105,11 @@ def _validate_async_driver_url(
     consumer_name: str = "AsyncSqlDatabaseResource",
 ) -> sqlalchemy_url.URL:
     parsed = _parse_connection_url(connection_url, consumer_name=consumer_name)
+    if parsed.get_backend_name() == "clickhousedb":
+        raise SQLAlchemyError(
+            f"{consumer_name} does not support ClickHouse: there is no maintained "
+            "asynchronous SQLAlchemy driver for it. Use SqlDatabaseResource instead."
+        )
     if not parsed.get_dialect().is_async:
         suggested_driver = _build_driver_example(parsed, async_mode=True)
         raise SQLAlchemyError(
@@ -296,7 +302,7 @@ def _create_worker_sync_engine(config: SqlDatabaseConfig | WorkerSqlConfig) -> E
 def _validate_query_only_support(parsed_url: sqlalchemy_url.URL) -> None:
     backend = parsed_url.get_backend_name()
 
-    if backend in {"postgresql", "mysql"}:
+    if backend in {"postgresql", "mysql", "clickhousedb"}:
         return
 
     if backend == "sqlite":
@@ -346,6 +352,20 @@ def _configure_query_only_engine(engine: Engine, parsed_url: sqlalchemy_url.URL)
                 cursor.execute("SET SESSION TRANSACTION READ ONLY")
             finally:
                 cursor.close()
+
+        return
+
+    if backend == "clickhousedb":
+
+        @event.listens_for(engine, "connect")
+        def _set_clickhouse_read_only(dbapi_connection: Any, _connection_record: Any) -> None:
+            # ClickHouse's HTTP interface is stateless per request, so a plain
+            # "SET readonly = 1" statement wouldn't persist across later
+            # queries on this connection the way a Postgres/MySQL SET does.
+            # set_client_setting() instead updates the driver Client's
+            # persistent default settings, which clickhouse-connect merges
+            # into every subsequent query on this connection.
+            dbapi_connection.client.set_client_setting("readonly", 1)
 
         return
 

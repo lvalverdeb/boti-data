@@ -21,6 +21,8 @@ from typing import Any
 from boti.core.lifecycle import LifecycleCore
 from boti.core.logger import Logger
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.engine import url as sqlalchemy_url
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -46,6 +48,34 @@ def _require_table_name(table_name: str | None) -> str:
 def _require_exactly_one_source(config: SqlDatabaseConfig | None, session: Any | None) -> None:
     if (config is None) == (session is None):
         raise ValueError("Provide exactly one of 'config' or 'session'.")
+
+
+def _require_unique_key_for_clickhouse(
+    engine: Any, *, assume_unique_key: bool, operation: str
+) -> None:
+    if assume_unique_key or engine.url.get_backend_name() != "clickhousedb":
+        return
+    raise SQLAlchemyError(
+        f"{operation} refuses to run against ClickHouse without assume_unique_key=True. "
+        "ClickHouse's ORDER BY/primary key is a sort prefix, not a uniqueness constraint "
+        "(even ReplacingMergeTree only dedups eventually), so several rows can share the "
+        "same key: get() could silently return an arbitrary match, and update()/delete() "
+        "would affect every matching row instead of one. Pass assume_unique_key=True only "
+        "once you've verified the key is actually unique for this table — this is a caller "
+        "assertion boti-data cannot verify or enforce itself."
+    )
+
+
+def _reject_clickhouse_backend(config: SqlDatabaseConfig, *, consumer_name: str) -> None:
+    backend = sqlalchemy_url.make_url(config.connection_url.get_secret_value()).get_backend_name()
+    if backend == "clickhousedb":
+        raise SQLAlchemyError(
+            f"{consumer_name} does not support ClickHouse. ClickHouse has no real "
+            "cross-table transactional guarantees (transactions are experimental, "
+            "single-node, MergeTree-only), so committing or rolling back several "
+            "repositories together can't be honestly backed. Use SqlRepository/"
+            "AsyncSqlRepository directly, one table at a time, instead."
+        )
 
 
 class SqlRepository(LifecycleCore):
@@ -78,6 +108,14 @@ class SqlRepository(LifecycleCore):
 
     ``pk`` accepts a scalar or a tuple for composite keys, mirroring
     ``Session.get()``'s own signature.
+
+    ``get()``/``update()``/``delete()`` each accept ``assume_unique_key``,
+    which must be explicitly passed as ``True`` to run against a ClickHouse
+    table: ClickHouse's ORDER BY/primary key is a sort prefix, not a
+    uniqueness constraint, so without this assertion those calls could
+    silently touch the wrong row (``get()``) or every row sharing a key
+    (``update()``/``delete()``) instead of just one. ``insert()`` is
+    unaffected — appending a row is never ambiguous.
     """
 
     def __init__(
@@ -126,7 +164,10 @@ class SqlRepository(LifecycleCore):
         else:
             session.flush()
 
-    def get(self, pk: Any) -> dict[str, Any] | None:
+    def get(self, pk: Any, *, assume_unique_key: bool = False) -> dict[str, Any] | None:
+        _require_unique_key_for_clickhouse(
+            self.engine, assume_unique_key=assume_unique_key, operation="SqlRepository.get()"
+        )
         with self._session_scope() as session:
             instance = session.get(self._model, pk)
             return _row_to_dict(instance) if instance is not None else None
@@ -139,7 +180,14 @@ class SqlRepository(LifecycleCore):
             session.refresh(instance)
             return _row_to_dict(instance)
 
-    def update(self, pk: Any, values: dict[str, Any]) -> dict[str, Any] | None:
+    def update(
+        self, pk: Any, values: dict[str, Any], *, assume_unique_key: bool = False
+    ) -> dict[str, Any] | None:
+        _require_unique_key_for_clickhouse(
+            self.engine,
+            assume_unique_key=assume_unique_key,
+            operation="SqlRepository.update()",
+        )
         with self._session_scope() as session:
             instance = session.get(self._model, pk)
             if instance is None:
@@ -150,7 +198,12 @@ class SqlRepository(LifecycleCore):
             session.refresh(instance)
             return _row_to_dict(instance)
 
-    def delete(self, pk: Any) -> bool:
+    def delete(self, pk: Any, *, assume_unique_key: bool = False) -> bool:
+        _require_unique_key_for_clickhouse(
+            self.engine,
+            assume_unique_key=assume_unique_key,
+            operation="SqlRepository.delete()",
+        )
         with self._session_scope() as session:
             instance = session.get(self._model, pk)
             if instance is None:
@@ -169,6 +222,10 @@ class AsyncSqlRepository(LifecycleCore):
     ``__aenter__``, not ``__init__``, since resolving the engine requires
     awaiting ``EngineRegistry.get_or_create_async()`` (``config`` path) or
     ``SqlModelRegistry.get_model_async()`` (``session`` path either way).
+
+    ``get()``/``update()``/``delete()`` each accept ``assume_unique_key`` —
+    see :class:`SqlRepository`'s docstring for why this is required against
+    ClickHouse.
     """
 
     def __init__(
@@ -232,7 +289,12 @@ class AsyncSqlRepository(LifecycleCore):
         else:
             await session.flush()
 
-    async def get(self, pk: Any) -> dict[str, Any] | None:
+    async def get(self, pk: Any, *, assume_unique_key: bool = False) -> dict[str, Any] | None:
+        _require_unique_key_for_clickhouse(
+            self.engine,
+            assume_unique_key=assume_unique_key,
+            operation="AsyncSqlRepository.get()",
+        )
         async with self._session_scope() as session:
             instance = await session.get(self._model, pk)
             return _row_to_dict(instance) if instance is not None else None
@@ -245,7 +307,14 @@ class AsyncSqlRepository(LifecycleCore):
             await session.refresh(instance)
             return _row_to_dict(instance)
 
-    async def update(self, pk: Any, values: dict[str, Any]) -> dict[str, Any] | None:
+    async def update(
+        self, pk: Any, values: dict[str, Any], *, assume_unique_key: bool = False
+    ) -> dict[str, Any] | None:
+        _require_unique_key_for_clickhouse(
+            self.engine,
+            assume_unique_key=assume_unique_key,
+            operation="AsyncSqlRepository.update()",
+        )
         async with self._session_scope() as session:
             instance = await session.get(self._model, pk)
             if instance is None:
@@ -256,7 +325,12 @@ class AsyncSqlRepository(LifecycleCore):
             await session.refresh(instance)
             return _row_to_dict(instance)
 
-    async def delete(self, pk: Any) -> bool:
+    async def delete(self, pk: Any, *, assume_unique_key: bool = False) -> bool:
+        _require_unique_key_for_clickhouse(
+            self.engine,
+            assume_unique_key=assume_unique_key,
+            operation="AsyncSqlRepository.delete()",
+        )
         async with self._session_scope() as session:
             instance = await session.get(self._model, pk)
             if instance is None:
@@ -283,6 +357,7 @@ class SqlUnitOfWork:
     """
 
     def __init__(self, config: SqlDatabaseConfig, *, query_only: bool = True) -> None:
+        _reject_clickhouse_backend(config, consumer_name="SqlUnitOfWork")
         effective_config = config.model_copy(update={"query_only": query_only})
         self._resource = SqlDatabaseResource(effective_config)
         self._session: Session = self._resource.session()
@@ -326,6 +401,7 @@ class AsyncSqlUnitOfWork:
     """
 
     def __init__(self, config: SqlDatabaseConfig, *, query_only: bool = True) -> None:
+        _reject_clickhouse_backend(config, consumer_name="AsyncSqlUnitOfWork")
         self._config = config.model_copy(update={"query_only": query_only})
         self._resource: AsyncSqlDatabaseResource | None = None
         self._session: AsyncSession | None = None

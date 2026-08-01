@@ -46,6 +46,16 @@ postgres = [
 pgvector = [
     "pgvector>=0.3.0,<0.6.0",
 ]
+# clickhouse-connect bundles both the DBAPI driver and its own SQLAlchemy
+# dialect ("clickhousedb://") in one package, so unlike mysql/postgres there's
+# no separate async driver to pair it with — ClickHouse support in boti-data is
+# sync-only (SqlDatabaseResource only; AsyncSqlDatabaseResource and
+# SqlUnitOfWork/AsyncSqlUnitOfWork reject a clickhouse backend outright, since
+# ClickHouse has no maintained async SQLAlchemy driver and no real cross-table
+# transactional guarantees to back a unit of work with).
+clickhouse = [
+    "clickhouse-connect>=1.6.0,<2.0.0",
+]
 # The dataframe-shaped, bulk-oriented side of the package (DataGateway/
 # DataHelper, ParquetPipeline, HybridDataset, the sink pipelines, etc.) — not
 # needed by the lightweight SqlRepository/AsyncSqlRepository single-row API,
@@ -93,6 +103,12 @@ dev = [
     # here so tests/data/test_sql_model_registry_pgvector.py can verify the
     # registration side effect actually happens when the package is installed.
     "pgvector>=0.3.0,<0.6.0",
+    # Not part of [project.optional-dependencies] clickhouse's runtime need on
+    # its own — it's here so the clickhouse cases in
+    # tests/data/test_sql_manager_registry.py and tests/data/test_sql_repository.py
+    # can construct real clickhousedb:// engines (DSN parsing / driver validation
+    # only, never dialed — same hermetic pattern as the mysql/postgres DSN tests).
+    "clickhouse-connect>=1.6.0,<2.0.0",
     "mypy>=1.14.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
