@@ -63,6 +63,28 @@ def test_registry_missing_pk_fallback() -> None:
     assert Model.__mapper_args__["primary_key"][0].name == "pseudo_id"
 
 
+def test_registry_recovers_duckdb_composite_primary_key(tmp_path) -> None:
+    """duckdb-engine's reflection doesn't report PRIMARY KEY/UNIQUE constraints
+    at all ("doesn't yet support reflection on indices"), even though DuckDB
+    enforces them at the database level — without _recover_duckdb_primary_key,
+    every DuckDB table looks keyless here and hits the missing-PK fallback
+    (test_registry_missing_pk_fallback above), binding SqlRepository to an
+    arbitrary first column instead of the real key."""
+    engine = create_engine(f"duckdb:///{tmp_path / 'composite.duckdb'}")
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE orders ("
+            "category VARCHAR NOT NULL, order_id BIGINT NOT NULL, amount DOUBLE, "
+            "PRIMARY KEY (category, order_id))"
+        )
+
+    registry = SqlModelRegistry()
+    model = registry.get_model(engine, "orders")
+
+    assert [c.name for c in model.__table__.primary_key.columns] == ["category", "order_id"]
+    assert "__mapper_args__" not in model.__dict__
+
+
 @pytest.mark.asyncio
 async def test_async_registry_requires_greenlet_before_engine_use(monkeypatch) -> None:
     """Verify async registry surfaces a clear dependency error."""

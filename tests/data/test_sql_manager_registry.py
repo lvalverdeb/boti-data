@@ -15,6 +15,7 @@ from boti_data.db.sql_manager import (
     AsyncSqlDatabaseResource,
     EngineRegistry,
     SqlDatabaseResource,
+    _build_sync_engine_kwargs,
     _validate_query_only_support,
 )
 from boti_data.db.sqlalchemy_async import ensure_greenlet_available
@@ -256,3 +257,80 @@ def test_validate_query_only_support_accepts_clickhouse() -> None:
     parsed = sqlalchemy_url.make_url("clickhousedb://user:pass@localhost:8123/test_db")
 
     _validate_query_only_support(parsed)
+
+
+def test_sync_resource_accepts_duckdb_dsn(tmp_path) -> None:
+    """Verify SqlDatabaseResource resolves the duckdb-engine dialect."""
+    config = SqlDatabaseConfig(
+        connection_url=f"duckdb:///{tmp_path / 'test.duckdb'}",
+        query_only=False,
+        poolclass="sqlalchemy.pool.NullPool",
+    )
+
+    db = SqlDatabaseResource(config)
+
+    try:
+        assert db.engine.url.get_backend_name() == "duckdb"
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_async_resource_rejects_duckdb_dsn_with_actionable_error(tmp_path) -> None:
+    """DuckDB has no maintained async SQLAlchemy driver, so the async resource
+    must reject it up front instead of failing deep inside engine construction."""
+    config = SqlDatabaseConfig(connection_url=f"duckdb:///{tmp_path / 'test.duckdb'}")
+
+    with pytest.raises(SQLAlchemyError, match="does not support DuckDB"):
+        async with AsyncSqlDatabaseResource(config):
+            pass
+
+
+def test_validate_query_only_support_accepts_duckdb(tmp_path) -> None:
+    """Verify query_only=True is allowed for duckdb — enforced via a connect-time
+    read_only flag rather than a Postgres/MySQL-style post-connect SET statement."""
+    parsed = sqlalchemy_url.make_url(f"duckdb:///{tmp_path / 'test.duckdb'}")
+
+    _validate_query_only_support(parsed)
+
+
+def test_build_sync_engine_kwargs_injects_duckdb_read_only(tmp_path) -> None:
+    """Verify query_only=True causes connect_args={"read_only": True} to be
+    injected for duckdb — this is the actual enforcement mechanism, since
+    DuckDB's read-only mode is a connect-time flag rather than something
+    settable after the engine already exists."""
+    config = SqlDatabaseConfig(
+        connection_url=f"duckdb:///{tmp_path / 'test.duckdb'}",
+        query_only=True,
+    )
+
+    kwargs = _build_sync_engine_kwargs(config)
+
+    assert kwargs["connect_args"] == {"read_only": True}
+
+
+def test_build_sync_engine_kwargs_does_not_inject_read_only_when_query_only_false(
+    tmp_path,
+) -> None:
+    """Verify query_only=False leaves connect_args untouched for duckdb."""
+    config = SqlDatabaseConfig(
+        connection_url=f"duckdb:///{tmp_path / 'test.duckdb'}",
+        query_only=False,
+    )
+
+    kwargs = _build_sync_engine_kwargs(config)
+
+    assert kwargs["connect_args"] == {}
+
+
+def test_build_sync_engine_kwargs_does_not_inject_read_only_for_other_backends(tmp_path) -> None:
+    """Verify the duckdb-specific connect_args injection never fires for a
+    backend that doesn't need it, even with query_only=True."""
+    config = SqlDatabaseConfig(
+        connection_url=f"sqlite:///{tmp_path / 'test.db'}",
+        query_only=True,
+    )
+
+    kwargs = _build_sync_engine_kwargs(config)
+
+    assert kwargs["connect_args"] == {}

@@ -58,6 +58,41 @@ def test_partitioned_loader_rejects_inmemory_sqlite() -> None:
         SqlPartitionedLoader(config)
 
 
+def test_partitioned_loader_rejects_inmemory_duckdb() -> None:
+    config = SqlDatabaseConfig(
+        connection_url="duckdb:///:memory:",
+        query_only=False,
+    )
+
+    with pytest.raises(ValueError, match="in-memory DSNs are not supported"):
+        SqlPartitionedLoader(config)
+
+
+def test_partitioned_loader_rejects_writable_duckdb(tmp_path) -> None:
+    """DuckDB opening a file in its default (read-write) mode claims an
+    exclusive lock on connect, even for a connection that never writes — so a
+    second worker process would block on the very first one to connect,
+    regardless of query_only. Only query_only=True (native read-only mode) is
+    safe for distributed workers."""
+    config = SqlDatabaseConfig(
+        connection_url=f"duckdb:///{tmp_path / 'writable.duckdb'}",
+        query_only=False,
+    )
+
+    with pytest.raises(ValueError, match="requires query_only=True"):
+        SqlPartitionedLoader(config)
+
+
+def test_partitioned_loader_accepts_readonly_duckdb(tmp_path) -> None:
+    config = SqlDatabaseConfig(
+        connection_url=f"duckdb:///{tmp_path / 'readonly.duckdb'}",
+        query_only=True,
+    )
+
+    with SqlPartitionedLoader(config):
+        pass
+
+
 def test_partitioned_loader_returns_lazy_dask_frame(tmp_path) -> None:
     config = _create_user_db(
         tmp_path,

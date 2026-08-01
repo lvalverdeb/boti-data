@@ -71,6 +71,7 @@ def _build_driver_example(parsed_url: sqlalchemy_url.URL, *, async_mode: bool) -
         "postgresql": "postgresql+psycopg://",
         "sqlite": "sqlite://",
         "clickhousedb": "clickhousedb://",
+        "duckdb": "duckdb://",
     }
     return sync_examples.get(backend, f"{backend}://")
 
@@ -110,6 +111,11 @@ def _validate_async_driver_url(
             f"{consumer_name} does not support ClickHouse: there is no maintained "
             "asynchronous SQLAlchemy driver for it. Use SqlDatabaseResource instead."
         )
+    if parsed.get_backend_name() == "duckdb":
+        raise SQLAlchemyError(
+            f"{consumer_name} does not support DuckDB: there is no maintained "
+            "asynchronous SQLAlchemy driver for it. Use SqlDatabaseResource instead."
+        )
     if not parsed.get_dialect().is_async:
         suggested_driver = _build_driver_example(parsed, async_mode=True)
         raise SQLAlchemyError(
@@ -120,17 +126,42 @@ def _validate_async_driver_url(
     return parsed
 
 
+def _apply_duckdb_read_only_connect_arg(
+    connect_args: dict[str, Any], *, connection_url: str, query_only: bool
+) -> dict[str, Any]:
+    """Inject connect_args={"read_only": True} for DuckDB when query_only=True.
+
+    Unlike Postgres/MySQL/ClickHouse, DuckDB's read-only mode is a connect-time
+    flag (duckdb.connect(read_only=True)), not something settable after the
+    engine/connection already exists — so this has to happen before
+    create_engine() is called, not via _configure_query_only_engine(). Injection
+    wins on conflict, consistent with query_only=True always overriding
+    elsewhere in this codebase.
+    """
+    if not query_only:
+        return connect_args
+    backend = sqlalchemy_url.make_url(_normalize_connection_url(connection_url)).get_backend_name()
+    if backend != "duckdb":
+        return connect_args
+    return {**connect_args, "read_only": True}
+
+
 def _build_sync_engine_kwargs(
     config: SqlDatabaseConfig,
     *,
     poolclass_override: type[Pool] | None = None,
 ) -> dict[str, Any]:
     poolclass = poolclass_override or config.poolclass
+    connect_args = _apply_duckdb_read_only_connect_arg(
+        config.connect_args,
+        connection_url=config.connection_url.get_secret_value(),
+        query_only=config.query_only,
+    )
     kwargs: dict[str, Any] = {
         "pool_recycle": config.pool_recycle,
         "pool_pre_ping": config.pool_pre_ping,
         "poolclass": poolclass,
-        "connect_args": config.connect_args,
+        "connect_args": connect_args,
         "execution_options": config.execution_options,
     }
     if poolclass not in (NullPool, StaticPool):
@@ -255,11 +286,16 @@ def _resolve_worker_connection_url(config: WorkerSqlConfig) -> str:
 
 
 def _build_worker_engine_kwargs(config: WorkerSqlConfig) -> dict[str, Any]:
+    connect_args = _apply_duckdb_read_only_connect_arg(
+        config.connect_args,
+        connection_url=_resolve_worker_connection_url(config),
+        query_only=config.query_only,
+    )
     return {
         "pool_recycle": config.pool_recycle,
         "pool_pre_ping": config.pool_pre_ping,
         "poolclass": NullPool,
-        "connect_args": config.connect_args,
+        "connect_args": connect_args,
         "execution_options": config.execution_options,
     }
 
@@ -302,7 +338,7 @@ def _create_worker_sync_engine(config: SqlDatabaseConfig | WorkerSqlConfig) -> E
 def _validate_query_only_support(parsed_url: sqlalchemy_url.URL) -> None:
     backend = parsed_url.get_backend_name()
 
-    if backend in {"postgresql", "mysql", "clickhousedb"}:
+    if backend in {"postgresql", "mysql", "clickhousedb", "duckdb"}:
         return
 
     if backend == "sqlite":
@@ -367,6 +403,13 @@ def _configure_query_only_engine(engine: Engine, parsed_url: sqlalchemy_url.URL)
             # into every subsequent query on this connection.
             dbapi_connection.client.set_client_setting("readonly", 1)
 
+        return
+
+    if backend == "duckdb":
+        # DuckDB's read-only mode is a connect-time flag (duckdb.connect(read_only=True)),
+        # not a runtime SQL statement, so there's nothing left to configure post-connect —
+        # it's already applied via connect_args by _apply_duckdb_read_only_connect_arg()
+        # before the engine was ever constructed.
         return
 
     if backend == "sqlite":

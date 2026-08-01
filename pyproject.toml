@@ -56,6 +56,15 @@ pgvector = [
 clickhouse = [
     "clickhouse-connect>=1.6.0,<2.0.0",
 ]
+# duckdb-engine bundles the SQLAlchemy dialect ("duckdb://"); the duckdb driver
+# itself comes along as its transitive dependency. Like clickhouse, there's no
+# separate async driver to pair it with, so DuckDB support in boti-data is
+# sync-only (AsyncSqlDatabaseResource rejects a duckdb backend outright). Unlike
+# ClickHouse, DuckDB has real PRIMARY KEY/UNIQUE enforcement and real multi-table
+# ACID transactions, so SqlUnitOfWork/AsyncSqlUnitOfWork are fully supported here.
+duckdb = [
+    "duckdb-engine>=0.17.0,<0.18.0",
+]
 # The dataframe-shaped, bulk-oriented side of the package (DataGateway/
 # DataHelper, ParquetPipeline, HybridDataset, the sink pipelines, etc.) — not
 # needed by the lightweight SqlRepository/AsyncSqlRepository single-row API,
@@ -109,6 +118,12 @@ dev = [
     # can construct real clickhousedb:// engines (DSN parsing / driver validation
     # only, never dialed — same hermetic pattern as the mysql/postgres DSN tests).
     "clickhouse-connect>=1.6.0,<2.0.0",
+    # Not part of [project.optional-dependencies] duckdb's runtime need on its
+    # own — it's here so the duckdb cases in tests/data/test_sql_manager_registry.py
+    # and tests/data/test_sql_repository.py can construct real duckdb:// engines,
+    # including genuine temp-file round-trips (DuckDB is embedded, so — unlike
+    # mysql/postgres/clickhouse — these tests need no external server at all).
+    "duckdb-engine>=0.17.0,<0.18.0",
     "mypy>=1.14.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",

@@ -18,7 +18,7 @@ from typing import Any, Union
 
 from boti.core.logger import Logger
 from boti.core.security import is_valid_dotted_identifier
-from sqlalchemy import MetaData, Table
+from sqlalchemy import MetaData, PrimaryKeyConstraint, Table, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -41,6 +41,42 @@ except ImportError as exc:
     # Debug level only — this is an expected/best-effort probe for the
     # overwhelming majority of consumers who never install the pgvector extra.
     _logger.debug("pgvector.sqlalchemy not available, vector type registration skipped: %s", exc)
+
+
+def _recover_duckdb_primary_key(
+    engine: Engine, tbl: Table, *, tname: str, schema: str | None
+) -> None:
+    """Recover a DuckDB table's real PRIMARY KEY from its catalog.
+
+    duckdb-engine's reflection doesn't report PRIMARY KEY/UNIQUE constraints at
+    all ("doesn't yet support reflection on indices"), even though DuckDB
+    enforces them at the database level — so without this, every DuckDB table
+    looks keyless to SQLAlchemy and _build_model_class's fallback binds
+    SqlRepository to an arbitrary first column instead of the real key,
+    silently corrupting get()/update()/delete() on any table whose real key
+    isn't a single first-position column. information_schema is queried
+    directly (not duckdb_constraints(), a DuckDB-specific function) since it's
+    the same standard introspection surface already assumed elsewhere in this
+    codebase for other backends.
+    """
+    if engine.dialect.name != "duckdb" or tbl.primary_key.columns:
+        return
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT kcu.column_name "
+                "FROM information_schema.table_constraints tc "
+                "JOIN information_schema.key_column_usage kcu "
+                "  ON tc.constraint_name = kcu.constraint_name "
+                "WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_name = :tname "
+                "  AND (:schema IS NULL OR tc.table_schema = :schema) "
+                "ORDER BY kcu.ordinal_position"
+            ),
+            {"tname": tname, "schema": schema},
+        ).fetchall()
+    pk_columns = [tbl.c[row[0]] for row in rows if row[0] in tbl.c]
+    if pk_columns:
+        tbl.append_constraint(PrimaryKeyConstraint(*pk_columns))
 
 
 class SqlModelRegistry:
@@ -377,6 +413,8 @@ class SqlModelRegistry:
         if tbl is None:
             md.reflect(bind=engine, only=[tname], schema=schema)
             tbl = md.tables.get(qname)
+            if tbl is not None:
+                _recover_duckdb_primary_key(engine, tbl, tname=tname, schema=schema)
         return tbl
 
     @staticmethod

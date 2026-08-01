@@ -58,14 +58,27 @@ class SqlPartitionedLoader(PicklableLifecycleCoreMixin, LifecycleCore):
     def _validate_distributed_config(self) -> None:
         """Reject connection URLs that cannot be reopened safely by worker-local engines."""
         parsed = sqlalchemy_url.make_url(self.config.connection_url.get_secret_value())
-        if parsed.get_backend_name() != "sqlite":
+        backend = parsed.get_backend_name()
+        if backend not in {"sqlite", "duckdb"}:
             return
 
         database = parsed.database or ""
         if database == "" or ":memory:" in database:
             raise ValueError(
                 "SqlPartitionedLoader requires a database reachable by worker-local connections. "
-                "SQLite in-memory DSNs are not supported; use a file-backed DSN or request as_pandas=True."
+                f"{backend.capitalize()} in-memory DSNs are not supported; use a file-backed DSN "
+                "or request as_pandas=True."
+            )
+
+        if backend == "duckdb" and not self.config.query_only:
+            raise ValueError(
+                "SqlPartitionedLoader requires query_only=True for a file-backed DuckDB DSN. "
+                "Opening a DuckDB file in its default (read-write) mode claims an exclusive lock "
+                "on connect, even for a connection that only ever reads — so the first worker "
+                "process to connect would block every other worker with a file lock error, "
+                "regardless of whether any of them actually write. query_only=True opens each "
+                "worker's connection in DuckDB's native read-only mode instead, which multiple "
+                "processes can share concurrently without conflict."
             )
 
     def _cleanup(self) -> None:

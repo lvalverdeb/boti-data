@@ -542,3 +542,143 @@ def test_require_unique_key_for_clickhouse_ignores_other_backends() -> None:
     engine = create_engine("sqlite://")
 
     _require_unique_key_for_clickhouse(engine, assume_unique_key=False, operation="x")
+
+
+def test_duckdb_repository_crud_round_trip(tmp_path) -> None:
+    """DuckDB is embedded, so — unlike ClickHouse — this is a genuine hermetic
+    round-trip test, no external server needed."""
+    config = SqlDatabaseConfig(
+        connection_url=f"duckdb:///{tmp_path / 'crud.duckdb'}",
+        query_only=False,
+    )
+
+    with SqlDatabaseResource(config) as setup:
+        with setup.engine.begin() as conn:
+            conn.exec_driver_sql("CREATE TABLE users (id BIGINT PRIMARY KEY, name TEXT)")
+
+        with SqlRepository(config, "users", query_only=False) as repo:
+            inserted = repo.insert({"id": 1, "name": "Ada"})
+            assert inserted == {"id": 1, "name": "Ada"}
+
+            got = repo.get(1)
+            assert got == {"id": 1, "name": "Ada"}
+
+            updated = repo.update(1, {"name": "Grace"})
+            assert updated == {"id": 1, "name": "Grace"}
+
+            deleted = repo.delete(1)
+            assert deleted is True
+
+
+def test_duckdb_repository_composite_key_round_trip(tmp_path) -> None:
+    """Regression test for a real bug found during implementation: duckdb-engine
+    doesn't reflect PRIMARY KEY/UNIQUE constraints at all, so without
+    _recover_duckdb_primary_key (sql_model_registry.py) every DuckDB table
+    looked keyless and SqlRepository silently bound to an arbitrary first
+    column instead of the real composite key — get()/delete() on 'electronics'
+    touched an arbitrary row / every row sharing that category instead of the
+    one row identified by the full (category, order_id) key."""
+    config = SqlDatabaseConfig(
+        connection_url=f"duckdb:///{tmp_path / 'composite.duckdb'}",
+        query_only=False,
+    )
+
+    with SqlDatabaseResource(config) as setup:
+        with setup.engine.begin() as conn:
+            conn.exec_driver_sql(
+                "CREATE TABLE orders ("
+                "category VARCHAR NOT NULL, order_id BIGINT NOT NULL, amount DOUBLE, "
+                "PRIMARY KEY (category, order_id))"
+            )
+            conn.exec_driver_sql(
+                "INSERT INTO orders VALUES "
+                "('electronics', 1, 100.0), ('electronics', 2, 200.0), "
+                "('electronics', 3, 300.0), ('books', 4, 15.0)"
+            )
+
+        with SqlRepository(config, "orders", query_only=False) as repo:
+            assert repo.get(("electronics", 1)) == {
+                "category": "electronics",
+                "order_id": 1,
+                "amount": 100.0,
+            }
+            assert repo.get(("electronics", 2)) == {
+                "category": "electronics",
+                "order_id": 2,
+                "amount": 200.0,
+            }
+
+            assert repo.delete(("electronics", 1)) is True
+
+        with setup.session() as session:
+            remaining = session.execute(
+                text("SELECT category, order_id FROM orders ORDER BY order_id")
+            ).fetchall()
+            assert remaining == [("electronics", 2), ("electronics", 3), ("books", 4)]
+
+
+def test_duckdb_query_only_enforced_server_side(tmp_path) -> None:
+    """Verify query_only=True is enforced by DuckDB itself (a connect-time
+    read_only flag applied via connect_args), not just by boti-data's own
+    ReadOnlySession guard — bypass the ORM entirely and write straight through
+    the raw engine connection."""
+    db_path = tmp_path / "readonly.duckdb"
+    setup_config = SqlDatabaseConfig(connection_url=f"duckdb:///{db_path}", query_only=False)
+    with SqlDatabaseResource(setup_config) as setup:
+        with setup.engine.begin() as conn:
+            conn.exec_driver_sql("CREATE TABLE t (id BIGINT PRIMARY KEY)")
+
+    ro_config = SqlDatabaseConfig(connection_url=f"duckdb:///{db_path}", query_only=True)
+    with SqlDatabaseResource(ro_config) as ro:
+        with ro.engine.connect() as conn:
+            assert conn.exec_driver_sql("SELECT count(*) FROM t").scalar() == 0
+            with pytest.raises(SQLAlchemyError, match="read-only mode"):
+                conn.exec_driver_sql("INSERT INTO t VALUES (1)")
+
+
+def test_duckdb_sql_unit_of_work_commits_multiple_tables_together(tmp_path) -> None:
+    """DuckDB has real multi-table ACID transactions (unlike ClickHouse), so
+    SqlUnitOfWork is genuinely supported for it — no rejection guard."""
+    config = SqlDatabaseConfig(
+        connection_url=f"duckdb:///{tmp_path / 'uow_commit.duckdb'}",
+        query_only=False,
+    )
+    with SqlDatabaseResource(config) as setup:
+        with setup.engine.begin() as conn:
+            conn.exec_driver_sql("CREATE TABLE accounts (id BIGINT PRIMARY KEY, balance DOUBLE)")
+            conn.exec_driver_sql("CREATE TABLE ledger (id BIGINT PRIMARY KEY, note TEXT)")
+            conn.exec_driver_sql("INSERT INTO accounts VALUES (1, 100.0)")
+
+        with SqlUnitOfWork(config, query_only=False) as uow:
+            uow.repository("accounts").update(1, {"balance": 50.0})
+            uow.repository("ledger").insert({"id": 1, "note": "withdrawal"})
+
+        with setup.session() as session:
+            assert session.execute(text("SELECT balance FROM accounts")).scalar() == 50.0
+            assert session.execute(text("SELECT note FROM ledger")).scalar() == "withdrawal"
+
+
+def test_duckdb_sql_unit_of_work_rolls_back_multiple_tables_together(tmp_path) -> None:
+    """Prove the rollback is real ACID behavior, not just 'no exception on
+    construction': trigger an actual PRIMARY KEY constraint violation
+    mid-transaction and confirm both tables revert to their pre-transaction
+    state, not just the table the violation happened on."""
+    config = SqlDatabaseConfig(
+        connection_url=f"duckdb:///{tmp_path / 'uow_rollback.duckdb'}",
+        query_only=False,
+    )
+    with SqlDatabaseResource(config) as setup:
+        with setup.engine.begin() as conn:
+            conn.exec_driver_sql("CREATE TABLE accounts (id BIGINT PRIMARY KEY, balance DOUBLE)")
+            conn.exec_driver_sql("CREATE TABLE ledger (id BIGINT PRIMARY KEY, note TEXT)")
+            conn.exec_driver_sql("INSERT INTO accounts VALUES (1, 100.0)")
+
+        with pytest.raises(SQLAlchemyError, match="[Dd]uplicate"):
+            with SqlUnitOfWork(config, query_only=False) as uow:
+                uow.repository("accounts").update(1, {"balance": 50.0})
+                uow.repository("ledger").insert({"id": 1, "note": "withdrawal"})
+                uow.repository("ledger").insert({"id": 1, "note": "duplicate-pk-should-fail"})
+
+        with setup.session() as session:
+            assert session.execute(text("SELECT balance FROM accounts")).scalar() == 100.0
+            assert session.execute(text("SELECT * FROM ledger")).fetchall() == []
