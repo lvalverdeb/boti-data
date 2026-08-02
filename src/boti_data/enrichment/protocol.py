@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
+import dask.dataframe as dd
 import pandas as pd
 
 
@@ -17,13 +18,15 @@ import pandas as pd
 class DataFrameTransformer(Protocol):
     """Generic DataFrame transform contract.
 
-    Implementations receive a ``pd.DataFrame`` and arbitrary keyword
-    arguments (used by higher layers to pass context) and must return
-    a ``pd.DataFrame``.
+    Implementations receive a ``pd.DataFrame`` or ``dd.DataFrame`` and
+    arbitrary keyword arguments (used by higher layers to pass context)
+    and must return a frame of the same kind they were given.
 
     This protocol is intentionally minimal — ``**kwargs`` keeps it
     flexible so that etl-core can pass a ``TransformContext`` without
     boti-data knowing about it.
     """
 
-    async def transform(self, df: pd.DataFrame, **kwargs: Any) -> pd.DataFrame: ...
+    async def transform(
+        self, df: pd.DataFrame | dd.DataFrame, **kwargs: Any
+    ) -> pd.DataFrame | dd.DataFrame: ...

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import dask.dataframe as dd
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from boti_data import (
@@ -276,6 +278,74 @@ def test_prepare_partitioned_frame_rejects_meta_corrupted_by_unrelated_reassignm
             date_field=None,
             sink_name="TestSink",
         )
+
+
+def test_prepare_partitioned_frame_rejects_unplaceable_object_meta_sample(
+    temp_project_root,
+) -> None:
+    """Wishlist #10: catch dask's meta_nonempty() sentinel-object corruption.
+
+    Distinct from the dtype-mismatch regression above: here meta and real
+    dtype *agree* (both ``object``) so that guard doesn't fire, yet dask's
+    synthesized nonempty sample for the column is still an unplaceable bare
+    ``object()`` on pandas>=3.0 -- reproduced faithfully via a real parquet
+    round-trip of a struct-typed column that's entirely null in one branch
+    (the historical side of a HybridDataset-shaped concat) and populated in
+    the other (the live side), matching the reported real-infra failure.
+    """
+    from boti_data.pipelines.sinks import prepare_partitioned_frame
+
+    schema = pa.schema([("id", pa.int64()), ("meta_col", pa.struct([("k", pa.string())]))])
+    historical_path = temp_project_root / "historical.parquet"
+    live_path = temp_project_root / "live.parquet"
+    pq.write_table(
+        pa.table({"id": [1, 2], "meta_col": [None, None]}, schema=schema), historical_path
+    )
+    pq.write_table(
+        pa.table({"id": [3, 4], "meta_col": [{"k": "x"}, {"k": "y"}]}, schema=schema), live_path
+    )
+
+    combined = dd.concat([dd.read_parquet(historical_path), dd.read_parquet(live_path)])
+    assert pd.api.types.is_object_dtype(combined.dtypes["meta_col"])  # meta/real dtypes agree
+
+    with pytest.raises(ValueError, match="no PyArrow-representable value"):
+        prepare_partitioned_frame(
+            combined,
+            partition_on=None,
+            date_field=None,
+            sink_name="TestSink",
+            validate_arrow_convertible=True,
+        )
+
+
+def test_prepare_partitioned_frame_does_not_validate_arrow_convertibility_by_default(
+    temp_project_root,
+) -> None:
+    """CsvSink/JsonlSink pass `validate_arrow_convertible=False` (the default):
+    they write each partition's real data through pandas' own to_csv/to_json,
+    never PyArrow schema inference, so a struct-typed object column that would
+    trip the ParquetSink-only guard above must pass through untouched here."""
+    from boti_data.pipelines.sinks import prepare_partitioned_frame
+
+    schema = pa.schema([("id", pa.int64()), ("meta_col", pa.struct([("k", pa.string())]))])
+    historical_path = temp_project_root / "historical2.parquet"
+    live_path = temp_project_root / "live2.parquet"
+    pq.write_table(
+        pa.table({"id": [1, 2], "meta_col": [None, None]}, schema=schema), historical_path
+    )
+    pq.write_table(
+        pa.table({"id": [3, 4], "meta_col": [{"k": "x"}, {"k": "y"}]}, schema=schema), live_path
+    )
+
+    combined = dd.concat([dd.read_parquet(historical_path), dd.read_parquet(live_path)])
+
+    result = prepare_partitioned_frame(
+        combined,
+        partition_on=None,
+        date_field=None,
+        sink_name="TestSink",
+    )
+    assert list(result.columns) == ["id", "meta_col"]
 
 
 def test_write_parquet_closes_the_sink_automatically(temp_project_root, monkeypatch) -> None:

@@ -108,13 +108,73 @@ def _validate_meta_matches_real_dtypes(frame: dd.DataFrame, *, sink_name: str) -
     )
 
 
+def _arrow_convertible(sample: pd.DataFrame) -> bool:
+    try:
+        pa.Table.from_pandas(sample, preserve_index=False)
+    except (pa.ArrowInvalid, pa.ArrowTypeError):
+        return False
+    return True
+
+
+def _validate_meta_object_columns_are_arrow_convertible(
+    frame: dd.DataFrame, *, sink_name: str
+) -> None:
+    """Guard against dask's meta_nonempty() sentinel-object corruption (wishlist #10).
+
+    Distinct from `_validate_meta_matches_real_dtypes()` above: that check
+    catches meta/real *dtype* divergence, but a genuine ``object``-dtype
+    column (e.g. a nested/struct parquet column, or one column of two
+    otherwise-identical branches merged via `HybridDataset` where the other
+    is entirely null in this slice) can have meta and real dtype agree
+    (both ``object``) while still breaking PyArrow at write time. On
+    pandas>=3.0, dask's `_nonempty_series()` has no per-partition data to
+    sample from `frame._meta` (always 0 rows) and falls back to a bare
+    `object()` placeholder for any generic object dtype -- a value with no
+    representable Arrow type. Left unchecked, that surfaces as an opaque
+    `pyarrow.lib.ArrowInvalid: Could not convert <object object at 0x...>`
+    at write time with nothing pointing back to the real column. Catch it
+    against the synthesized sample before any sink commits to a write.
+    """
+    object_columns = [
+        column for column, dtype in frame.dtypes.items() if pd.api.types.is_object_dtype(dtype)
+    ]
+    if not object_columns:
+        return
+    sample = frame._meta_nonempty
+    bad_columns = [column for column in object_columns if not _arrow_convertible(sample[[column]])]
+    if not bad_columns:
+        return
+    raise ValueError(
+        f"{sink_name} detected object-dtype column(s) with no PyArrow-representable "
+        f"value in dask's synthesized meta sample: {bad_columns!r}. This typically "
+        "happens with a nested/struct-typed column, or one entirely null in one branch "
+        "of a concat/merge (e.g. HybridDataset's historical vs live branches) while a "
+        "sibling branch has real values -- dask can't derive a placeholder PyArrow can "
+        "place. Project the load down to only the columns actually needed, or cast the "
+        "column to an explicit scalar dtype before writing."
+    )
+
+
 def prepare_partitioned_frame(
     frame: dd.DataFrame,
     *,
     partition_on: Sequence[str] | None,
     date_field: str | None,
     sink_name: str,
+    validate_arrow_convertible: bool = False,
 ) -> dd.DataFrame:
+    """Derive partition columns and validate the frame's dask meta before a write.
+
+    ``validate_arrow_convertible`` gates
+    `_validate_meta_object_columns_are_arrow_convertible()`: that guard
+    exists for PyArrow's schema-inference step, which only ``ParquetSink``
+    goes through -- ``CsvSink``/``JsonlSink`` write each partition's real
+    data straight through pandas' own ``to_csv``/``to_json`` and would
+    reject a perfectly writable object column for a failure mode they never
+    hit. `_validate_meta_matches_real_dtypes()` above stays unconditional:
+    a meta/real dtype mismatch is a signal of upstream corruption regardless
+    of sink type, not a PyArrow-specific concern.
+    """
     if partition_on:
         partition_columns = list(partition_on)
         missing = [name for name in partition_columns if name not in frame.columns]
@@ -129,6 +189,8 @@ def prepare_partitioned_frame(
             )
 
     _validate_meta_matches_real_dtypes(frame, sink_name=sink_name)
+    if validate_arrow_convertible:
+        _validate_meta_object_columns_are_arrow_convertible(frame, sink_name=sink_name)
     return frame
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import dask.dataframe as dd
 import pandas as pd
 from boti.core.security import has_dunder_identifier
 
@@ -46,16 +47,30 @@ class TypeCaster:
         ``"int64"``, ``"float64"``, ``"bool"``, ``"string"``, etc.
 
     Missing columns are silently skipped.
+
+    Dask frames
+    -----------
+    ``dd.DataFrame.astype()`` has no ``errors=`` kwarg, and a dask
+    column's dtype must be uniform across every partition — so there is
+    no dask equivalent of pandas' per-column "cast what you can, leave
+    the rest" behaviour. Against a ``dd.DataFrame``, a cast that would
+    have been silently skipped under ``errors="ignore"`` instead raises
+    immediately. Only list columns you're confident are castable when
+    the input is a dask frame.
     """
 
     def __init__(self, casts: dict[str, str]) -> None:
         self._casts = dict(casts)
 
-    async def transform(self, df: pd.DataFrame, **kwargs: Any) -> pd.DataFrame:
+    async def transform(
+        self, df: pd.DataFrame | dd.DataFrame, **kwargs: Any
+    ) -> pd.DataFrame | dd.DataFrame:
         applicable = {col: dt for col, dt in self._casts.items() if col in df.columns}
-        if applicable:
-            df = df.astype(applicable, errors="ignore")
-        return df
+        if not applicable:
+            return df
+        if isinstance(df, dd.DataFrame):
+            return df.astype(applicable)
+        return df.astype(applicable, errors="ignore")
 
 
 class RowFilter:
@@ -79,7 +94,9 @@ class RowFilter:
     def __init__(self, predicates: list[str]) -> None:
         self._predicates = list(predicates)
 
-    async def transform(self, df: pd.DataFrame, **kwargs: Any) -> pd.DataFrame:
+    async def transform(
+        self, df: pd.DataFrame | dd.DataFrame, **kwargs: Any
+    ) -> pd.DataFrame | dd.DataFrame:
         for expr in self._predicates:
             _reject_dunder_expr(expr)
             mask = df.eval(expr)  # nosec CWE-94 -- dunder-chain rejected above; see class docstring's Security section
@@ -113,7 +130,9 @@ class DerivedColumn:
     def __init__(self, columns: dict[str, str]) -> None:
         self._columns = dict(columns)
 
-    async def transform(self, df: pd.DataFrame, **kwargs: Any) -> pd.DataFrame:
+    async def transform(
+        self, df: pd.DataFrame | dd.DataFrame, **kwargs: Any
+    ) -> pd.DataFrame | dd.DataFrame:
         for name, expr in self._columns.items():
             _reject_dunder_expr(expr)
             df[name] = df.eval(expr)  # nosec CWE-94 -- dunder-chain rejected above; see class docstring's Security section
@@ -141,7 +160,9 @@ class Deduplicator:
         self._subset = subset
         self._keep = keep
 
-    async def transform(self, df: pd.DataFrame, **kwargs: Any) -> pd.DataFrame:
+    async def transform(
+        self, df: pd.DataFrame | dd.DataFrame, **kwargs: Any
+    ) -> pd.DataFrame | dd.DataFrame:
         before = len(df)
         df = df.drop_duplicates(subset=self._subset, keep=self._keep).reset_index(
             drop=True,

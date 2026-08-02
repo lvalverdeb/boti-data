@@ -73,45 +73,86 @@ def _string_field_names(resource: ParquetDataResource) -> set[str] | None:
     return string_fields or None
 
 
+def _temporal_field_tzs(resource: ParquetDataResource) -> dict[str, str | None]:
+    """Returns {field_name: tz} for schema fields with a genuine PyArrow
+    timestamp type (``tz`` is ``None`` for a naive/no-tz column)."""
+    schema = dataset_schema(resource)
+    if schema is None:
+        return {}
+    return {field.name: field.type.tz for field in schema if pa.types.is_timestamp(field.type)}
+
+
 def coerce_temporal_filters(
     resource: ParquetDataResource, filters: dict[str, Any]
 ) -> dict[str, Any]:
-    """Coerce date/datetime filter values to ISO strings for string-typed columns.
+    """Coerce filter values so their type matches the target column's PyArrow type.
 
-    A ``date``/``datetime`` value compared against a string column (e.g. an
-    ISO-8601 date stored as text) has no PyArrow comparison kernel and would
-    raise ``ArrowNotImplementedError`` on both the pushdown and residual
-    paths. Rewriting the value to its ISO string makes the comparison a
-    (correct) lexicographic string comparison. Columns with a genuine
-    temporal type, and explicitly cast filters, are left untouched.
+    Two mismatches share the same underlying failure mode — PyArrow's
+    filter-pushdown has no comparison kernel between mismatched temporal
+    representations, raising ``ArrowNotImplementedError``/``ArrowInvalid``
+    on both the pushdown and residual paths:
+
+    - A ``date``/``datetime`` value compared against a **string** column
+      (e.g. an ISO-8601 date stored as text) is rewritten to its ISO string,
+      making the comparison a correct lexicographic string comparison.
+    - A bare ``datetime.date`` value compared against a genuine **timestamp**
+      column (tz-aware or not) is promoted to a ``pd.Timestamp`` carrying
+      the column's own tz, since callers commonly build period filters via
+      ``pd.to_datetime(x).date()`` regardless of the target column's actual
+      precision (see ``prepare_period_filters()`` in ``gateway/normalization.py``).
+
+    Explicitly cast filters (``field__date__gte=...``) and values that
+    already carry full datetime precision are left untouched either way.
     """
     if not filters:
         return filters
-    string_fields = _string_field_names(resource)
-    if not string_fields:
+    string_fields = _string_field_names(resource) or set()
+    temporal_field_tzs = _temporal_field_tzs(resource)
+    if not string_fields and not temporal_field_tzs:
         return filters
-    return coerce_mapping(filters, string_fields)
+    return coerce_mapping(filters, string_fields, temporal_field_tzs)
 
 
-def coerce_mapping(filters: dict[str, Any], string_fields: set[str]) -> dict[str, Any]:
+def coerce_mapping(
+    filters: dict[str, Any],
+    string_fields: set[str],
+    temporal_field_tzs: dict[str, str | None] | None = None,
+) -> dict[str, Any]:
+    temporal_field_tzs = temporal_field_tzs or {}
     coerced: dict[str, Any] = {}
     for key, value in filters.items():
         if key in {"$and", "$or"} and isinstance(value, (list, tuple)):
             coerced[key] = [
-                coerce_mapping(sub, string_fields) if isinstance(sub, dict) else sub
+                coerce_mapping(sub, string_fields, temporal_field_tzs)
+                if isinstance(sub, dict)
+                else sub
                 for sub in value
             ]
         elif key == "$not" and isinstance(value, dict):
-            coerced[key] = coerce_mapping(value, string_fields)
+            coerced[key] = coerce_mapping(value, string_fields, temporal_field_tzs)
         elif str(key).startswith("$"):
             coerced[key] = value
         else:
-            field, casting, _op = parse_filter_key(key)
-            if casting is None and field in string_fields:
-                coerced[key] = stringify_temporal(value)
-            else:
-                coerced[key] = value
+            coerced[key] = _coerce_single_filter_value(
+                key, value, string_fields, temporal_field_tzs
+            )
     return coerced
+
+
+def _coerce_single_filter_value(
+    key: str,
+    value: Any,
+    string_fields: set[str],
+    temporal_field_tzs: dict[str, str | None],
+) -> Any:
+    field, casting, _op = parse_filter_key(key)
+    if casting is not None:
+        return value
+    if field in string_fields:
+        return stringify_temporal(value)
+    if field in temporal_field_tzs:
+        return promote_bare_date_to_timestamp(value, temporal_field_tzs[field])
+    return value
 
 
 def stringify_temporal(value: Any) -> Any:
@@ -121,6 +162,27 @@ def stringify_temporal(value: Any) -> Any:
             return item.date().isoformat() if item.time() == dt.time(0, 0) else item.isoformat()
         if isinstance(item, dt.date):
             return item.isoformat()
+        return item
+
+    if isinstance(value, (list, tuple)):
+        return type(value)(convert(item) for item in value)
+    return convert(value)
+
+
+def promote_bare_date_to_timestamp(value: Any, tz: str | None) -> Any:
+    """Promote a bare ``datetime.date`` to a ``pd.Timestamp`` in ``tz``.
+
+    Values already carrying datetime precision (``pd.Timestamp``/``datetime.datetime``,
+    which subclasses ``date``) are left untouched — only a truly bare
+    ``date`` needs promotion to satisfy PyArrow's timestamp comparison kernel.
+    """
+
+    def convert(item: Any) -> Any:
+        if isinstance(item, dt.datetime):
+            return item
+        if isinstance(item, dt.date):
+            ts = pd.Timestamp(item)
+            return ts.tz_localize(tz) if tz else ts
         return item
 
     if isinstance(value, (list, tuple)):

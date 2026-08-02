@@ -96,6 +96,7 @@ class ParquetSink(_AsyncWriteViaThreadMixin, PicklableLifecycleCoreMixin, Lifecy
             partition_on=self.partition_on,
             date_field=date_field,
             sink_name="ParquetSink",
+            validate_arrow_convertible=True,
         )
         if persist:
             ddf = safe_persist(ddf)
