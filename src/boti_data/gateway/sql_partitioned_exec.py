@@ -18,7 +18,12 @@ import dask.dataframe as dd
 import pandas as pd
 
 from boti_data.db import SqlDatabaseConfig, SqlPartitionedLoadRequest
-from boti_data.db.partitioned_execution import SqlPartitionExecutor
+from boti_data.db.partitioned_execution import (
+    GateWaitStats,
+    SqlPartitionExecutor,
+    fetch_gate_stats,
+    format_gate_wait_suffix,
+)
 from boti_data.db.partitioned_planner import SqlPartitionPlanner
 from boti_data.db.partitioned_types import PlannerEngineAdapter
 from boti_data.db.sql_config import WorkerSqlConfig
@@ -309,15 +314,18 @@ def _log_completion(
     plan: Any,
     result: FrameResult,
     started: float,
+    gate_context: tuple[str, GateWaitStats | None] | None = None,
 ) -> None:
     if not request.diagnostics:
         return
     result_partitions = result.npartitions if isinstance(result, dd.DataFrame) else 1
+    gate_suffix = "" if gate_context is None else format_gate_wait_suffix(*gate_context)
     async_resource.logger.info(
         "Partitioned SQL load completed "
         f"strategy={plan.strategy} partitions={len(plan.partitions)} "
         f"rows={plan.total_rows} result_partitions={result_partitions} "
         f"elapsed={perf_counter() - started:.2f}s"
+        f"{gate_suffix}"
     )
 
 
@@ -355,10 +363,11 @@ async def run_async_partitioned_request(
     worker_config = WorkerSqlConfig.from_database_config(ctx.config)
     gate_key = _get_worker_engine_identity(worker_config)
 
+    gate_baseline = fetch_gate_stats().get(gate_key) if request.diagnostics else None
     if len(plan.partitions) == 1 and not request.as_pandas:
         result = await _execute_single_partition_plan(planner, async_resource, request, plan)
     else:
         result = _execute_via_partition_executor(planner, request, plan, worker_config, gate_key)
 
-    _log_completion(async_resource, request, plan, result, started)
+    _log_completion(async_resource, request, plan, result, started, (gate_key, gate_baseline))
     return result

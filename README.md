@@ -845,6 +845,129 @@ with DataHelper.session(cluster_factory=LocalCluster) as client:
 
 ---
 
+## Sizing connections and fetch concurrency
+
+More database connections do not mean more throughput. Past a modest number they
+mean *less*, because connections compete for the same cores, disks and locks. Both
+the [PostgreSQL wiki](https://wiki.postgresql.org/wiki/Number_Of_Database_Connections)
+and the [HikariCP pool-sizing guide](https://github.com/brettwooldridge/HikariCP/wiki/About-Pool-Sizing)
+give the same starting formula:
+
+```
+connections = (core_count * 2) + effective_spindle_count
+```
+
+Count physical cores, not hyperthreads, and take `effective_spindle_count` as zero
+when the working set is cached in RAM. For a 4-core server with one disk that is
+about 10 connections in total — not per client, not per worker, **in total**.
+
+The characteristic failure of getting this wrong is counter-intuitive: the database
+sits nearly idle, at a few percent CPU, while clients time out. The connections are
+all queued rather than working. Raising the pool size makes it worse.
+
+`boti-data` exposes three separate numbers that multiply into that total. Size the
+product, not the individual knobs.
+
+### 1. Client-side pool: `pool_size + max_overflow`
+
+`SqlDatabaseConfig` defaults to `pool_size=5` and `max_overflow=10`, so a single
+engine bursts to **15** connections, not 5. `max_overflow` is three times
+`pool_size`, so the steady-state number is a third of the real ceiling.
+
+```python
+config = SqlDatabaseConfig(
+    connection_url="postgresql+psycopg://...",
+    pool_size=5,       # steady state
+    max_overflow=10,   # burst headroom — the ceiling is 5 + 10 = 15
+)
+```
+
+Engines are cached per distinct configuration, so two differently-configured helpers
+against the same database hold two pools: 30 connections, not 15.
+
+### 2. Distributed fetch concurrency: `n_workers × max_concurrent_fetches`
+
+This is the one that surprises people. `max_concurrent_fetches` (default `4`, capped
+at `16`) bounds concurrent partition fetches **per worker process**, because the
+semaphore enforcing it lives in process memory. It is not a cluster-wide limit.
+
+```
+20 Dask workers × max_concurrent_fetches=4 = up to 80 concurrent connections
+```
+
+To work backwards from a budget:
+
+```python
+max_concurrent_fetches = max(1, connection_budget // n_workers)
+```
+
+With the 10-connection budget above and 5 workers, that is `2` — not the default `4`.
+
+### 3. Worker connections are unpooled by design
+
+Worker engines always use `NullPool`. Connection pools cannot be pickled and would
+bind to the wrong event loop, so each partition fetch opens a fresh connection and
+closes it. That is correct for distribution, but it means every fetch pays a full TCP
+handshake, TLS negotiation and authentication — on a remote database, tens of
+milliseconds each, before a single row is read. A 200-partition load pays it 200 times.
+
+The fix is not to pool inside the workers, but to put a pooler in front of the
+database, so that warm server-side connections are reused while workers keep opening
+cheap local ones. **The pooling mode matters**, because it interacts with `query_only`:
+
+| Pooler mode | Connection reuse | `query_only=True` |
+|---|---|---|
+| Session (e.g. PgBouncer `session`) | Yes | **Supported** — the read-only `SET` lasts for the session |
+| Transaction (e.g. PgBouncer `transaction`) | Higher | **Not supported** — see below |
+
+`query_only=True` issues its read-only statement on the SQLAlchemy `connect` event, so
+it applies to a physical connection. Under transaction-mode pooling a physical
+connection can be handed to a different logical client between transactions, and that
+session state is not guaranteed to survive the handoff. The failure is silent: a load
+that believes it is read-only quietly stops being so.
+
+With transaction-mode pooling, set `query_only=False` and enforce read-only access
+with database grants instead, where it cannot be lost in a handoff.
+
+### Measuring it
+
+Set `diagnostics=True` on a partitioned load and the completion line reports how long
+fetches spent queueing for a slot:
+
+```
+Partitioned SQL load completed strategy=offset partitions=4 rows=40 result_partitions=1
+  elapsed=0.04s prepare_stmt=0.000s load_plan=0.031s
+  gate_waits=0/4 gate_wait_total=0.000s gate_wait_max_seen=0.000s
+```
+
+`gate_waits=0/4` means none of the four fetches had to wait. A rising
+`gate_wait_total` alongside a database that is not CPU-bound is the signature of the
+failure above — concurrency queued rather than working. The other stage timers cannot
+show this, because they are all measured *inside* the gate.
+
+The fields are omitted entirely when no fetch ran in the logging process. A lazy load
+returns a Dask graph before anything is fetched, and in a distributed run the fetches
+happen in other processes; reporting `0.000s` there would say "no contention" when the
+truth is "not measured here".
+
+For lazy loads, read the counters after `.compute()` instead:
+
+```python
+from boti_data import fetch_gate_stats, reset_fetch_gate_stats
+
+reset_fetch_gate_stats()
+result = helper.dask.load().compute()
+
+for gate_key, stats in fetch_gate_stats().items():
+    print(gate_key, stats.waited_fetches, "/", stats.fetches, stats.total_wait_seconds)
+```
+
+`fetch_gate_stats()` reports the **calling process only**. On a distributed cluster each
+worker accumulates its own counters, so run it on the workers (e.g. via
+`client.run(fetch_gate_stats)`) to see the whole picture.
+
+---
+
 ## Choosing between distributed and non-distributed
 
 Use the following as a guide:

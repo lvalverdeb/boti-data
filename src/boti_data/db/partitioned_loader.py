@@ -11,7 +11,11 @@ from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 from boti.core.logger import Logger
 from sqlalchemy.engine import url as sqlalchemy_url
 
-from boti_data.db.partitioned_execution import SqlPartitionExecutor
+from boti_data.db.partitioned_execution import (
+    SqlPartitionExecutor,
+    fetch_gate_stats,
+    format_gate_wait_suffix,
+)
 from boti_data.db.partitioned_planner import SqlPartitionPlanner
 from boti_data.db.partitioned_types import (
     SqlPartitionedLoadRequest,
@@ -200,6 +204,7 @@ class SqlPartitionedLoader(PicklableLifecycleCoreMixin, LifecycleCore):
         t_plan_fetch = perf_counter()
         prepared_stmt = self._planner.prepare_statement(request)
         t_load = perf_counter()
+        gate_baseline = fetch_gate_stats().get(self._gate_key) if request.diagnostics else None
         result = executor.load_plan(
             plan,
             as_pandas=request.as_pandas,
@@ -217,6 +222,7 @@ class SqlPartitionedLoader(PicklableLifecycleCoreMixin, LifecycleCore):
                 f"elapsed={t_end - started:.2f}s "
                 f"prepare_stmt={t_load - t_plan_fetch:.3f}s "
                 f"load_plan={t_end - t_load:.3f}s"
+                f"{format_gate_wait_suffix(self._gate_key, gate_baseline)}"
             )
         return result
 

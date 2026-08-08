@@ -10,6 +10,13 @@ import dask.dataframe as dd
 import pandas as pd
 from sqlalchemy.sql import Select
 
+from boti_data.db.partitioned_fetch_gate import (
+    GateWaitStats,
+    _timed_fetch_gate,
+    fetch_gate_stats,
+    format_gate_wait_suffix,
+    reset_fetch_gate_stats,
+)
 from boti_data.db.partitioned_row_materialization import (
     align_and_coerce_partition,
     arrow_align_and_coerce_partition,
@@ -27,8 +34,16 @@ from boti_data.db.sql_engine import (
     _get_worker_engine_identity,
 )
 
-_FETCH_GATES: dict[tuple[str, int], threading.BoundedSemaphore] = {}
-_FETCH_GATES_LOCK = threading.Lock()
+# The fetch gate and its contention counters live in partitioned_fetch_gate.py
+# (long-file headroom) and are re-exported here so existing import paths — and
+# the tests and callers that use them — keep working unchanged.
+__all__ = [
+    "GateWaitStats",
+    "SqlPartitionExecutor",
+    "fetch_gate_stats",
+    "format_gate_wait_suffix",
+    "reset_fetch_gate_stats",
+]
 
 # Thread-local caches: avoid recreating engine objects and event loops on every partition fetch.
 # The engine itself is cheap state (dialect, URL, event listeners); caching it per worker
@@ -74,16 +89,6 @@ def _get_cached_worker_async_engine(config: WorkerSqlConfig) -> Any:
         engine = _create_worker_async_engine(config)
         engines[key] = engine
     return engine
-
-
-def _get_fetch_gate(gate_key: str, max_concurrent_fetches: int) -> threading.BoundedSemaphore:
-    cache_key = (gate_key, max_concurrent_fetches)
-    with _FETCH_GATES_LOCK:
-        gate = _FETCH_GATES.get(cache_key)
-        if gate is None:
-            gate = threading.BoundedSemaphore(max_concurrent_fetches)
-            _FETCH_GATES[cache_key] = gate
-        return gate
 
 
 class SqlPartitionExecutor:
@@ -216,8 +221,7 @@ class SqlPartitionExecutor:
         meta_dtypes: dict[str, str],
         use_arrow: bool = True,
     ) -> pd.DataFrame:
-        gate = _get_fetch_gate(gate_key, max_concurrent_fetches)
-        with gate:
+        with _timed_fetch_gate(gate_key, max_concurrent_fetches):
             engine = _get_cached_worker_sync_engine(config)
             with engine.connect() as conn:
                 if not use_arrow:
@@ -253,8 +257,7 @@ class SqlPartitionExecutor:
         NullPool means the engine carries no loop-bound connection pool state, so
         both the loop and the engine are safe to reuse across calls in the same thread.
         """
-        gate = _get_fetch_gate(gate_key, max_concurrent_fetches)
-        with gate:
+        with _timed_fetch_gate(gate_key, max_concurrent_fetches):
 
             async def _fetch() -> pd.DataFrame:
                 engine = _get_cached_worker_async_engine(config)

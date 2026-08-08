@@ -60,6 +60,9 @@ __all__ = [
     "SqlPartitionSpec",
     "SqlPartitionedLoadRequest",
     "SqlPartitionedLoader",
+    "GateWaitStats",
+    "fetch_gate_stats",
+    "reset_fetch_gate_stats",
     "SqlModelRegistry",
     "SqlRepository",
     "SqlUnitOfWork",
@@ -119,6 +122,9 @@ _LAZY = {
     # dask+pandas — the one heavy import inside the otherwise-clean db package.
     "SqlPartitionedLoader": ("boti_data.db.partitioned_loader", "SqlPartitionedLoader"),
     "SqlPartitionedLoadRequest": ("boti_data.db.partitioned_loader", "SqlPartitionedLoadRequest"),
+    "GateWaitStats": ("boti_data.db.partitioned_execution", "GateWaitStats"),
+    "fetch_gate_stats": ("boti_data.db.partitioned_execution", "fetch_gate_stats"),
+    "reset_fetch_gate_stats": ("boti_data.db.partitioned_execution", "reset_fetch_gate_stats"),
     # dask/pandas/polars/pyarrow-touching — the dataframe-shaped, bulk-oriented side.
     "ConnectionCatalog": ("boti_data.connection_catalog", "ConnectionCatalog"),
     "ParquetDataConfig": ("boti_data.parquet", "ParquetDataConfig"),
