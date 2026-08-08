@@ -35,6 +35,25 @@ from .requests import (
 )
 
 
+def _log_partial_close_failure(resource: Any, exc: Exception) -> None:
+    """Report a close() that failed while unwinding a failed ``__init__``.
+
+    Reported rather than swallowed: this path only runs when a configuration
+    error is already propagating, and a close() that also fails means a real
+    handle stayed open. Silently discarding that leaves no trace of the leak.
+    The original configuration error still reaches the caller unchanged — this
+    only records the secondary failure.
+    """
+    logger = getattr(resource, "logger", None)
+    warn = getattr(logger, "warning", None)
+    if not callable(warn):
+        return
+    warn(  # nosec CWE-117 -- type name and exception repr only, no user-supplied string
+        f"Failed to close {type(resource).__name__} while unwinding a failed "
+        f"DataGateway initialisation; the resource may have leaked: {exc!r}"
+    )
+
+
 class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
     """Dask-first gateway that delegates to existing backend resources.
 
@@ -91,25 +110,35 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
         allowed_filter_fields: set[str] | None = None,
         require_datacube_request_validator: bool = False,
     ) -> None:
-        build_gateway_state(
-            self,
-            config,
-            GatewayInitOptions(
-                field_map=field_map,
-                table=table,
-                sticky_filters=sticky_filters,
-                exclude=exclude,
-                df_params=df_params,
-                df_options=df_options,
-                fs=fs,
-                fs_factory=fs_factory,
-                raw_sql_policy=raw_sql_policy,
-                policies=policies,
-                strict_filter_validation=strict_filter_validation,
-                allowed_filter_fields=allowed_filter_fields,
-                require_datacube_request_validator=require_datacube_request_validator,
-            ),
-        )
+        try:
+            build_gateway_state(
+                self,
+                config,
+                GatewayInitOptions(
+                    field_map=field_map,
+                    table=table,
+                    sticky_filters=sticky_filters,
+                    exclude=exclude,
+                    df_params=df_params,
+                    df_options=df_options,
+                    fs=fs,
+                    fs_factory=fs_factory,
+                    raw_sql_policy=raw_sql_policy,
+                    policies=policies,
+                    strict_filter_validation=strict_filter_validation,
+                    allowed_filter_fields=allowed_filter_fields,
+                    require_datacube_request_validator=require_datacube_request_validator,
+                ),
+            )
+        except BaseException:
+            # build_gateway_state() constructs the backend resource before it
+            # runs the validations that can reject the configuration (e.g.
+            # require_datacube_request_validator). A failure after that point
+            # leaves a fully-constructed resource owned by a gateway whose
+            # LifecycleCore.__init__ never ran, so nothing will ever close it —
+            # it survives until GC warns that it leaked. Close it here instead.
+            self._close_partial_state()
+            raise
         # self.resource (set above) is what logger reads through to, so
         # LifecycleCore's GC finalizer captures a real logger where available
         # instead of defaulting to None.
@@ -207,6 +236,24 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
         await super().__aenter__()
         await self._strategy.setup_async_context(self)
         return self
+
+    def _close_partial_state(self) -> None:
+        """Close whatever a failed ``__init__`` had already constructed.
+
+        Deliberately defensive: this runs while an exception is propagating out
+        of a half-built object, so attributes may be missing entirely and the
+        original error must reach the caller unchanged. Cleanup failures are
+        suppressed for that reason — losing a close is bad, but masking the
+        configuration error that caused it is worse.
+        """
+        for attr in ("resource", "_async_sql_resource"):
+            candidate = getattr(self, attr, None)
+            close = getattr(candidate, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception as exc:
+                    _log_partial_close_failure(candidate, exc)
 
     def _cleanup(self) -> None:
         if self.resource is not None:

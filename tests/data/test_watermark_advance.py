@@ -134,16 +134,19 @@ def test_parquet_pipeline_incremental(tmp_path) -> None:
             watermark_source="pipeline",
             date_field="event_date",
         )
-        r1 = pipeline.materialize(reload=True)
-        assert r1.path is not None
-        loaded = int(r1.frame.compute().shape[0]) if r1.frame is not None else 0
-        assert loaded == 3
-        assert store.read(source="pipeline") is not None
+        try:
+            r1 = pipeline.materialize(reload=True)
+            assert r1.path is not None
+            loaded = int(r1.frame.compute().shape[0]) if r1.frame is not None else 0
+            assert loaded == 3
+            assert store.read(source="pipeline") is not None
 
-        # Second run — no new data
-        r2 = pipeline.materialize(reload=True)
-        loaded2 = int(r2.frame.compute().shape[0]) if r2.frame is not None else 0
-        assert loaded2 == 0
+            # Second run — no new data
+            r2 = pipeline.materialize(reload=True)
+            loaded2 = int(r2.frame.compute().shape[0]) if r2.frame is not None else 0
+            assert loaded2 == 0
+        finally:
+            pipeline.close()
 
 
 def test_parquet_pipeline_incremental_no_reload(tmp_path) -> None:
@@ -174,9 +177,12 @@ def test_parquet_pipeline_incremental_no_reload(tmp_path) -> None:
             watermark_source="pipeline2",
             date_field="event_date",
         )
-        # First run without reload — watermark still committed
-        pipeline.materialize(reload=False)
-        assert store.read(source="pipeline2") is not None
+        try:
+            # First run without reload — watermark still committed
+            pipeline.materialize(reload=False)
+            assert store.read(source="pipeline2") is not None
+        finally:
+            pipeline.close()
 
 
 def test_parquet_pipeline_incremental_custom_source_name(tmp_path) -> None:
@@ -206,5 +212,8 @@ def test_parquet_pipeline_incremental_custom_source_name(tmp_path) -> None:
             watermark_source="custom_pipeline",
             date_field="event_date",
         )
-        pipeline.materialize()
-        assert store.read(source="custom_pipeline") is not None
+        try:
+            pipeline.materialize()
+            assert store.read(source="custom_pipeline") is not None
+        finally:
+            pipeline.close()
