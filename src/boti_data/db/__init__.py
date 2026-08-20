@@ -7,6 +7,7 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
+from boti_data._optional import dataframes_required
 from boti_data.db.partitioned_types import SqlPartitionPlan, SqlPartitionSpec
 from boti_data.db.sql_manager import (
     AsyncSqlDatabaseResource,
@@ -72,7 +73,8 @@ _LAZY = {
 def __getattr__(name: str) -> Any:
     if name in _LAZY:
         module_name, attr = _LAZY[name]
-        value = getattr(importlib.import_module(module_name), attr)
+        with dataframes_required(module_name):
+            value = getattr(importlib.import_module(module_name), attr)
         globals()[name] = value
         return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
