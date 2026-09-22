@@ -10,6 +10,7 @@ import asyncio
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, Union
+from urllib.parse import urlparse
 
 import dask.dataframe as dd
 import fsspec
@@ -198,7 +199,49 @@ def _validate_storage_path(value: str) -> str:
     normalized = value.strip()
     if not normalized:
         raise ValueError("storage_path must be specified.")
+    if "\x00" in normalized:
+        # Rejected here rather than at write time so it applies to every
+        # scheme. The check used to sit on the local branch of the sink's
+        # filesystem resolution only, which left remote targets
+        # (``s3://``, ``memory://``, ...) to carry a NUL byte into the
+        # backend's own C-based path handling.
+        raise ValueError("storage_path contains a null byte and has been rejected.")
     return normalized.rstrip("/")
+
+
+def resolve_sink_filesystem(
+    storage_path: str,
+    *,
+    fs: fsspec.AbstractFileSystem | None,
+    secure_path: Callable[[str], Any],
+) -> tuple[fsspec.AbstractFileSystem, str, str]:
+    """Resolve ``(filesystem, write path, public path)`` for a text sink.
+
+    An injected *fs* wins for **every** scheme. That is the point of this
+    helper: a caller who built their filesystem through
+    ``boti.core.filesystem.create_filesystem`` — and therefore through
+    ``FilesystemConfig``'s endpoint validation — previously had it discarded
+    for remote targets in favour of an unvalidated ``fsspec.core.url_to_fs``
+    lookup, while local targets honoured it. ``url_to_fs`` is now only the
+    fallback for when no filesystem was supplied.
+
+    Local paths additionally pass through *secure_path* (boti's
+    ``SecureResource`` sandbox). Remote paths have no local sandbox to
+    resolve against, so the guarantee there is the injected filesystem plus
+    the NUL-byte rejection in :func:`_validate_storage_path`.
+    """
+    parsed = urlparse(storage_path)
+    if parsed.scheme and parsed.scheme != "file":
+        if fs is not None:
+            # _strip_protocol is how the backend itself normalises a
+            # scheme-prefixed path; _rebase_staged_path relies on the same call.
+            return fs, fs._strip_protocol(storage_path).rstrip("/"), storage_path.rstrip("/")
+        remote_fs, remote_path = fsspec.core.url_to_fs(storage_path)
+        return remote_fs, remote_path.rstrip("/"), storage_path.rstrip("/")
+
+    local_path = parsed.path if parsed.scheme == "file" else storage_path
+    resolved = str(secure_path(local_path)).rstrip("/")
+    return fs or fsspec.filesystem("file"), resolved, resolved
 
 
 def _rm_recursive(fs: fsspec.AbstractFileSystem, path: str) -> None:

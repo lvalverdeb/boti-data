@@ -12,6 +12,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from pydantic import ValidationError
 
 from boti_data import (
     AsyncFrameEnricher,
@@ -19,6 +20,7 @@ from boti_data import (
     CsvSink,
     CsvSinkConfig,
     JsonlSink,
+    JsonlSinkConfig,
     ParquetDataConfig,
     SinkPipeline,
     SinkWriteResult,
@@ -498,3 +500,74 @@ def test_write_with_staging_swap_survives_scheme_prefixed_target_path() -> None:
         "/bucket/prefixed_target_regression/part.0.parquet"
     ]
     assert fs.cat("/bucket/prefixed_target_regression/part.0.parquet") == b"new"
+
+
+# --- sink filesystem resolution: injected fs and NUL bytes across schemes ---
+
+
+def test_injected_filesystem_is_honoured_for_remote_paths(temp_project_root) -> None:
+    """A caller-supplied filesystem must win for remote schemes, not just local ones.
+
+    It used to be discarded on any non-``file`` scheme in favour of an
+    unvalidated ``fsspec.core.url_to_fs`` lookup -- so a filesystem built
+    through ``boti.core.filesystem.create_filesystem`` (and therefore through
+    ``FilesystemConfig``'s endpoint validation) silently stopped being the
+    one used the moment the target was remote.
+
+    ``skip_instance_cache`` matters: without it fsspec hands back the same
+    cached MemoryFileSystem either way and the bug is invisible.
+    """
+    import fsspec
+
+    injected = fsspec.filesystem("memory", skip_instance_cache=True)
+    sink = CsvSink(
+        CsvSinkConfig(
+            storage_path="memory://bucket/injected_remote",
+            project_root=temp_project_root,
+        ),
+        fs=injected,
+    )
+    try:
+        fs, write_path, public_path = sink._filesystem_parts()
+    finally:
+        sink.close()
+
+    assert fs is injected
+    assert write_path == "/bucket/injected_remote"
+    assert public_path == "memory://bucket/injected_remote"
+
+
+def test_remote_path_without_injected_filesystem_still_resolves(temp_project_root) -> None:
+    """The url_to_fs fallback stays available when no filesystem is supplied."""
+    sink = CsvSink(
+        CsvSinkConfig(
+            storage_path="memory://bucket/fallback_remote",
+            project_root=temp_project_root,
+        )
+    )
+    try:
+        fs, write_path, _ = sink._filesystem_parts()
+    finally:
+        sink.close()
+
+    assert fs.protocol in ("memory", ("memory",))
+    assert write_path == "/bucket/fallback_remote"
+
+
+@pytest.mark.parametrize(
+    "storage_path",
+    [
+        "memory://bucket/ou\x00t",
+        "s3://bucket/ou\x00t",
+        "/tmp/ou\x00t",
+    ],
+)
+@pytest.mark.parametrize("config_cls", [CsvSinkConfig, JsonlSinkConfig])
+def test_null_byte_rejected_for_every_scheme(config_cls, storage_path, temp_project_root) -> None:
+    """NUL rejection is scheme-independent and happens at config time.
+
+    The check previously sat on the local branch of filesystem resolution, so
+    a remote target carried the byte through to the backend untouched.
+    """
+    with pytest.raises(ValidationError):
+        config_cls(storage_path=storage_path, project_root=temp_project_root)

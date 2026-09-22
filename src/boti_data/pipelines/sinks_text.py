@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import urlparse
 
 import dask.dataframe as dd
 import fsspec
@@ -24,6 +23,7 @@ from boti_data.pipelines.sinks_common import (
     _validate_storage_path,
     _write_with_staging,
     prepare_partitioned_frame,
+    resolve_sink_filesystem,
     to_dask_frame,
 )
 
@@ -160,18 +160,11 @@ class CsvSink(_AsyncWriteViaThreadMixin, SecureResource):
         ]
 
     def _filesystem_parts(self) -> tuple[fsspec.AbstractFileSystem, str, str]:
-        storage_path = self.config.storage_path
-        parsed = urlparse(storage_path)
-        if parsed.scheme and parsed.scheme != "file":
-            fs, fs_path = fsspec.core.url_to_fs(storage_path)
-            return fs, fs_path.rstrip("/"), storage_path.rstrip("/")
-
-        local_path = parsed.path if parsed.scheme == "file" else storage_path
-        if "\x00" in local_path:
-            raise ValueError("CSV sink path contains a null byte and has been rejected.")
-        secure_path = self.get_secure_path(local_path)
-        fs = self.fs or fsspec.filesystem("file")
-        return fs, str(secure_path).rstrip("/"), str(secure_path).rstrip("/")
+        return resolve_sink_filesystem(
+            self.config.storage_path,
+            fs=self.fs,
+            secure_path=self.get_secure_path,
+        )
 
     @staticmethod
     def _restore_protocol(path: str) -> str:
@@ -318,18 +311,11 @@ class JsonlSink(_AsyncWriteViaThreadMixin, SecureResource):
         ]
 
     def _filesystem_parts(self) -> tuple[fsspec.AbstractFileSystem, str, str]:
-        storage_path = self.config.storage_path
-        parsed = urlparse(storage_path)
-        if parsed.scheme and parsed.scheme != "file":
-            fs, fs_path = fsspec.core.url_to_fs(storage_path)
-            return fs, fs_path.rstrip("/"), storage_path.rstrip("/")
-
-        local_path = parsed.path if parsed.scheme == "file" else storage_path
-        if "\x00" in local_path:
-            raise ValueError("JSONL sink path contains a null byte and has been rejected.")
-        secure_path = self.get_secure_path(local_path)
-        fs = self.fs or fsspec.filesystem("file")
-        return fs, str(secure_path).rstrip("/"), str(secure_path).rstrip("/")
+        return resolve_sink_filesystem(
+            self.config.storage_path,
+            fs=self.fs,
+            secure_path=self.get_secure_path,
+        )
 
     @staticmethod
     def _restore_protocol(path: str) -> str:
