@@ -1,6 +1,16 @@
 # Examples
 
-Run examples from the repository root with:
+Browse and run examples interactively from the repository root with:
+
+```bash
+uv run python examples/menu.py
+```
+
+Pass `--list` to print the categorised menu without prompting, or pass an
+example's name or menu number to run it directly (e.g.
+`uv run python examples/menu.py sql_settings` or `uv run python examples/menu.py 7`).
+
+Alternatively, run examples individually with:
 
 ```bash
 python examples/sql_settings.py

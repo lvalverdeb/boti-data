@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import os
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,7 +16,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from boti_data import DataHelper, HybridDataset
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _hybrid_dataset_example_shared import _build_hybrid_dataset  # noqa: E402
+from _hybrid_dataset_example_shared import WORKER_DSN_ENV_VAR, _build_hybrid_dataset  # noqa: E402
 
 
 class Base(DeclarativeBase):
@@ -89,15 +90,22 @@ def run_example() -> dict[str, object]:
 
         dataset = _build_hybrid_dataset(db_path)
 
-        with LocalCluster(
-            n_workers=1,
-            threads_per_worker=1,
-            processes=False,
-            dashboard_address=":0",
-        ) as cluster:
-            result = _run_distributed_hybrid_load(dataset, cluster)
-
-        dataset.close()
+        previous_worker_dsn = os.environ.get(WORKER_DSN_ENV_VAR)
+        os.environ[WORKER_DSN_ENV_VAR] = f"sqlite:///{db_path}"
+        try:
+            with LocalCluster(
+                n_workers=1,
+                threads_per_worker=1,
+                processes=False,
+                dashboard_address=":0",
+            ) as cluster:
+                result = _run_distributed_hybrid_load(dataset, cluster)
+        finally:
+            dataset.close()
+            if previous_worker_dsn is None:
+                os.environ.pop(WORKER_DSN_ENV_VAR, None)
+            else:
+                os.environ[WORKER_DSN_ENV_VAR] = previous_worker_dsn
 
     return result
 

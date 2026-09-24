@@ -4,6 +4,7 @@ DataHelper example for distributed session and join convenience.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -118,20 +119,31 @@ def run_example() -> dict[str, object]:
         db_path = Path(tmp_dir) / "helper_distributed.db"
         _seed_users_and_profiles(db_path)
 
+        worker_dsn_env_var = "BOTI_EXAMPLE_HELPER_DISTRIBUTED_SQLITE_DSN"
+        sqlite_dsn = f"sqlite:///{db_path}"
         config = {
             "backend": "sqlalchemy",
-            "connection_url": f"sqlite:///{db_path}",
+            "connection_url": sqlite_dsn,
+            "worker_connection_env_var": worker_dsn_env_var,
             "poolclass": "sqlalchemy.pool.NullPool",
             "query_only": False,
         }
 
-        with LocalCluster(
-            n_workers=2,
-            threads_per_worker=1,
-            processes=False,
-            dashboard_address=":0",
-        ) as cluster:
-            result = _run_distributed_session(config, cluster)
+        previous_worker_dsn = os.environ.get(worker_dsn_env_var)
+        os.environ[worker_dsn_env_var] = sqlite_dsn
+        try:
+            with LocalCluster(
+                n_workers=2,
+                threads_per_worker=1,
+                processes=False,
+                dashboard_address=":0",
+            ) as cluster:
+                result = _run_distributed_session(config, cluster)
+        finally:
+            if previous_worker_dsn is None:
+                os.environ.pop(worker_dsn_env_var, None)
+            else:
+                os.environ[worker_dsn_env_var] = previous_worker_dsn
 
     return result
 

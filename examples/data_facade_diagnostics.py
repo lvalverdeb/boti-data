@@ -145,13 +145,24 @@ def run_example() -> dict[str, object]:
             batch_size=settings["batch_size"],
         )
 
+        worker_dsn_env_var = "BOTI_EXAMPLE_DIAGNOSTIC_SQLITE_DSN"
+        sqlite_dsn = f"sqlite:///{db_path}"
         config = SqlDatabaseConfig(
-            connection_url=f"sqlite:///{db_path}",
+            connection_url=sqlite_dsn,
+            worker_connection_env_var=worker_dsn_env_var,
             poolclass="sqlalchemy.pool.NullPool",
             query_only=False,
         )
 
-        pipeline = _load_and_join(config, settings)
+        previous_worker_dsn = os.environ.get(worker_dsn_env_var)
+        os.environ[worker_dsn_env_var] = sqlite_dsn
+        try:
+            pipeline = _load_and_join(config, settings)
+        finally:
+            if previous_worker_dsn is None:
+                os.environ.pop(worker_dsn_env_var, None)
+            else:
+                os.environ[worker_dsn_env_var] = previous_worker_dsn
 
     return {
         "client": pipeline["client"],

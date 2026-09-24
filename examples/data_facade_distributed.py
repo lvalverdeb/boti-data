@@ -168,23 +168,34 @@ def main() -> None:
         db_path = Path(tmp_dir) / "users.db"
         _seed_tables(db_path)
 
+        worker_dsn_env_var = "BOTI_EXAMPLE_DISTRIBUTED_SQLITE_DSN"
+        sqlite_dsn = f"sqlite:///{db_path}"
         config = SqlDatabaseConfig(
-            connection_url=f"sqlite:///{db_path}",
+            connection_url=sqlite_dsn,
+            worker_connection_env_var=worker_dsn_env_var,
             poolclass="sqlalchemy.pool.NullPool",
             query_only=False,
         )
 
-        with LocalCluster(
-            n_workers=2,
-            threads_per_worker=1,
-            processes=False,
-            dashboard_address=":0",
-        ) as cluster:
-            print(f"Left rows: {LEFT_ROWS:,}")
-            print(f"Right rows: {RIGHT_ROWS:,}")
-            with dask_session(scheduler_address=cluster.scheduler_address):
-                _run_sync_benchmark(config)
-                asyncio.run(_run_async_benchmark(config))
+        previous_worker_dsn = os.environ.get(worker_dsn_env_var)
+        os.environ[worker_dsn_env_var] = sqlite_dsn
+        try:
+            with LocalCluster(
+                n_workers=2,
+                threads_per_worker=1,
+                processes=False,
+                dashboard_address=":0",
+            ) as cluster:
+                print(f"Left rows: {LEFT_ROWS:,}")
+                print(f"Right rows: {RIGHT_ROWS:,}")
+                with dask_session(scheduler_address=cluster.scheduler_address):
+                    _run_sync_benchmark(config)
+                    asyncio.run(_run_async_benchmark(config))
+        finally:
+            if previous_worker_dsn is None:
+                os.environ.pop(worker_dsn_env_var, None)
+            else:
+                os.environ[worker_dsn_env_var] = previous_worker_dsn
 
 
 if __name__ == "__main__":
