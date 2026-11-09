@@ -97,6 +97,10 @@ class ConfiguredLoadService:
             configured_fieldnames=configured_fieldnames,
         )
 
+    def build_configured_request(self, options: dict[str, Any]) -> ConfiguredRequest:
+        """Resolve ``options`` into the model, statement and database-side filters."""
+        return self._build_configured_request(options)
+
     def _build_configured_request(self, options: dict[str, Any]) -> ConfiguredRequest:
         from boti_data.db import SqlDatabaseResource
 

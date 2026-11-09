@@ -326,6 +326,19 @@ def _default_types_mapper(arrow_dtype: pa.DataType) -> Any:
     return None
 
 
+def _timestamp_dtype_matches(dtype: Any, arrow_type: pa.DataType) -> bool:
+    """True when ``to_pandas`` already produced the exact dtype the table promises."""
+    import pandas as pd
+
+    if arrow_type.tz:
+        return (
+            isinstance(dtype, pd.DatetimeTZDtype)
+            and dtype.unit == "ns"
+            and str(dtype.tz) == str(arrow_type.tz)
+        )
+    return str(dtype) == "datetime64[ns]"
+
+
 def _coerce_timestamp_columns(dataframe: Any, table: pa.Table) -> None:
     import pandas as pd
 
@@ -333,6 +346,8 @@ def _coerce_timestamp_columns(dataframe: Any, table: pa.Table) -> None:
         if field.name not in dataframe.columns:
             continue
         if not pa.types.is_timestamp(field.type):
+            continue
+        if _timestamp_dtype_matches(dataframe[field.name].dtype, field.type):
             continue
         if field.type.tz:
             dataframe[field.name] = pd.Series(

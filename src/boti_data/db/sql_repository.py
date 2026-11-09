@@ -15,8 +15,9 @@ without dask/pandas/polars installed at all.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from boti.core.lifecycle import LifecycleCore
 from boti.core.logger import Logger
@@ -30,6 +31,12 @@ from boti_data.db.sql_config import SqlDatabaseConfig
 from boti_data.db.sql_model_registry import get_global_registry
 from boti_data.db.sql_readonly import ReadOnlyAsyncSession, ReadOnlySession
 from boti_data.db.sql_resource import AsyncSqlDatabaseResource, SqlDatabaseResource
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+
+STREAM_BATCH_SIZE = 100_000
+
 
 __all__ = ["AsyncSqlRepository", "AsyncSqlUnitOfWork", "SqlRepository", "SqlUnitOfWork"]
 
@@ -164,6 +171,18 @@ class SqlRepository(LifecycleCore):
         else:
             session.flush()
 
+    def iter_batches(
+        self, *, columns: list[str] | None = None, batch_size: int = STREAM_BATCH_SIZE
+    ) -> Iterator[pa.RecordBatch]:
+        """Stream the table as Arrow record batches without loading it whole.
+
+        Rows are read through a server-side cursor ``batch_size`` at a time, so
+        memory stays at about one batch however large the table is.
+        """
+        from boti_data.db.arrow_fetch import select_batches
+
+        return select_batches(self.engine, self._model, columns=columns, batch_size=batch_size)
+
     def get(self, pk: Any, *, assume_unique_key: bool = False) -> dict[str, Any] | None:
         _require_unique_key_for_clickhouse(
             self.engine, assume_unique_key=assume_unique_key, operation="SqlRepository.get()"
@@ -288,6 +307,14 @@ class AsyncSqlRepository(LifecycleCore):
             await session.commit()
         else:
             await session.flush()
+
+    def iter_batches(
+        self, *, columns: list[str] | None = None, batch_size: int = STREAM_BATCH_SIZE
+    ) -> AsyncIterator[pa.RecordBatch]:
+        """Async twin of :meth:`SqlRepository.iter_batches`; iterate with ``async for``."""
+        from boti_data.db.arrow_fetch import aselect_batches
+
+        return aselect_batches(self.engine, self._model, columns=columns, batch_size=batch_size)
 
     async def get(self, pk: Any, *, assume_unique_key: bool = False) -> dict[str, Any] | None:
         _require_unique_key_for_clickhouse(

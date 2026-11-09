@@ -4,12 +4,14 @@ Dask-first gateway over existing boti_data backend resources.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import dask.dataframe as dd
 import fsspec
 import pandas as pd
 import polars as pl
+import pyarrow as pa
 from boti.core.lifecycle import LifecycleCore
 from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 from boti_dask import async_safe_head, safe_head
@@ -143,6 +145,11 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
         # LifecycleCore's GC finalizer captures a real logger where available
         # instead of defaulting to None.
         super().__init__()
+
+    @property
+    def load_executor(self) -> Any:
+        """The load orchestration layer; used by streaming and diagnostics helpers."""
+        return self._load_executor
 
     @property
     def default_return_type(self) -> ReturnType:
@@ -342,6 +349,20 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
             **options: Filter kwargs (configured mode) or load-request fields.
         """
         return core_load.load_sync(self, options)
+
+    def iter_batches(self, **options: Any) -> Iterator[pa.RecordBatch]:
+        """Stream the load described by ``options`` as Arrow record batches.
+
+        Accepts the same source options as :meth:`load` (``statement``/``model``/
+        ``sql``/``filters``/``columns``/``limit`` in structured mode, filter
+        kwargs in configured mode, ``raw_filters``/``columns`` for Parquet) plus
+        ``batch_size`` (default 100 000 rows). The whole result is never held in
+        memory: SQL reads use a server-side cursor and Parquet reads use dataset
+        batches, so peak memory stays at about one batch.
+        """
+        from . import streaming
+
+        return streaming.iter_batches(self, dict(options))
 
     async def aload(self, **options: Any) -> FrameResult:
         """Async variant of :meth:`load`.

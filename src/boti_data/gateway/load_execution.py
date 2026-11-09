@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import dask.dataframe as dd
@@ -18,7 +19,7 @@ from .frame_strategies import FrameResult
 from .load_request import GatewayLoadRequest
 from .normalization import split_control_and_filters
 from .planning import LoadPlan, LoadPlanner
-from .requests import ResolvedExecutionMode
+from .requests import ResolvedExecutionMode, SqlLoadRequest
 from .sql_guard import validate_raw_sql_statement
 
 
@@ -35,6 +36,16 @@ def configured_call_kwargs(plan: LoadPlan) -> dict[str, Any]:
 def resolve_control_and_request(options: dict[str, Any]) -> GatewayLoadRequest:
     control, _ = split_control_and_filters(options)
     return GatewayLoadRequest.model_validate(control)
+
+
+@dataclass(frozen=True)
+class StreamingSource:
+    """Resolved inputs for a streaming load (see :mod:`boti_data.gateway.streaming`)."""
+
+    backend: str
+    resource: Any
+    sql_payload: dict[str, Any] | None
+    field_map: Any
 
 
 class LoadExecutor:
@@ -184,6 +195,32 @@ class LoadExecutor:
         if controls.diagnostics:
             loader_options["diagnostics"] = True
         return loader_options
+
+    def streaming_source(self, options: dict[str, Any]) -> StreamingSource:
+        """What ``DataGateway.iter_batches`` needs: backend, resource, SQL payload, field map."""
+        payload: dict[str, Any] | None = None
+        if self._strategy.name != "parquet":
+            payload = self._streaming_sql_payload(options)
+        return StreamingSource(
+            backend=self._strategy.name,
+            resource=self._resource,
+            sql_payload=payload,
+            field_map=self._field_map,
+        )
+
+    def _streaming_sql_payload(self, options: dict[str, Any]) -> dict[str, Any]:
+        if self._configured:
+            configured = self._configured_loader.build_configured_request(options)
+            payload = {
+                "statement": configured.statement,
+                "model": configured.model,
+                "filters": configured.db_filters,
+                "limit": options.get("limit"),
+            }
+        else:
+            payload = {k: v for k, v in options.items() if k in SqlLoadRequest.model_fields}
+        payload["as_pandas"] = True
+        return payload
 
     def finalize_load(self, df: FrameResult, plan: LoadPlan) -> FrameResult:
         return self._post_processor.finalize_load_result(df, plan)

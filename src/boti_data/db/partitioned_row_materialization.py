@@ -17,16 +17,13 @@ from typing import Any
 import pandas as pd
 import pyarrow as pa
 
+from boti_data.db.arrow_fetch import ROW_FETCH_BATCH_SIZE, fetch_table, rows_to_record_batch
 from boti_data.db.arrow_schema_mapper import (
     arrow_table_to_pandas,
     build_arrow_schema_from_meta_dtypes,
     build_empty_arrow_table,
-    coerce_arrow_table,
-    rows_to_arrow_table,
 )
 from boti_data.schema import apply_schema_map
-
-ROW_FETCH_BATCH_SIZE = 100_000
 
 
 def build_meta_dataframe(meta_dtypes: dict[str, str], *, use_arrow: bool = True) -> pd.DataFrame:
@@ -86,10 +83,10 @@ def arrow_align_and_coerce_table(
     columns: list[str],
     meta_dtypes: dict[str, str],
 ) -> pa.Table:
-    """Align and coerce partition results into a typed Arrow table."""
+    """Align and coerce partition rows into a typed Arrow table in one columnar pass."""
+    arrow_schema = build_arrow_schema_from_meta_dtypes(meta_dtypes)
     if not rows:
-        return build_empty_arrow_table(build_arrow_schema_from_meta_dtypes(meta_dtypes))
-
+        return build_empty_arrow_table(arrow_schema)
     expected_columns = list(meta_dtypes)
     if set(columns) != set(expected_columns):
         missing = sorted(set(expected_columns) - set(columns))
@@ -97,26 +94,11 @@ def arrow_align_and_coerce_table(
         raise ValueError(
             f"Partition result columns do not match expected schema. Missing={missing}, extra={extra}."
         )
-
-    # Build Arrow schema from meta_dtypes and construct table from rows
-    arrow_schema = build_arrow_schema_from_meta_dtypes(meta_dtypes)
-    # Reorder columns to match expected order
-    col_index = {col: idx for idx, col in enumerate(columns)}
-    col_order = [col_index[col] for col in expected_columns]
-    # Fast path: SQL result already returned columns in schema order
-    if col_order == list(range(len(expected_columns))):
-        ordered_rows = rows
-    else:
-        ordered_rows = [tuple(row[i] for i in col_order) for row in rows]
-
-    table = rows_to_arrow_table(ordered_rows, expected_columns, arrow_schema)
-
-    # Coerce to target schema (handles type mismatches)
     try:
-        table = coerce_arrow_table(table, arrow_schema)
+        batch = rows_to_record_batch(rows, columns, arrow_schema)
     except Exception as exc:
         raise ValueError("Failed to align Arrow partition to the expected schema.") from exc
-    return table
+    return pa.Table.from_batches([batch], schema=arrow_schema)
 
 
 def arrow_align_and_coerce_partition(
@@ -129,15 +111,13 @@ def arrow_align_and_coerce_partition(
     return arrow_table_to_pandas(table)
 
 
-def _materialize_arrow_partition(
-    row_batches: Iterator[list[tuple[Any, ...]]],
-    columns: list[str],
-    meta_dtypes: dict[str, str],
-) -> pd.DataFrame:
-    tables = [arrow_align_and_coerce_table(batch, columns, meta_dtypes) for batch in row_batches]
-    if not tables:
-        return build_meta_dataframe(meta_dtypes, use_arrow=True)
-    table = tables[0] if len(tables) == 1 else pa.concat_tables(tables)
+def _materialize_arrow_partition(result: Any, meta_dtypes: dict[str, str]) -> pd.DataFrame:
+    try:
+        table = fetch_table(result, meta_dtypes)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("Failed to align Arrow partition to the expected schema.") from exc
     return arrow_table_to_pandas(table)
 
 
@@ -162,7 +142,6 @@ def materialize_partition_from_result(
     *,
     use_arrow: bool,
 ) -> pd.DataFrame:
-    row_batches = iter_result_batches(result)
     if use_arrow:
-        return _materialize_arrow_partition(row_batches, columns, meta_dtypes)
-    return _materialize_pandas_partition(row_batches, columns, meta_dtypes)
+        return _materialize_arrow_partition(result, meta_dtypes)
+    return _materialize_pandas_partition(iter_result_batches(result), columns, meta_dtypes)
