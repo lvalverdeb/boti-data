@@ -1,0 +1,43 @@
+name: Docs
+
+# Publishes the documentation site to GitHub Pages, one version per release
+# tag plus a "latest" alias, using mike. The site is also buildable locally
+# with `make docs` (strict: any broken link or unresolved reference fails).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install locked dependencies
+        run: uv sync --locked --group dev --group docs
+
+      - name: Build (strict)
+        run: uv run --no-sync mkdocs build --strict
+
+      - name: Publish version with mike
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          VERSION="${GITHUB_REF_NAME#v}"
+          uv run --no-sync mike deploy --push --update-aliases "$VERSION" latest
+          uv run --no-sync mike set-default --push latest

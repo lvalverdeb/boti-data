@@ -1,1245 +1,161 @@
 # boti-data
 
-`boti-data` is the **data access and data transformation layer** of the Boti ecosystem.
+`boti-data` is the **data access and transformation layer** of the Boti ecosystem: a secure,
+SQLAlchemy-based library that gives teams one reusable interface for structured data across
+databases, Parquet datasets, schema-controlled transformations, and partitioned or distributed
+loading.
 
-It builds on top of `boti` and gives teams a reusable interface for working with structured data across databases, parquet datasets, schema-controlled transformations, and distributed or partitioned loading workflows.
+It builds on [`boti`](https://github.com/lvalverdeb/boti) (security, filesystems, lifecycle)
+and [`boti-dask`](https://github.com/lvalverdeb/boti-dask) (the Dask runtime), and owns SQL,
+Arrow and dataframe shaping. Full documentation: **https://lvalverdeb.github.io/boti-data/**
 
-## What `boti-data` is for
-
-Many teams have the same recurring problem: business logic depends on data that lives in multiple places, arrives in slightly different shapes, and is loaded through a mix of notebooks, scripts, ad hoc SQL, and one-off helpers.
-
-`boti-data` helps turn that into a more coherent data access layer.
-
-It is designed for codebases that need to:
-
-- connect to named data sources consistently
-- reflect or model database tables without hand-writing everything up front
-- load data through a gateway instead of bespoke query snippets everywhere
-- normalise and validate schemas before downstream use
-- combine parquet and database workflows in one library
-- scale from simple local reads to partitioned or distributed loading
-
-## Problems `boti-data` solves
-
-`boti-data` is useful when data code is suffering from issues like:
-
-- repeated connection boilerplate across notebooks and services
-- slow, fragile query code copied from place to place
-- inconsistent schema assumptions between producers and consumers
-- difficult transitions from exploratory analysis to reusable pipelines
-- manual join and field-mapping logic repeated in many modules
-- no common abstraction for loading data from SQL and parquet sources
-
-By centralising those patterns, `boti-data` reduces duplicated plumbing and makes transformations easier to reason about.
-
-## Why `boti-data` can make a huge difference
-
-The biggest benefit of `boti-data` is that it creates a **shared data interface** between infrastructure and business logic.
-
-That means teams can spend less time rewriting access code and more time working on actual transformations, validation rules, and downstream decisions.
-
-It can make a major difference when:
-
-- analysts and engineers share the same source systems
-- a notebook prototype needs to become production code
-- multiple data products depend on the same tables or parquet layouts
-- schema drift is a recurring source of errors
-- large extracts need partitioning or distributed execution
-- teams want a clean boundary between connection details and transformation logic
-
-## Domain areas where it is especially valuable
-
-`boti-data` is intentionally general-purpose, but it is especially strong in domains where structured operational data must be transformed into reliable analytical or decision-ready datasets.
-
-Examples include:
-
-- **analytics engineering**: building reusable source loaders, schema maps, and standardised transformations
-- **business operations**: consolidating data from transactional systems, planning tools, and operational databases
-- **finance and controlling**: reconciling structured data with explicit schema expectations and repeatable joins
-- **risk, compliance, and audit**: validating input shape, tracing transformations, and standardising access patterns
-- **customer and product analytics**: joining behavioural and operational datasets with less custom plumbing
-- **supply chain and logistics**: unifying inventory, movement, order, and status data from several systems
-- **data platform and internal tooling**: giving teams a common gateway layer instead of ad hoc connectors
-- **ML feature preparation**: building reliable dataset assembly steps from SQL and parquet sources
-
-In those settings, the gains are not just convenience. They show up as better reuse, fewer integration bugs, and faster movement from exploration to production.
-
-## Core capabilities
-
-- SQL database resources
-- async and sync database access helpers
-- SQLAlchemy model reflection and registries
-- connection catalogues
-- parquet resources and readers
-- gateway-style loading APIs
-- filter expressions
-- schema normalisation and validation helpers
-- field mapping and join helpers
-- partitioned and distributed data workflows
+- Single-row access: `SqlRepository`, `AsyncSqlRepository`, `SqlUnitOfWork`, reflected models.
+- Dataframe gateway: `DataGateway`/`DataHelper` returning pandas, polars, Arrow or Dask, with
+  sticky filters, dry-run and preview.
+- Backends: MySQL, PostgreSQL (with pgvector nearest-neighbour search), ClickHouse and DuckDB
+  (sync only), SQLite for tests.
+- Partitioned, distributed SQL loading with a cluster-wide fetch gate and pickle-safe resources.
+- Parquet resources and pipelines, CSV/JSONL/Parquet sinks, hybrid historical-plus-live datasets.
 
 ## Installation
 
-Install directly:
-
 ```bash
-pip install boti-data
+pip install boti-data                 # single-row API only; no pandas or dask
+pip install "boti-data[dataframes]"   # DataGateway/DataHelper, pipelines: dask + pandas + polars + boti-dask
 ```
 
-Or install through the core package extra:
+Install the driver matching your connection URL's scheme, and `s3` for `s3://` Parquet storage:
 
 ```bash
-pip install "boti[data]"
+pip install "boti-data[mysql]"        # asyncmy + pymysql
+pip install "boti-data[postgres]"     # asyncpg + psycopg[binary]
+pip install "boti-data[pgvector]"     # registers pgvector's Vector type for reflection
+pip install "boti-data[clickhouse]"   # clickhouse-connect (sync only)
+pip install "boti-data[duckdb]"       # duckdb-engine (sync only)
+pip install "boti-data[s3]"           # boti[s3] -> s3fs
 ```
 
-`boti-data` doesn't bundle a database driver by default — SQLAlchemy resolves the driver package from your connection URL's scheme (`mysql+pymysql://`, `postgresql+asyncpg://`, ...), so install the one matching your database:
+Every name importable from `boti_data` loads lazily, so `import boti_data` costs a few
+milliseconds and never touches dask, pandas or polars until a dataframe-shaped name is used.
+Backend-specific notes (ClickHouse's `assume_unique_key`, DuckDB's read-only file locking) are
+in the [installation guide](https://lvalverdeb.github.io/boti-data/installation/).
 
-```bash
-pip install "boti-data[mysql]"      # asyncmy + pymysql
-pip install "boti-data[postgres]"   # asyncpg + psycopg[binary]
-pip install "boti-data[clickhouse]" # clickhouse-connect (sync only)
-pip install "boti-data[duckdb]"     # duckdb-engine (sync only)
-```
+## Examples
 
-Parquet storage on `s3://` (including MinIO through `fs_type=s3`) needs `s3fs`, which `boti` 1.1.0 and later no longer install by default:
+### Repository: single-row CRUD, no dataframe dependencies
 
-```bash
-pip install "boti-data[s3]"         # boti[s3] -> s3fs
-```
-
-ClickHouse support is sync-only: there is no maintained async SQLAlchemy driver for ClickHouse, so `AsyncSqlDatabaseResource` rejects a ClickHouse connection URL — use `SqlDatabaseResource` instead. `SqlUnitOfWork`/`AsyncSqlUnitOfWork` also reject ClickHouse outright, since ClickHouse's transaction support is experimental, single-node, and MergeTree-only, with no real cross-table ACID guarantees to back a multi-table unit of work — use `SqlRepository`/`AsyncSqlRepository` directly, one table at a time, instead.
-
-Verified against a real ClickHouse instance:
-
-- `SqlRepository`/`AsyncSqlRepository` are a get/insert/update/delete-**by-primary-key** API, but MergeTree's `ORDER BY` is a sort/index prefix, not a uniqueness constraint — many real ClickHouse tables have several rows per `ORDER BY` key. Because of that, `get()`/`update()`/`delete()` each **refuse to run against a ClickHouse table unless called with `assume_unique_key=True`** (e.g. `repo.get(pk, assume_unique_key=True)`). This flag is a per-call caller assertion, not something boti-data verifies or enforces: it does not check the data, and if the key genuinely isn't unique, `get(key, assume_unique_key=True)` will still return one arbitrary matching row and `delete(key, assume_unique_key=True)`/`update(key, ..., assume_unique_key=True)` will still affect *every* row sharing that key, not just one. Only pass it once you've confirmed the key is actually unique for that table. `insert()` has no such parameter — appending a row is never ambiguous.
-- `.update()` also fails outright on a table without `enable_block_number_column` enabled (`ALTER TABLE ... MODIFY SETTING enable_block_number_column = 1`, off by default) — ClickHouse raises `Lightweight updates are not supported` otherwise.
-- `query_only=True` is enforced server-side (ClickHouse's `readonly` setting, applied via `set_client_setting` on connect), not just by boti-data's own read-only session guard.
-
-DuckDB support is also sync-only (no maintained async driver, same as ClickHouse — `AsyncSqlDatabaseResource` rejects a DuckDB connection URL), but is otherwise a better fit than ClickHouse for `SqlRepository`'s by-primary-key model:
-
-- **`SqlUnitOfWork`/`AsyncSqlUnitOfWork` are fully supported** — DuckDB has real multi-table ACID transactions (unlike ClickHouse), verified with an actual mid-transaction constraint violation correctly rolling back writes across two tables.
-- **No `assume_unique_key`-style flag is needed** — DuckDB genuinely enforces `PRIMARY KEY`/`UNIQUE` constraints at the database level, and boti-data recovers the real key columns from DuckDB's catalog even though `duckdb-engine`'s own reflection can't see them (a known upstream limitation — it warns "doesn't yet support reflection on indices"). Without that recovery step, every DuckDB table would look keyless and `SqlRepository` would silently bind to an arbitrary first column instead of the real key — this was caught and fixed during implementation, not just assumed away.
-- **`query_only=True` is enforced via a connect-time flag**, not a runtime statement: DuckDB's read-only mode (`duckdb.connect(read_only=True)`) can only be set when a connection is opened, so boti-data injects `connect_args={"read_only": True}` itself before the engine is even constructed, rather than configuring it afterward the way Postgres/MySQL/ClickHouse do.
-- **DuckDB allows only one process to hold a database file open for read-write at a time** — opening a file in its default mode claims an exclusive lock on connect, even for a connection that only ever reads. `SqlPartitionedLoader` (which spawns one engine per worker process) requires `query_only=True` for a file-backed DuckDB DSN for exactly this reason — otherwise the first worker to connect would block every other worker, regardless of whether any of them write. Concurrent read-only access from multiple processes works fine. In-memory (`duckdb:///:memory:`) DSNs are rejected for distributed loading the same way SQLite's are, since each worker process would get its own independent, empty database.
-
-If a Postgres table has a [pgvector](https://github.com/pgvector/pgvector) `vector` column, install `boti-data[pgvector]` too — this registers pgvector's `Vector` type with SQLAlchemy's reflection so `SqlAlchemyModelBuilder`/`SqlRepository`/`DataGateway` map that column to a usable `list[float]` (with its dimension preserved) instead of an unreflectable `NullType`:
-
-```bash
-pip install "boti-data[pgvector]"
-```
-
-The base install is deliberately light: single-row transactional access (`SqlRepository`/`AsyncSqlRepository`, see below) works out of the box, with no dask/pandas/polars pulled in. The dataframe-shaped, bulk-oriented side of the package (`DataGateway`/`DataHelper`, `ParquetPipeline`, `HybridDataset`, the sink pipelines, ...) needs the `dataframes` extra:
-
-```bash
-pip install "boti-data[dataframes]"  # dask + pandas + polars + boti-dask
-```
-
-Every name importable from `boti_data` is loaded lazily on first access, so `import boti_data` alone never touches dask/pandas/polars — only accessing a dataframe-shaped name does.
-
-## Imports
-
-`boti-data` uses the top-level Python package `boti_data`. Dask runtime/session/resilience helpers live in `boti_dask` and are not re-exported here.
+`query_only` defaults to `True` and always overrides the config's own value, so writes raise
+until you opt in explicitly.
 
 ```python
-from boti_data import (
-    AsyncFrameEnricher,
-    AttachmentSpec,
-    CsvSink,
-    CsvSinkConfig,
-    ConnectionCatalog,
-    DatacubeConfig,
-    DatacubeContract,
-    DataGateway,
-    DataHelper,
-    FieldMap,    
-    HybridDataset,
-    JsonlSink,
-    JsonlSinkConfig,
-    ParquetDataConfig,
-    ParquetDataResource,
-    ParquetPipeline,
-    SinkRegistry,
-    SinkPipeline,
-    available_sinks,
-    create_sink,
-    register_sink,
-    AsyncSqlRepository,
-    SqlAlchemyModelBuilder,
-    SqlDatabaseConfig,
-    SqlDatabaseResource,
-    SqlRepository,
-)
+from boti_data import SqlDatabaseConfig, SqlRepository, SqlUnitOfWork
+
+config = SqlDatabaseConfig(connection_url="sqlite:///example.db")
+
+with SqlRepository(config, "users", query_only=False) as users:
+    users.insert({"id": 1, "name": "Ada"})
+    row = users.get(1)                       # -> dict | None
+    users.update(1, {"name": "Grace"})
+    deleted = users.delete(1)                # -> bool
+
+with SqlUnitOfWork(config, query_only=False) as uow:
+    uow.repository("audit_log").insert({"event": "enrol"})
+    uow.repository("embeddings").insert({"subject_id": 1, "vector": [0.1, 0.2]})
+# both rows commit on clean exit, or neither does on an exception
 ```
 
-For Dask runtime/session/resilience utilities, import from `boti_dask` directly:
+`AsyncSqlRepository` and `AsyncSqlUnitOfWork` mirror these as async context managers.
 
-```python
-from boti_dask import (
-    DaskSession,
-    UniqueValuesExtractor,
-    apply_recommended_dask_config,
-    async_safe_compute,
-    async_safe_gather,
-    async_safe_head,
-    async_safe_persist,
-    async_safe_wait,
-    dask_is_empty,
-    dask_is_probably_empty,
-    dask_session,
-    inspect_graph,
-    safe_compute,
-    safe_gather,
-    safe_head,
-    safe_persist,
-    safe_wait,
-)
-```
-
-Lower-level modules are also available:
-
-```python
-from boti_data.db import SqlDatabaseConfig, SqlDatabaseResource
-from boti_data.datacube import DatacubeConfig, DatacubeContract
-from boti_data.gateway import DataGateway
-from boti_data.parquet import ParquetDataConfig, ParquetDataResource
-from boti_data.schema import validate_schema
-```
-
-## Datacube backend
-
-`DataGateway` also supports a callable-backed `datacube` backend for in-process cube loaders while keeping the same return-type API (`pandas`/`dask`/`arrow`/`polars`).
-
-```python
-import pandas as pd
-
-from boti_data import DatacubeConfig, DatacubeContract, DataGateway
-
-
-def loader(request):
-    frame = pd.DataFrame({"id": [1, 2], "status": ["active", "inactive"]})
-    if request.filters.get("status__exact") == "active":
-        frame = frame[frame["status"] == "active"]
-    return frame
-
-
-contract = DatacubeContract(
-    request_transformer=lambda request: request.model_copy(update={"cube": request.cube or "orders_v2"}),
-    frame_transformer=lambda frame, request: frame.assign(cube=request.cube),
-)
-
-with DataGateway(
-    DatacubeConfig(loader=loader, default_cube="orders", contract=contract),
-    table="orders",
-    sticky_filters={"status__exact": "active"},
-) as gateway:
-    df = gateway.load(return_type="pandas")
-```
-
-You can also configure this path with `DataGateway.from_config({"backend": "datacube", ...})` or `DataHelper({"backend": "datacube", ...})`.
-
-See `docs/DATACUBE_CONTRACT.md` for hook ordering, loader precedence, and validator rejection guidance.
-See `docs/SECURITY_HARDENING.md` for SQL/raw-sql policy and distributed credential hardening defaults.
-For a runnable rejection flow, see `examples/data_facade_datacube_contract_rejection.py`.
-
-## DataHelper
-
-`DataHelper` is the primary entry point for most use cases. It is a thin facade over `DataGateway` that provides a clean, consistent interface for loading data whether you are working locally, in a notebook, or inside a distributed Dask pipeline.
-
-### Creating a DataHelper
-
-`DataHelper` accepts a `DataGateway`, a backend config object, or a plain dict:
+### DataHelper: one source, any output engine
 
 ```python
 from boti_data import DataHelper, SqlDatabaseConfig
 
-# From a config object
 config = SqlDatabaseConfig(
-    connection_url="mysql+pymysql://user:pass@host/mydb",
+    connection_url="postgresql+psycopg://user:pass@host/mydb",
     query_only=True,
 )
-helper = DataHelper(config, table="orders")
 
-# From a dict (useful for config-driven setups)
-helper = DataHelper({
-    "backend": "sqlalchemy",
-    "connection_url": "mysql+pymysql://user:pass@host/mydb",
-    "table": "orders",
-    "query_only": True,
-})
-
-# From keyword arguments
-helper = DataHelper(
-    backend="sqlalchemy",
-    connection_url="mysql+pymysql://user:pass@host/mydb",
-    table="orders",
-)
-```
-
-Using `DataHelper` as a context manager ensures connections are properly closed:
-
-```python
 with DataHelper(config, table="orders") as helper:
-    df = helper.load(status="confirmed")
+    df = helper.pandas.load(status="confirmed")                   # pandas.DataFrame
+    pl_df = helper.polars.load(status="confirmed")                # polars.DataFrame
+    ddf = helper.dask.load(status="confirmed")                    # lazy dask.dataframe.DataFrame
+    period = helper.pandas.load_period("created_at", "2024-01-01", "2024-03-31")
+    table = helper.load(status="confirmed", return_type="arrow")  # pyarrow.Table
 ```
 
-Async context managers are also supported:
+In an async service, `await helper.pandas.aload(...)`. On a cluster, open the session first:
 
 ```python
-async with DataHelper(config, table="orders") as helper:
-    df = await helper.aload(status="confirmed")
+with DataHelper.session(scheduler_address="tcp://scheduler:8786") as client:
+    with DataHelper(config, table="events") as helper:
+        result = helper.dask.load(region="EU", persist=True).groupby("customer_id").size().compute()
 ```
 
-For synchronous scripts that still need to call async load paths, use the explicit sync bridge:
-
-```python
-with DataHelper(config, table="orders") as helper:
-    df = helper.aload_sync(status="confirmed")
-```
-
-If an event loop is already running (for example notebooks or ASGI handlers), use `await helper.aload(...)` directly.
-
-## ParquetPipeline
-
-`ParquetPipeline` is the first orchestration layer built on top of `DataHelper` and `HybridDataset`.
-It materializes a lazy source load into a parquet dataset directory and can optionally reload the
-written dataset through `ParquetReader`.
+### ParquetPipeline: materialise a load into a Parquet dataset
 
 ```python
 from boti_data import DataHelper, ParquetPipeline
 
-helper = DataHelper(
-    backend="sqlalchemy",
-    connection_url=f"sqlite:///{db_path}",
-    poolclass="sqlalchemy.pool.NullPool",
-    query_only=False,
-    table="source_events",
-)
+helper = DataHelper(backend="sqlalchemy", connection_url="sqlite:///events.db", table="source_events")
 
 pipeline = ParquetPipeline(
     helper,
-    {
-        "backend": "parquet",
-        "storage_path": "/tmp/source_events_dataset",
-        "partition_on": ["partition_date"],
-    },
+    {"backend": "parquet", "storage_path": "/data/source_events", "partition_on": ["partition_date"]},
     date_field="event_date",
 )
-
 result = pipeline.materialize(
     filters={"status__exact": "active"},
     reload=True,
     reload_options={"filters": {"partition_date__exact": "2026-04-17"}},
 )
-
-assert result.reloaded is True
 frame = result.frame
 ```
 
-Use `materialize()` / `amaterialize()` for the one-step workflow, or call `to_parquet()` and
-`from_parquet()` separately when you want explicit control over the write and reload phases.
-See `examples/data_parquet_pipeline.py` for a runnable end-to-end example.
-
-## SinkPipeline and Sinks
-
-Phase 3 adds a minimal sink/plugin layer next to `ParquetPipeline`.
-
-- `SinkPipeline` orchestrates `DataHelper` / `HybridDataset` loads into any sink implementing the pipeline sink contract
-- `CsvSink` and `JsonlSink` are write-only dataset sinks (`.csv` / `.jsonl` shards)
-- `ParquetPipeline` now uses the same sink abstraction internally via `ParquetSink`
-
-Use the sink registry for named sink creation:
-
-```python
-from boti_data import SinkPipeline, available_sinks
-
-assert "jsonl" in available_sinks()
-
-pipeline = SinkPipeline(
-    helper,
-    "jsonl",
-    sink_config={
-        "storage_path": "/tmp/source_events_jsonl",
-        "partition_on": ["partition_date"],
-    },
-    date_field="event_date",
-)
-result = pipeline.write(filters={"status__exact": "active"})
-```
-
-```python
-from boti_data import CsvSink, DataHelper, SinkPipeline
-
-helper = DataHelper(
-    backend="sqlalchemy",
-    connection_url=f"sqlite:///{db_path}",
-    poolclass="sqlalchemy.pool.NullPool",
-    query_only=False,
-    table="source_events",
-)
-
-sink = CsvSink(
-    {
-        "storage_path": "/tmp/source_events_csv",
-        "partition_on": ["partition_date"],
-    }
-)
-
-pipeline = SinkPipeline(helper, sink, date_field="event_date")
-result = pipeline.write(filters={"status__exact": "active"})
-
-assert result.files
-```
-
-`CsvSink`/`JsonlSink` are intentionally write-only in this release. Use `ParquetPipeline` when you need
-write + reload orchestration. See `examples/data_csv_sink_pipeline.py` and
-`examples/data_jsonl_sink_pipeline.py` for runnable examples.
-
-## Enrichment v1
-
-`AsyncFrameEnricher` adds declarative attachment-based enrichment before downstream writes.
-Select attachments by `AttachmentSpec.key` via `cols=[...]`, and enforce bounded unique-value
-extraction with `max_unique_values`.
-
-```python
-from boti_data import AsyncFrameEnricher, AttachmentSpec
-
-enricher = AsyncFrameEnricher(
-    [
-        AttachmentSpec(
-            key="customer_segment",
-            required_cols={"customer_id"},
-            attachment_fn=customer_segment_attachment,
-            col_to_kwarg={"customer_id": "ids"},
-            left_on=["customer_id"],
-            right_on=["id"],
-            drop_cols=["id"],
-            max_unique_values=5000,
-        )
-    ]
-)
-enriched = await enricher.aenrich(base_frame, cols=["customer_segment"])
-```
-
-`SinkPipeline` accepts `enricher=...` and optional `enrich_cols=[...]` to apply enrichment right
-before sink writes.
-
-### Raw `sql=` safety policy (eager SQL only)
-
-`DataGateway` supports convenience `sql="..."` reads for eager SQL paths, with explicit safety controls:
-
-- raw SQL is validated as read-only single-statement `SELECT`/`WITH`
-- mutating SQL (`INSERT`, `UPDATE`, `DELETE`, `DROP`, etc.) is rejected
-- multi-statement SQL is rejected
-- lazy SQL still requires `statement` + `model` (raw `sql=` is eager-only)
-
-Use constructor policy `raw_sql_policy` to control availability:
-
-- `raw_sql_policy="readonly_opt_in"` (default): call site must pass `allow_raw_sql=True`
-- `raw_sql_policy="disabled"`: raw `sql=` is blocked even if `allow_raw_sql=True`
-
-```python
-from boti_data import DataGateway, SqlDatabaseConfig
-
-config = SqlDatabaseConfig(connection_url="sqlite:///example.db", query_only=True)
-
-with DataGateway(config, raw_sql_policy="readonly_opt_in") as gateway:
-    df = gateway.load(
-        sql="SELECT id, status FROM users WHERE status = :status",
-        params={"status": "active"},
-        as_pandas=True,
-        allow_raw_sql=True,
-    )
-```
-
-Prefer `statement` + `model` for production query paths whenever possible, especially when you need lazy/partitioned execution.
-
----
-
-## Output engines: pandas, polars, and dask
-
-`DataHelper` exposes three engine-bound views that pin the output type for a call chain:
-
-```python
-helper = DataHelper(config, table="orders")
-
-# Always returns pandas.DataFrame
-df = helper.pandas.load(status="confirmed")
-
-# Always returns polars.DataFrame
-df = helper.polars.load(status="confirmed")
-
-# Always returns dask.dataframe.DataFrame (lazy)
-df = helper.dask.load(status="confirmed")
-```
-
-These are the cleanest way to use a single helper across different downstream contexts. You can also pass `return_type` explicitly to `load` or `aload` when you need more control:
-
-```python
-# Explicit return_type on a single call
-df = helper.load(status="confirmed", return_type="polars")
-df = helper.load(status="confirmed", return_type="pandas")
-df = helper.load(status="confirmed", return_type="dask")
-df = helper.load(status="confirmed", return_type="arrow")  # pyarrow.Table
-```
-
-### Choosing an output engine
-
-| Engine | Type returned | Best for |
-|---|---|---|
-| `pandas` | `pandas.DataFrame` | Small-to-medium data, notebooks, local analysis |
-| `polars` | `polars.DataFrame` | CPU-intensive transforms, single-machine performance |
-| `arrow` | `pyarrow.Table` | Zero-copy interchange, serialisation, ML pipelines |
-| `dask` | `dask.dataframe.DataFrame` | Large datasets, distributed clusters, lazy evaluation |
-| `auto` | decided at runtime | Unknown result size; `boti-data` uses backend-aware size heuristics |
-
-`return_type="auto"` uses pandas for small results and switches to Dask for larger scans, with backend-specific checks:
-
-- SQL: probes up to 10,000 rows (and respects `limit` / explicit `partitioned` controls).
-- Parquet: uses pandas when the selected scan is small enough to estimate eagerly (typically up to 4 files and <= 32 MB total), otherwise Dask.
-
-Use `auto` when result size is uncertain and you want sensible defaults without hardcoding an engine.
-
----
-
-## Non-distributed usage
-
-For local analysis, notebooks, or small-scale pipelines, use `DataHelper` without any Dask cluster. The default output is a Dask DataFrame, but you can force pandas or polars.
-
-```python
-from boti_data import DataHelper, SqlDatabaseConfig
-
-config = SqlDatabaseConfig(
-    connection_url="sqlite:///local.db",
-    query_only=True,
-)
-
-with DataHelper(config, table="orders") as helper:
-    # Pandas — eager, in-memory
-    df = helper.pandas.load(status="shipped")
-
-    # Polars — eager, high-performance single-machine
-    df = helper.polars.load(status="shipped")
-
-    # Date range load with pandas output
-    df = helper.pandas.load_period("created_at", "2024-01-01", "2024-03-31")
-```
-
-For async contexts (FastAPI, async services):
-
-```python
-async def get_orders(status: str) -> pd.DataFrame:
-    async with DataHelper(config, table="orders") as helper:
-        return await helper.pandas.aload(status=status)
-```
-
----
-
-## Dask resilience helpers
-
-`boti-data` integrates with `boti_dask` for opt-in Dask runtime and resilience workflows.
-
-Available helpers:
-
-- `inspect_graph(...)`
-- `safe_compute(...)`
-- `safe_head(...)`
-- `safe_gather(...)`
-- `safe_persist(...)`
-- `safe_wait(...)`
-- `async_safe_compute(...)`
-- `async_safe_head(...)`
-- `async_safe_gather(...)`
-- `async_safe_persist(...)`
-- `async_safe_wait(...)`
-- `dask_is_probably_empty(...)`
-- `dask_is_empty(...)`
-- `UniqueValuesExtractor`
-- `apply_recommended_dask_config(...)`
-
-### Core rules
-
-- Dask DataFrame-like graphs do **not** silently fall back to local threaded compute.
-- Retry behavior is limited to recoverable communication failures.
-- The helpers are opt-in and designed to complement explicit `DaskSession` ownership.
-
-### Minimal example
-
-```python
-import asyncio
-import dask
-import dask.dataframe as dd
-import pandas as pd
-
-from boti_dask import (
-    apply_recommended_dask_config,
-    async_safe_compute,
-    dask_session,
-    inspect_graph,
-    safe_compute,
-    safe_persist,
-    safe_wait,
-)
-
-frame = dd.from_pandas(pd.DataFrame({"id": [1, 2, 3]}), npartitions=2)
-
-with apply_recommended_dask_config():
-    with dask_session(cluster_kwargs={"n_workers": 1, "threads_per_worker": 1, "processes": False}) as client:
-        metrics = inspect_graph(frame)
-        persisted = safe_persist(frame, dask_client=client)
-        safe_wait(persisted, dask_client=client)
-        total = safe_compute(frame["id"].sum(), dask_client=client)
-        preview = safe_head(frame, n=2, dask_client=client)
-
-        async def run_async() -> int:
-            delayed_value = dask.delayed(lambda: 6 * 7)()
-            return await async_safe_compute(delayed_value, dask_client=client)
-
-        async_total = asyncio.run(run_async())
-```
-
-### Dry-run and preview on gateway loads
-
-Use `dry_run=True` to build and inspect a lazy Dask load graph without materializing it, and `limit=` to safely sample rows inside the session:
-
-```python
-with DataHelper.session(scheduler_address="tcp://scheduler:8786", verify_connectivity=True) as client:
-    with DataHelper(config, table="transactions") as helper:
-        ddf = helper.dask.load(year=2024, dry_run=True, diagnostics=True)
-        sample = helper.dask.load(year=2024, limit=5).compute()
-```
-
-### Resilient joins
-
-For large indexed distributed joins, opt into resilient persistence:
-
-```python
-joined = helper.left_join(
-    left,
-    right,
-    join_key="id",
-    join_schema_map={"id": "Int64"},
-    persist=True,
-    resilient=True,
-    diagnostics=True,
-)
-```
-
-### Parquet sources
-
-```python
-from boti_data import DataHelper, ParquetDataConfig
-
-config = ParquetDataConfig(
-    parquet_storage_path="/data/orders/",
-    parquet_start_date=date(2024, 1, 1),
-    parquet_end_date=date(2024, 3, 31),
-)
-
-with DataHelper(config) as helper:
-    df = helper.pandas.load()
-    df = helper.polars.load()
-```
-
----
-
-## Distributed usage with Dask
-
-For large datasets or cluster workloads, `DataHelper` integrates natively with Dask. The `DataHelper.session()` factory creates a `DaskSession` that manages cluster and client lifecycle.
-
-### Local cluster (development)
-
-```python
-from dask.distributed import LocalCluster
-from boti_data import DataHelper, SqlDatabaseConfig
-
-config = SqlDatabaseConfig(
-    connection_url="mysql+pymysql://user:pass@host/mydb",
-    query_only=True,
-    worker_connection_env_var="DB_URL",  # see pickleable section below
-)
-
-with DataHelper.session(cluster_factory=LocalCluster) as client:
-    with DataHelper(config, table="orders") as helper:
-        # Returns dask.dataframe.DataFrame — lazy, partitioned
-        ddf = helper.dask.load(status="confirmed")
-
-        # Trigger computation
-        df = ddf.compute()
-```
-
-### Remote cluster
-
-```python
-with DataHelper.session(scheduler_address="tcp://scheduler:8786") as client:
-    with DataHelper(config, table="events") as helper:
-        ddf = helper.dask.load(region="EU", return_type="dask")
-        result = ddf.groupby("customer_id").agg({"amount": "sum"}).compute()
-```
-
-### Persisting on the cluster
-
-Use `persist=True` to push the loaded data into distributed memory before further computation. This avoids re-reading from the database on every downstream operation:
-
-```python
-with DataHelper.session(scheduler_address="tcp://scheduler:8786") as client:
-    with DataHelper(config, table="transactions") as helper:
-        # Data is loaded and held in cluster memory
-        ddf = helper.load(year=2024, persist=True)
-
-        # Subsequent operations reuse the persisted graph
-        monthly = ddf.groupby("month").agg({"amount": "sum"}).compute()
-        by_region = ddf.groupby("region").size().compute()
-
-        # Preview persisted data before the managed session closes.
-        sample = helper.load(year=2024, limit=5, persist=True).compute()
-```
-
-### Shared sessions for repeated notebook cells
-
-When repeated cells need to reuse the same scheduler connection, opt into shared-session reuse explicitly:
-
-```python
-with DataHelper.session(
-    scheduler_address="tcp://scheduler:8786",
-    shared=True,
-    shared_key="notebook-main-cluster",
-) as client:
-    with DataHelper(config, table="transactions") as helper:
-        ddf = helper.dask.load(year=2024)
-```
-
-### HybridDataset distributed pattern
-
-Use this pattern when you split reads across historical and live sources but want one
-distributed execution context. `HybridDataset` composes two helpers, and
-`DataHelper.session(...)` keeps scheduler ownership explicit.
-
-```python
-import asyncio
-
-from dask.distributed import LocalCluster
-from boti_data import DataHelper, HybridDataset
-
-historical = DataHelper(backend="sqlalchemy", connection_url="sqlite:///events.db", table="events_hist")
-live = DataHelper(backend="sqlalchemy", connection_url="sqlite:///events.db", table="events_live")
-dataset = HybridDataset(historical, live, date_field="event_date", split_date="2026-04-18")
-
-with LocalCluster(n_workers=1, threads_per_worker=1, processes=False, dashboard_address=":0") as cluster:
-    with DataHelper.session(
-        scheduler_address=cluster.scheduler_address,
-        verify_connectivity=True,
-        shared=True,
-        shared_key="hybrid-dataset-distributed",
-    ):
-        ddf = dataset.dask.load(start="2026-04-14", end="2026-04-19", diagnostics=True)
-        frame = ddf.compute()
-        eager_frame = asyncio.run(
-            dataset.aload(start="2026-04-16", end="2026-04-18", return_type="pandas")
-        )
-```
-
-For a complete runnable script, see `examples/data_hybrid_dataset_distributed.py`.
-
-### Semi-join across distributed frames
-
-```python
-import pandas as pd
-
-active_customers = pd.Series([1001, 1002, 1003, 1099])
-
-with DataHelper(config, table="orders") as helper:
-    # Loads only rows where customer_id is in active_customers
-    ddf = helper.semi_join(active_customers, on="customer_id")
-    df = ddf.compute()
-```
-
-`semi_join` also accepts Dask Series, enabling fully lazy distributed joins:
-
-```python
-with DataHelper(config, table="customers") as customer_helper:
-    with DataHelper(config, table="orders") as order_helper:
-        active_ids = customer_helper.dask.load(active=True)["customer_id"]
-
-        # Lazy — no computation happens yet
-        orders_ddf = order_helper.semi_join(active_ids, on="customer_id")
-
-        # Single compute triggers both loads
-        result = orders_ddf.compute()
-```
-
----
-
-## The `pickleable` setting in distributed systems
-
-When Dask distributes tasks across workers, it serialises (pickles) the task function and all its arguments to send them over the network. This creates a problem: **database connection objects, engine pools, and credentials cannot be pickled**.
-
-`boti-data` addresses this through the `worker_connection_env_var` setting on `SqlDatabaseConfig`.
-
-### How it works
-
-Instead of serialising the full `SqlDatabaseConfig` (which contains the connection URL and credentials), `boti-data` extracts a minimal `WorkerSqlConfig` for each worker task. If `worker_connection_env_var` is set, workers read the DSN from that environment variable instead of having it embedded in the task payload.
-
-```
-Scheduler                              Worker
-─────────                              ──────
-SqlDatabaseConfig (full config)        WorkerSqlConfig (minimal, safe to pickle)
-  connection_url = "mysql://..."   →     connection_env_var = "DB_URL"
-  pool_size = 10                         query_only = True
-  ...                                    pool_recycle = 1800
-                                         (reads DB_URL from os.environ on worker)
-```
-
-### Setting it up
-
-**Step 1.** Set the environment variable on all workers. For a local cluster:
-
-```bash
-export DB_URL="mysql+pymysql://user:pass@host/mydb"
-```
-
-For a Kubernetes-deployed cluster, inject it as a secret.
-
-**Step 2.** Reference the variable in your config:
-
-```python
-from boti_data import DataHelper, SqlDatabaseConfig
-
-config = SqlDatabaseConfig(
-    connection_url="mysql+pymysql://user:pass@host/mydb",
-    query_only=True,
-    worker_connection_env_var="DB_URL",  # workers use this instead of pickling credentials
-)
-```
-
-**Step 3.** Use `DataHelper` normally. Credential serialisation is handled transparently:
-
-```python
-with DataHelper.session(scheduler_address="tcp://scheduler:8786") as client:
-    with DataHelper(config, table="orders") as helper:
-        ddf = helper.dask.load(status="confirmed")
-        result = ddf.compute()
-```
-
-### Why this matters
-
-Without `worker_connection_env_var`, using a real database DSN with distributed Dask will either:
-
-- fail with a pickle error (connection pool objects are not serialisable)
-- embed plaintext credentials in task payloads that flow through scheduler memory and worker logs
-
-Setting `worker_connection_env_var` prevents both problems and is the recommended approach for any distributed SQL workflow.
-
-### Parquet in distributed settings
-
-Parquet resources use `fsspec` for filesystem access. The filesystem object is not pickled directly; instead, `ParquetDataResource` uses a `fs_factory` callable or a `filesystem_profile` name that workers can use to reconstruct the filesystem independently. When `filesystem_profile` is used, filesystem creation is routed through `ConnectionCatalog` adapters so retry/cache behavior stays consistent.
-
-```python
-from boti_data import DataHelper, ParquetDataConfig, ConnectionCatalog
-
-catalog = ConnectionCatalog()
-catalog.load_filesystem("s3_prod", prefix="S3_")  # reads S3_ENDPOINT, S3_KEY, etc.
-
-config = ParquetDataConfig(
-    filesystem_profile="s3_prod",  # workers resolve filesystem from catalog
-    parquet_storage_path="s3://my-bucket/orders/",
-)
-
-with DataHelper.session(cluster_factory=LocalCluster) as client:
-    with DataHelper(config) as helper:
-        ddf = helper.dask.load()
-        result = ddf.compute()
-```
-
----
-
-## Sizing connections and fetch concurrency
-
-More database connections do not mean more throughput. Past a modest number they
-mean *less*, because connections compete for the same cores, disks and locks. Both
-the [PostgreSQL wiki](https://wiki.postgresql.org/wiki/Number_Of_Database_Connections)
-and the [HikariCP pool-sizing guide](https://github.com/brettwooldridge/HikariCP/wiki/About-Pool-Sizing)
-give the same starting formula:
-
-```
-connections = (core_count * 2) + effective_spindle_count
-```
-
-Count physical cores, not hyperthreads, and take `effective_spindle_count` as zero
-when the working set is cached in RAM. For a 4-core server with one disk that is
-about 10 connections in total — not per client, not per worker, **in total**.
-
-The characteristic failure of getting this wrong is counter-intuitive: the database
-sits nearly idle, at a few percent CPU, while clients time out. The connections are
-all queued rather than working. Raising the pool size makes it worse.
-
-`boti-data` exposes three separate numbers that multiply into that total. Size the
-product, not the individual knobs.
-
-### 1. Client-side pool: `pool_size + max_overflow`
-
-`SqlDatabaseConfig` defaults to `pool_size=5` and `max_overflow=10`, so a single
-engine bursts to **15** connections, not 5. `max_overflow` is three times
-`pool_size`, so the steady-state number is a third of the real ceiling.
-
-```python
-config = SqlDatabaseConfig(
-    connection_url="postgresql+psycopg://...",
-    pool_size=5,       # steady state
-    max_overflow=10,   # burst headroom — the ceiling is 5 + 10 = 15
-)
-```
-
-Engines are cached per distinct configuration, so two differently-configured helpers
-against the same database hold two pools: 30 connections, not 15.
-
-### 2. Distributed fetch concurrency: `n_workers × max_concurrent_fetches`
-
-`max_concurrent_fetches` (default `4`, capped at `16`) bounds concurrent partition
-fetches **across the whole cluster**: the gate is a `boti_dask.cluster_semaphore`
-held on the Dask scheduler and shared by every worker, keyed on the database alone.
-Twenty workers at `max_concurrent_fetches=4` open at most 4 fetch connections to that
-database, so the number means what it reads.
-
-Two things keep it honest:
-
-- **One limit per database.** Two loads against the same database with different
-  limits share one gate; the first limit seen wins and a warning is logged. Limits
-  never add up.
-- **No cluster, no scheduler gate.** In a local threads run, or with `boti-dask`
-  older than 1.1.0, the same gate bounds the **process** instead, so a run with
-  several processes against one database multiplies: `n_processes × max_concurrent_fetches`.
-
-With the 10-connection budget above, leave headroom for the client-side pool and set
-`max_concurrent_fetches` to the remainder, whatever the worker count.
-
-### 3. Worker connections are unpooled by design
-
-Worker engines always use `NullPool`. Connection pools cannot be pickled and would
-bind to the wrong event loop, so each partition fetch opens a fresh connection and
-closes it. That is correct for distribution, but it means every fetch pays a full TCP
-handshake, TLS negotiation and authentication — on a remote database, tens of
-milliseconds each, before a single row is read. A 200-partition load pays it 200 times.
-
-The fix is not to pool inside the workers, but to put a pooler in front of the
-database, so that warm server-side connections are reused while workers keep opening
-cheap local ones. **The pooling mode matters**, because it interacts with `query_only`:
-
-| Pooler mode | Connection reuse | `query_only=True` |
-|---|---|---|
-| Session (e.g. PgBouncer `session`) | Yes | **Supported** — the read-only `SET` lasts for the session |
-| Transaction (e.g. PgBouncer `transaction`) | Higher | **Not supported** — see below |
-
-`query_only=True` issues its read-only statement on the SQLAlchemy `connect` event, so
-it applies to a physical connection. Under transaction-mode pooling a physical
-connection can be handed to a different logical client between transactions, and that
-session state is not guaranteed to survive the handoff. The failure is silent: a load
-that believes it is read-only quietly stops being so.
-
-With transaction-mode pooling, set `query_only=False` and enforce read-only access
-with database grants instead, where it cannot be lost in a handoff.
-
-### Measuring it
-
-Set `diagnostics=True` on a partitioned load and the completion line reports how long
-fetches spent queueing for a slot:
-
-```
-Partitioned SQL load completed strategy=offset partitions=4 rows=40 result_partitions=1
-  elapsed=0.04s prepare_stmt=0.000s load_plan=0.031s
-  gate_waits=0/4 gate_wait_total=0.000s gate_wait_max_seen=0.000s
-```
-
-`gate_waits=0/4` means none of the four fetches had to wait. A rising
-`gate_wait_total` alongside a database that is not CPU-bound is the signature of the
-failure above — concurrency queued rather than working. The other stage timers cannot
-show this, because they are all measured *inside* the gate.
-
-The fields are omitted entirely when no fetch ran in the logging process. A lazy load
-returns a Dask graph before anything is fetched, and in a distributed run the fetches
-happen in other processes; reporting `0.000s` there would say "no contention" when the
-truth is "not measured here".
-
-For lazy loads, read the counters after `.compute()` instead:
-
-```python
-from boti_data import fetch_gate_stats, reset_fetch_gate_stats
-
-reset_fetch_gate_stats()
-result = helper.dask.load().compute()
-
-for gate_key, stats in fetch_gate_stats().items():
-    print(gate_key, stats.waited_fetches, "/", stats.fetches, stats.total_wait_seconds)
-```
-
-`fetch_gate_stats()` reports the **calling process only**. On a distributed cluster each
-worker accumulates its own counters, so run it on the workers (e.g. via
-`client.run(fetch_gate_stats)`) to see the whole picture.
-
----
-
-## Choosing between distributed and non-distributed
-
-Use the following as a guide:
-
-| Scenario | Recommended approach |
-|---|---|
-| Exploratory analysis in a notebook | `helper.pandas.load()` — simple, no overhead |
-| Single-machine pipeline, large-ish data | `helper.polars.load()` — fast, low memory |
-| Result size unknown at design time | `helper.load(return_type="auto")` — adapts |
-| Data does not fit in one machine's RAM | `helper.dask.load()` + local or remote cluster |
-| Heavy transforms over millions of rows | `helper.dask.load()` + Dask cluster |
-| Async service (FastAPI, ASGI) | `await helper.pandas.aload()` or `await helper.dask.aload()` |
-| Sync script that needs async load path | `helper.aload_sync(...)` |
-| Joining two large tables on a cluster | `helper.semi_join(series, on="key")` |
-| Scheduled overnight batch job | Dask cluster + `persist=True` for multi-pass jobs |
-
-**Rule of thumb:** start with `pandas`, switch to `polars` when single-machine performance matters, and move to `dask` when data size exceeds available RAM or when the task benefits from parallelism across workers.
-
----
-
-## Examples
-
-### Repository (lightest-weight, no dataframe dependencies)
-
-For single-row transactional access — get/insert/update/delete by primary key — without pulling in dask/pandas/polars at all. Rows come back as plain `dict[str, Any]`, never a DataFrame.
-
-`query_only` defaults to `True` on `SqlRepository`/`AsyncSqlRepository` themselves and always wins over whatever the passed-in `config.query_only` says — insert/update/delete raise until you opt in explicitly with `query_only=False`. This is deliberate: a `config` object might be shared with or reused from a context where writes are already enabled, and a repository shouldn't silently inherit write access nobody asked it for.
-
-```python
-from boti_data import SqlDatabaseConfig, SqlRepository
-
-config = SqlDatabaseConfig(connection_url="sqlite:///example.db")
-
-with SqlRepository(config, "users", query_only=False) as users:
-    row = users.insert({"id": 1, "name": "Ada"})
-    row = users.get(1)              # -> dict | None
-    row = users.update(1, {"name": "Grace"})
-    deleted = users.delete(1)       # -> bool
-```
-
-Omit `query_only=False` (or read-only access is all you need) and writes raise instead of silently succeeding:
-
-```python
-with SqlRepository(config, "users") as users:
-    users.get(1)                    # fine
-    users.insert({"id": 2, "name": "Bob"})  # raises SQLAlchemyError
-```
-
-An async counterpart, `AsyncSqlRepository`, mirrors the same four methods as coroutines and is used as an async context manager:
-
-```python
-from boti_data import AsyncSqlRepository
-
-async with AsyncSqlRepository(config, "users", query_only=False) as users:
-    row = await users.get(1)
-```
-
-#### Multi-table atomic transactions
-
-By default each `SqlRepository` owns its own connection and commits after every write — fine for independent single-row operations, but not when several writes (potentially across different tables) need to succeed or fail together. Pass an already-open `session` instead of `config` to bind a repository to a transaction you control; writes `flush()` instead of committing, so nothing is durable until you commit the session yourself:
-
-```python
-with SqlDatabaseResource(config) as db, db.session() as session:
-    with SqlRepository(session=session, table_name="audit_log") as audit_log:
-        with SqlRepository(session=session, table_name="embeddings") as embeddings:
-            audit_log.insert({"event": "enroll"})
-            embeddings.insert({"subject_id": 1, "vector": [...]})
-    session.commit()  # both rows commit together, or neither does on an exception
-```
-
-`SqlUnitOfWork` wraps this pattern for the common case — one config, several tables, one commit/rollback:
-
-```python
-from boti_data import SqlDatabaseConfig, SqlUnitOfWork
-
-config = SqlDatabaseConfig(connection_url="postgresql+psycopg://user:pass@host/mydb")
-
-with SqlUnitOfWork(config, query_only=False) as uow:
-    uow.repository("audit_log").insert({"event": "enroll"})
-    uow.repository("embeddings").insert({"subject_id": 1, "vector": [...]})
-# commits both on clean exit; rolls back both on any exception
-```
-
-`query_only` on a `session`-bound `SqlRepository` is inert — the session's own class (e.g. a `ReadOnlySession`) already determines writability, since this path never builds a new guarded session itself. `AsyncSqlUnitOfWork` mirrors `SqlUnitOfWork`, with an async `repository()` method (returns an already-set-up `AsyncSqlRepository`, so callers don't need to `async with` each one individually):
-
-```python
-from boti_data import AsyncSqlUnitOfWork
-
-async with AsyncSqlUnitOfWork(config, query_only=False) as uow:
-    audit_log = await uow.repository("audit_log")
-    embeddings = await uow.repository("embeddings")
-    await audit_log.insert({"event": "enroll"})
-    await embeddings.insert({"subject_id": 1, "vector": [...]})
-```
-
-### Nearest-neighbour search (pgvector)
-
-`boti_data.db.nearest_neighbors`/`vector_distance` build an `ORDER BY <distance> LIMIT k` statement against a pgvector column, with the query vector bound as a driver parameter — never string-interpolated into the SQL, regardless of how large the vector is. Requires `boti-data[pgvector]` (see [Installation](#installation)) and a table reflected via `SqlAlchemyModelBuilder`/`SqlRepository`/`DataGateway`.
-
-```python
-from boti_data import DataGateway, SqlDatabaseConfig
-from boti_data.db import SqlAlchemyModelBuilder, nearest_neighbors
-
-config = SqlDatabaseConfig(connection_url="postgresql+psycopg://user:pass@host/mydb", query_only=True)
-gateway = DataGateway(config)
-
-model = SqlAlchemyModelBuilder(gateway.resource.engine, "embeddings").build_model()
-query_vector = [...]  # e.g. a 512-float face embedding
-
-stmt = nearest_neighbors(model, model.vector, query_vector, k=10, metric="cosine")
-matches = gateway.load(statement=stmt, model=model, as_pandas=True)
-```
-
-Supported `metric` values map directly to pgvector's operators: `"cosine"` (`<=>`), `"l2"` (`<->`), `"inner_product"` (`<#>`), `"l1"` (`<+>`). Add ordinary filtering with `.where(...)` on the statement before passing it to `gateway.load(...)`.
-
-### SQL resource (low-level)
-
-```python
-from boti_data import SqlDatabaseConfig, SqlDatabaseResource
-
-config = SqlDatabaseConfig(connection_url="sqlite:///example.db", query_only=True)
-
-with SqlDatabaseResource(config) as db:
-    with db.session() as session:
-        rows = session.execute(...)
-```
-
-### Gateway (mid-level)
-
-```python
-from boti_data import DataGateway, SqlDatabaseConfig
-
-gateway = DataGateway(
-    SqlDatabaseConfig(connection_url="sqlite:///example.db", query_only=True),
-)
-```
-
-### DataHelper — local pandas
-
-```python
-from boti_data import DataHelper, SqlDatabaseConfig
-
-config = SqlDatabaseConfig(
-    connection_url="postgresql+asyncpg://user:pass@host/mydb",
-    query_only=True,
-)
-
-with DataHelper(config, table="sales") as helper:
-    df = helper.pandas.load(year=2024, region="EMEA")
-    print(df.head())
-```
-
-### DataHelper — local polars
-
-```python
-with DataHelper(config, table="sales") as helper:
-    df = helper.polars.load(year=2024)
-    summary = df.group_by("region").agg(pl.col("amount").sum())
-```
-
-### DataHelper — lazy Dask, no cluster
-
-```python
-with DataHelper(config, table="sales") as helper:
-    ddf = helper.dask.load(year=2024)
-    # Graph is not executed yet; chain transforms lazily
-    result = ddf.groupby("region")["amount"].sum().compute()
-```
-
-### DataHelper — distributed Dask cluster
-
-```python
-from dask.distributed import LocalCluster
-from boti_data import DataHelper, SqlDatabaseConfig
-
-config = SqlDatabaseConfig(
-    connection_url="mysql+pymysql://user:pass@host/mydb",
-    query_only=True,
-    worker_connection_env_var="DB_URL",
-)
-
-with DataHelper.session(cluster_factory=LocalCluster, cluster_kwargs={"n_workers": 4}) as client:
-    with DataHelper(config, table="events") as helper:
-        ddf = helper.dask.load(event_type="purchase", persist=True)
-        result = ddf.groupby("user_id").size().compute()
-```
-
-### DataHelper — async service
-
-```python
-from boti_data import DataHelper, SqlDatabaseConfig
-
-config = SqlDatabaseConfig(
-    connection_url="mysql+asyncmy://user:pass@host/mydb",
-    query_only=True,
-)
-
-async def load_orders(status: str) -> pd.DataFrame:
-    async with DataHelper(config, table="orders") as helper:
-        return await helper.pandas.aload(status=status)
-```
-
-### DataHelper — date-range load
-
-```python
-with DataHelper(config, table="transactions") as helper:
-    # Inclusive date range; dt_field is the semantic field name
-    df = helper.pandas.load_period("created_at", "2024-01-01", "2024-06-30")
-```
-
-### HybridDataset — historical + live composition
-
-```python
-historical = DataHelper(backend="parquet", storage_path="/data/historical", parquet_filename="orders")
-live = DataHelper(backend="sqlalchemy", connection_url="sqlite:///live.db", table="orders_live")
-
-dataset = HybridDataset(
-    historical,
-    live,
-    date_field="order_date",
-    split_date="2026-04-18",
-)
-
-# mixed window (auto -> dask for hybrid composition)
-ddf = dataset.load(start="2026-04-15", end="2026-04-20", return_type="auto")
-
-# explicit source override through engine-bound view
-pdf = dataset.pandas.load(start="2026-04-18", end="2026-04-20", source="live")
-```
-
-### DataHelper — parquet source
-
-```python
-from boti_data import DataHelper, ParquetDataConfig
-from datetime import date
-
-config = ParquetDataConfig(
-    parquet_storage_path="/data/warehouse/orders/",
-    parquet_start_date=date(2024, 1, 1),
-    parquet_end_date=date(2024, 6, 30),
-)
-
-with DataHelper(config) as helper:
-    df = helper.pandas.load()
-    ddf = helper.dask.load()  # lazy, partitioned read
-```
-
-### Connection catalog
-
-```python
-from boti_data import ConnectionCatalog, DataHelper
-
-catalog = ConnectionCatalog()
-catalog.load_sql("prod", prefix="PROD_DB_")  # reads PROD_DB_URL, PROD_DB_POOL_SIZE, etc.
-catalog.load_sql("reporting", prefix="REPORT_DB_")
-
-prod_config = catalog.sql_config("prod")
-report_config = catalog.sql_config("reporting")
-
-with DataHelper(prod_config, table="orders") as helper:
-    df = helper.pandas.load(status="confirmed")
-```
-
----
+`SinkPipeline` writes the same loads through `CsvSink`, `JsonlSink` or any registered sink.
+
+## Documentation
+
+| Topic | Where |
+| --- | --- |
+| Installation, drivers and extras | [installation](https://lvalverdeb.github.io/boti-data/installation/) |
+| SQL loads: repositories, gateway, engines, raw SQL policy | [guides/sql-loads](https://lvalverdeb.github.io/boti-data/guides/sql-loads/) |
+| Parquet sources, pipelines, hybrid datasets, catalogues | [guides/parquet](https://lvalverdeb.github.io/boti-data/guides/parquet/) |
+| Sinks and enrichment | [guides/sinks](https://lvalverdeb.github.io/boti-data/guides/sinks/) |
+| Distributed loading, credentials on workers, sizing connections | [guides/distributed](https://lvalverdeb.github.io/boti-data/guides/distributed/) |
+| Datacube backend | [guides/datacube](https://lvalverdeb.github.io/boti-data/guides/datacube/) |
+| Security posture | [guides/security](https://lvalverdeb.github.io/boti-data/guides/security/) |
+| API reference: `db` | [api/db](https://lvalverdeb.github.io/boti-data/api/db/) |
+| API reference: gateway and helper | [api/gateway](https://lvalverdeb.github.io/boti-data/api/gateway/) |
+| API reference: parquet | [api/parquet](https://lvalverdeb.github.io/boti-data/api/parquet/) |
+| API reference: pipelines and sinks | [api/pipelines](https://lvalverdeb.github.io/boti-data/api/pipelines/) |
+| API reference: filters | [api/filters](https://lvalverdeb.github.io/boti-data/api/filters/) |
+| API reference: watermarks, enrichment, datacube (experimental) | [api/watermark](https://lvalverdeb.github.io/boti-data/api/watermark/), [api/enrichment](https://lvalverdeb.github.io/boti-data/api/enrichment/), [api/datacube](https://lvalverdeb.github.io/boti-data/api/datacube/) |
+| Benchmarks and baseline | [benchmarks](https://lvalverdeb.github.io/boti-data/benchmarks/) |
+| Changelog and versioning policy | [CHANGELOG.md](CHANGELOG.md) |
+
+Build the site locally with `make docs` (strict) or `make docs-serve`.
+
+## Public API and versioning
+
+Every name exported from `boti_data` is listed in `boti_data.STABLE` or `boti_data.EXPERIMENTAL`.
+Stable names change shape only in a major release and are deprecated for at least one minor
+release first, with a `DeprecationWarning` naming the removal version and the replacement.
+Experimental names (enrichment, datacube, hybrid datasets, watermarks, vector search, the
+partitioned loader internals) may change in any minor release. See the
+[versioning policy](CHANGELOG.md#versioning-policy).
+
+## Security
+
+Every file-backed resource is a `boti` `SecureResource`: paths are sandboxed to the project
+root, NUL bytes are rejected on every scheme, and remote filesystems go through SSRF-guarded
+adapters. Database access is read-only by default and enforced server-side where the backend
+allows it. Raw SQL is eager-only, validated as a single read-only statement, and opt-in per
+call. Workers never receive credentials: with `worker_connection_env_var` they read the DSN
+from their own environment, and the cluster-wide fetch gate is named by a hash, not the DSN.
+Unpickling a resource needs an explicit trust opt-in in the receiving process. Thirty security
+regression tests pin these behaviours in CI. Details:
+[security guide](https://lvalverdeb.github.io/boti-data/guides/security/).
 
 ## Compatibility
 
@@ -1253,20 +169,21 @@ suite passes on; locked is what `uv.lock` resolves; latest is whatever PyPI serv
 | `boti-dask` | 1.0.0 | see `uv.lock` | weekly |
 
 With `boti-dask` below 1.1.0 the partition-fetch gate bounds each worker process rather than
-the cluster (see *Sizing connections* above).
+the cluster (see the [distributed guide](https://lvalverdeb.github.io/boti-data/guides/distributed/#sizing-connections-and-fetch-concurrency)).
 
 ## Relationship to `boti`
 
-`boti-data` depends on `boti`, and reuses:
+`boti-data` depends on `boti` for logging, resource lifecycle, secure I/O helpers and
+project/environment utilities. If you only need the runtime primitives, install `boti`. If you
+need the data access and transformation layer, install `boti-data` or `boti[data]`.
 
-- logging
-- resource lifecycle
-- secure I/O helpers
-- project/environment utilities
+## Development
 
-If you only need the runtime primitives, install `boti`.
-If you need a stronger data access and transformation layer, install `boti-data` or `boti[data]`.
+```bash
+make install-dev      # uv sync --group dev
+make verify           # the checks CI runs: lint, tests, security tests, spec counts
+make bench            # benchmark suite (see benchmarks/README.md)
+make docs             # build the documentation site, strict
+```
 
-## Development & Deployment
-
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for publishing instructions.
+Publishing instructions are in the [deployment notes](https://lvalverdeb.github.io/boti-data/proposals/DEPLOYMENT/).
