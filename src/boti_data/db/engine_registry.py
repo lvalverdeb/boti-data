@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from typing import Any
 
 from boti.core.logger import Logger
@@ -59,13 +60,29 @@ class EngineRegistry:
     # dispose() vs await dispose() calls.
     @classmethod
     # spaghetti-ignore[sync-async-duplication]: see above
-    def get_or_create(cls, key: tuple, url: str, **kwargs: Any) -> tuple[Engine, bool]:
+    def get_or_create(
+        cls,
+        key: tuple,
+        url: str,
+        *,
+        configure: Callable[[Any], None] | None = None,
+        **kwargs: Any,
+    ) -> tuple[Engine, bool]:
+        """The engine registered under ``key``, created from ``url`` if absent.
+
+        ``configure`` runs on a new engine before it is registered, so no
+        other holder can check out a connection from it unconfigured: the
+        read-only ``connect`` listener used to be attached by the caller after
+        registration, leaving that window open.
+        """
         cached = cls._check_registered(key)
         if cached is not None:
             return cached, True
 
         engine = create_engine(url, **kwargs)
         instrument_engine_pool(engine, url)
+        if configure is not None:
+            configure(engine)
         result_engine, was_cached, duplicate = cls._register_or_flag_duplicate(key, engine)
         if duplicate is not None:
             try:
@@ -75,13 +92,22 @@ class EngineRegistry:
         return result_engine, was_cached
 
     @classmethod
-    async def get_or_create_async(cls, key: tuple, url: str, **kwargs: Any) -> tuple[Any, bool]:
+    async def get_or_create_async(
+        cls,
+        key: tuple,
+        url: str,
+        *,
+        configure: Callable[[Any], None] | None = None,
+        **kwargs: Any,
+    ) -> tuple[Any, bool]:
         cached = cls._check_registered(key)
         if cached is not None:
             return cached, True
 
         engine = create_async_engine(url, **kwargs)
         instrument_engine_pool(engine, url)
+        if configure is not None:
+            configure(engine)
         result_engine, was_cached, duplicate = cls._register_or_flag_duplicate(
             key, engine, is_async=True
         )

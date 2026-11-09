@@ -169,7 +169,7 @@ As a data engineer, I can attach optional enrichment steps between the load and 
 - **SC-003**: Incremental loads after a full load complete in under 2 seconds when no new data exists (0-row delta). *(Goal — functional behavior is verified, timing assertion not yet gated in CI.)*
 - **SC-004**: Filter pushdown eliminates non-matching parquet partitions via partition pruning (`dataset.get_fragments(expression)`) and generates correct SQL WHERE clauses. *(Mechanism is implemented; "100% elimination" is a goal — exclusion coverage is verified by integration test, not quantified per-run.)*
 - **SC-005**: The test suite (443 tests) passes with 0 failures across all backends.
-- **SC-006**: All 59 security regression tests (parametrized) pass, confirming path traversal protection, credential safety, and engine isolation.
+- **SC-006**: All 69 security regression tests (parametrized) pass, confirming path traversal protection, credential safety, and engine isolation.
 
 ---
 

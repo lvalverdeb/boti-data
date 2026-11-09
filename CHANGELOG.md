@@ -122,6 +122,34 @@ Findings of the 2026-11 audit, each with a regression test under
   read-only session statement as sync worker engines; they validated support
   but never applied it.
 
+Medium findings of the same audit, tests under
+`tests/security/test_regressions_audit_mediums.py`:
+
+- `CsvSink`/`JsonlSink` with a remote `storage_path` and no injected `fs`
+  build the filesystem through boti's `FilesystemConfig`, so its endpoint
+  validation (private and reserved addresses) applies. The previous
+  `fsspec` fallback accepted any URL, including a loopback HTTP server.
+- `ParquetSink` writes to the path the resource resolved against the project
+  root. A relative `parquet_storage_path` was written (and with
+  `overwrite=True`, removed) relative to the working directory instead.
+- Engine registry keys and worker engine identities include a digest of
+  `connect_args` and `execution_options`. Two configs with one DSN but
+  different TLS settings shared an engine, the second silently getting the
+  first's connections.
+- The read-only `connect` listener is attached before a new engine is
+  registered (`EngineRegistry.get_or_create(..., configure=)`); it was
+  attached afterwards, leaving a window in which another holder could check
+  out an unconfigured pooled connection.
+- Dask `contains`, `not_contains` and `icontains` filters match literally,
+  as the SQL twin's escaped `LIKE` does; they treated the value as a regex.
+  `regex`/`iregex` patterns pass `validate_regex_pattern` on both backends.
+- The Parquet append guard unifies every existing file's schema, not the
+  first file's, so an append can no longer narrow a column a later
+  partition introduced.
+- `SqlPartitionSpec.key()` hashes the JSON form of the parameters, so a
+  checkpoint reloaded from disk (dates stored as ISO strings) maps to the
+  same partition keys and resumes instead of refetching everything.
+
 ### Changed
 
 - `boti` floor raised to 1.2.0: `ParquetDataResource` resolves a relative

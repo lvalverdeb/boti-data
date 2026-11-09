@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import threading
 from typing import Any
@@ -254,6 +255,21 @@ def _connection_url_digest(connection_url: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
 
 
+def _options_digest(config: SqlDatabaseConfig | WorkerSqlConfig) -> str:
+    """Stable digest of ``connect_args`` and ``execution_options``.
+
+    Two configs with one DSN but different TLS settings (``sslmode``,
+    ``sslrootcert``) must not share an engine, or the second silently gets
+    the first's connections.
+    """
+    payload = json.dumps(
+        {"connect_args": config.connect_args, "execution_options": config.execution_options},
+        sort_keys=True,
+        default=repr,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
 def _build_sync_engine_key(config: SqlDatabaseConfig) -> tuple:
     raw_url = config.connection_url.get_secret_value()
     normalized_url = _render_normalized_url(raw_url, hide_password=True)
@@ -263,6 +279,7 @@ def _build_sync_engine_key(config: SqlDatabaseConfig) -> tuple:
         _connection_url_digest(raw_url),
         config.poolclass,
         config.query_only,
+        _options_digest(config),
     ]
     if config.poolclass not in (NullPool, StaticPool):
         key_parts.extend([config.pool_size, config.max_overflow, config.pool_timeout])
@@ -282,6 +299,7 @@ def _build_async_engine_key(config: SqlDatabaseConfig) -> tuple:
         _connection_url_digest(raw_url),
         key_poolclass,
         config.query_only,
+        _options_digest(config),
     ]
     if actual_poolclass not in (NullPool, StaticPool):
         key_parts.extend([config.pool_size, config.max_overflow, config.pool_timeout])
@@ -313,6 +331,7 @@ def _get_worker_engine_identity(config: SqlDatabaseConfig | WorkerSqlConfig) -> 
             "worker-sync",
             connection_identity,
             f"query_only={int(worker_config.query_only)}",
+            f"options={_options_digest(worker_config)}",
         ]
     )
 

@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 import fsspec
 import pandas as pd
 import pyarrow as pa
+from boti.core.filesystem import FilesystemConfig, create_filesystem
 
 from boti_data._engines import dask_dataframe as _dd
 from boti_data._engines import is_dask_frame, is_pandas_frame, is_polars_frame
@@ -277,8 +278,9 @@ def resolve_sink_filesystem(
     ``boti.core.filesystem.create_filesystem`` — and therefore through
     ``FilesystemConfig``'s endpoint validation — previously had it discarded
     for remote targets in favour of an unvalidated ``fsspec.core.url_to_fs``
-    lookup, while local targets honoured it. ``url_to_fs`` is now only the
-    fallback for when no filesystem was supplied.
+    lookup, while local targets honoured it. Without an injected filesystem
+    the remote one is built through ``FilesystemConfig`` too, so its endpoint
+    validation applies either way.
 
     Local paths additionally pass through *secure_path* (boti's
     ``SecureResource`` sandbox). Remote paths have no local sandbox to
@@ -291,8 +293,15 @@ def resolve_sink_filesystem(
             # _strip_protocol is how the backend itself normalises a
             # scheme-prefixed path; _rebase_staged_path relies on the same call.
             return fs, fs._strip_protocol(storage_path).rstrip("/"), storage_path.rstrip("/")
-        remote_fs, remote_path = fsspec.core.url_to_fs(storage_path)
-        return remote_fs, remote_path.rstrip("/"), storage_path.rstrip("/")
+        # The same validation ParquetDataResource gets: endpoint checks against
+        # private and reserved addresses, so a storage_path cannot point the
+        # sink at a metadata service or a loopback port.
+        remote_fs = create_filesystem(FilesystemConfig(fs_type=parsed.scheme, fs_path=storage_path))
+        return (
+            remote_fs,
+            remote_fs._strip_protocol(storage_path).rstrip("/"),
+            storage_path.rstrip("/"),
+        )
 
     local_path = parsed.path if parsed.scheme == "file" else storage_path
     resolved = str(secure_path(local_path)).rstrip("/")

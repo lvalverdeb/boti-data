@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from typing import Any
 
 from boti.core.lifecycle import LifecycleCore
@@ -29,6 +30,19 @@ from boti_data.db.sql_engine import (
 from boti_data.db.sql_readonly import ReadOnlyAsyncSession, ReadOnlySession
 from boti_data.db.sqlalchemy_async import ensure_greenlet_available
 from boti_data.db.threaded_async import ThreadedAsyncEngine, threaded_async_sessionmaker
+
+
+def _read_only_configurer(
+    config: SqlDatabaseConfig, parsed: Any, *, is_async: bool = False
+) -> Callable[[Any], None] | None:
+    """The read-only session hook for a new engine, applied before it is shared."""
+    if not config.query_only:
+        return None
+
+    def configure(engine: Any) -> None:
+        _configure_query_only_engine(engine.sync_engine if is_async else engine, parsed)
+
+    return configure
 
 
 class SqlDatabaseResource(ManagedResource):
@@ -61,10 +75,9 @@ class SqlDatabaseResource(ManagedResource):
             engine, reused = EngineRegistry.get_or_create(
                 self._engine_key,
                 connection_url,
+                configure=_read_only_configurer(self.config, parsed),
                 **_build_sync_engine_kwargs(self.config),
             )
-            if self.config.query_only and not reused:
-                _configure_query_only_engine(engine, parsed)
 
             self._engine = engine
             self._engine_view = engine
@@ -173,13 +186,12 @@ class AsyncSqlDatabaseResource(LifecycleCore):
         ensure_greenlet_available()
         self._engine_key = self._get_engine_key()
 
-        engine, reused = await EngineRegistry.get_or_create_async(
+        engine, _reused = await EngineRegistry.get_or_create_async(
             self._engine_key,
             connection_url,
+            configure=_read_only_configurer(self.config, parsed, is_async=True),
             **_build_async_engine_kwargs(self.config),
         )
-        if self.config.query_only and not reused:
-            _configure_query_only_engine(engine.sync_engine, parsed)
 
         self._engine = engine
         self._engine_view = engine
@@ -193,14 +205,13 @@ class AsyncSqlDatabaseResource(LifecycleCore):
     async def _bind_executor_backed(self, connection_url: str, parsed: Any) -> None:
         """Bind a sync-only dialect (DuckDB, ClickHouse) behind the threaded facade."""
         self._engine_key = _build_sync_engine_key(self.config)
-        engine, reused = await asyncio.to_thread(
+        engine, _reused = await asyncio.to_thread(
             EngineRegistry.get_or_create,
             self._engine_key,
             connection_url,
+            configure=_read_only_configurer(self.config, parsed),
             **_build_sync_engine_kwargs(self.config),
         )
-        if self.config.query_only and not reused:
-            _configure_query_only_engine(engine, parsed)
         serialise_writers = parsed.get_backend_name() == "duckdb" and not self.config.query_only
         facade = ThreadedAsyncEngine(
             engine, write_lock=asyncio.Lock() if serialise_writers else None

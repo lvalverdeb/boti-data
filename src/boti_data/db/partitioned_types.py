@@ -109,8 +109,12 @@ class SqlPartitionSpec:
     def key(self) -> str:
         """Stable identity of this partition inside a plan (used by checkpoints)."""
         import hashlib
+        import json
 
-        return hashlib.sha256(f"{self.sql}|{self.params!r}".encode()).hexdigest()[:_KEY_HEX_LENGTH]
+        # The JSON form, not repr(): a date parameter is stored as its ISO
+        # string and must map to the same key after a checkpoint reload.
+        params = json.dumps(self.params, default=str, sort_keys=True)
+        return hashlib.sha256(f"{self.sql}|{params}".encode()).hexdigest()[:_KEY_HEX_LENGTH]
 
     def to_json(self) -> dict[str, Any]:
         kind = "tuple" if isinstance(self.params, tuple) else "dict" if self.params else "none"

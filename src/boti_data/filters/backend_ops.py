@@ -23,6 +23,7 @@ from boti_data.filters.value_parsing import (
     align_in_types,
     as_str,
     normalize_in_filter_values,
+    validate_regex_pattern,
 )
 
 if TYPE_CHECKING:
@@ -117,6 +118,7 @@ def escape_like_pattern(value: Any) -> str:
 
 def regex_sqlalchemy(column: Any, value: Any, *, case_insensitive: bool = False) -> Any:
     pattern = str(value)
+    validate_regex_pattern(pattern)
     if case_insensitive:
         return func.lower(cast(column, String)).regexp_match(pattern.lower())
     return column.regexp_match(pattern)
@@ -158,6 +160,13 @@ def _iendswith_mask(col: Any, val: Any) -> Any:
     return lowered.str.endswith(str(val).lower(), na=False)
 
 
+def _checked(value: Any) -> str:
+    """A regex pattern that passed :func:`validate_regex_pattern`."""
+    pattern = str(value)
+    validate_regex_pattern(pattern)
+    return pattern
+
+
 def operation_map_dask() -> dict[str, Any]:
     return {
         "exact": lambda col, val: col == val,
@@ -168,18 +177,20 @@ def operation_map_dask() -> dict[str, Any]:
         "in": lambda col, val: apply_isin(col, val, negated=False),
         "not_in": lambda col, val: apply_isin(col, val, negated=True),
         "range": lambda col, val: (col >= val[0]) & (col <= val[1]),
-        "contains": lambda col, val: as_str(col).str.contains(val, regex=True, na=False),
+        "contains": lambda col, val: as_str(col).str.contains(str(val), regex=False, na=False),
         "startswith": lambda col, val: as_str(col).str.startswith(val, na=False),
         "endswith": lambda col, val: as_str(col).str.endswith(val, na=False),
-        "not_contains": lambda col, val: ~as_str(col).str.contains(val, regex=True, na=False),
-        "regex": lambda col, val: as_str(col).str.contains(val, regex=True, na=False),
+        "not_contains": lambda col, val: ~as_str(col).str.contains(str(val), regex=False, na=False),
+        "regex": lambda col, val: as_str(col).str.contains(_checked(val), regex=True, na=False),
         "icontains": lambda col, val: as_str(col).str.contains(
-            val, case=False, regex=True, na=False
+            str(val), case=False, regex=False, na=False
         ),
         "istartswith": _istartswith_mask,
         "iendswith": _iendswith_mask,
         "iexact": lambda col, val: as_str(col).str.lower() == str(val).lower(),
-        "iregex": lambda col, val: as_str(col).str.contains(val, case=False, regex=True, na=False),
+        "iregex": lambda col, val: as_str(col).str.contains(
+            _checked(val), case=False, regex=True, na=False
+        ),
         "isnull": lambda col, val: col.isnull() if val else col.notnull(),
         "not_exact": lambda col, val: col != val,
     }

@@ -15,6 +15,7 @@ from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 
 from boti_data._engines import boti_dask as _boti_dask
 from boti_data.parquet import ParquetDataConfig, ParquetReader
+from boti_data.parquet.filesystem import secure_local_path, uses_nonlocal_explicit_fs
 from boti_data.pipelines.sinks_common import (
     FrameResult,
     ParquetDestination,
@@ -114,8 +115,15 @@ class ParquetSink(_AsyncWriteViaThreadMixin, PicklableLifecycleCoreMixin, Lifecy
         if persist:
             ddf = _boti_dask().safe_persist(ddf)
 
-        fs = self.reader.resource.require_fs()
-        target_path = cast(str, self.reader.parquet_storage_path)
+        resource = self.reader.resource
+        fs = resource.require_fs()
+        public_path = cast(str, self.reader.parquet_storage_path)
+        target_path = public_path
+        if not uses_nonlocal_explicit_fs(resource):
+            # Reads resolve a relative path against the project root; writes
+            # resolved it against the working directory and overwrite=True
+            # removed whatever sat there.
+            target_path = secure_local_path(resource, target_path)
         schema = None if overwrite else self._append_schema(fs, target_path, ddf, write_index)
         name_function = append_name_function(fs, target_path, overwrite)
 
@@ -140,7 +148,7 @@ class ParquetSink(_AsyncWriteViaThreadMixin, PicklableLifecycleCoreMixin, Lifecy
         files = _write_with_staging(
             fs=fs, target_path=target_path, overwrite=overwrite, write_fn=_write
         )
-        return SinkWriteResult(path=target_path, files=tuple(files))
+        return SinkWriteResult(path=public_path, files=tuple(files))
 
     def _append_schema(
         self, fs: Any, target_path: str, ddf: Any, write_index: bool

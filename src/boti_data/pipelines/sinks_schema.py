@@ -11,13 +11,19 @@ unify the files' schemas on read (see ``ParquetDataResource.load_files``).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from typing import Any
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from boti_data.parquet.schema_filters import _unify_or_stringify
+
 __all__ = ["SchemaNarrowingError", "evolved_write_schema", "frame_schema", "unify_dataset_schemas"]
+
+
+_log = logging.getLogger(__name__)
 
 
 class SchemaNarrowingError(ValueError):
@@ -34,18 +40,25 @@ class SchemaNarrowingError(ValueError):
         )
 
 
-def _first_parquet_file(fs: Any, target_path: str) -> str | None:
-    files = sorted(fs.glob(f"{target_path.rstrip('/')}/**/*.parquet"))
-    return files[0] if files else None
+def _read_schema(fs: Any, file: str) -> pa.Schema:
+    with fs.open(file, "rb") as handle:
+        return pq.read_schema(handle).remove_metadata()
 
 
 def existing_dataset_schema(fs: Any, target_path: str) -> pa.Schema | None:
-    """Schema of the dataset already at *target_path*, or ``None`` if there is none."""
-    file = _first_parquet_file(fs, target_path)
-    if file is None:
+    """Schema of the dataset already at *target_path*, or ``None`` if there is none.
+
+    Every file's footer counts: a dataset appended to over time holds files
+    of widening schemas, and a guard that read only the first file accepted
+    an append that narrowed a column added later. Files that already
+    disagree in a way Arrow cannot promote are read as string, as the
+    readers do.
+    """
+    files = sorted(fs.glob(f"{target_path.rstrip('/')}/**/*.parquet"))
+    if not files:
         return None
-    with fs.open(file, "rb") as handle:
-        return pq.read_schema(handle).remove_metadata()
+    schemas = [_read_schema(fs, file) for file in files]
+    return schemas[0] if len(schemas) == 1 else _unify_or_stringify(schemas, _log)
 
 
 def unify_dataset_schemas(schemas: Sequence[pa.Schema]) -> pa.Schema:
