@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import dask
 import dask.dataframe as dd
 import pandas as pd
 import pyarrow as pa
@@ -151,13 +152,13 @@ async def test_async_series_filter_resolution_batches_dask_compute(monkeypatch) 
     left = dd.from_pandas(pd.DataFrame({"id": [1, 2, 3]}), npartitions=2)["id"]
     right = dd.from_pandas(pd.DataFrame({"id": [10, 20, 30]}), npartitions=2)["id"]
     calls: list[int] = []
-    real_compute = gateway_series_filters.dask.compute
+    real_compute = dask.compute
 
     def tracking_compute(*args, **kwargs) -> tuple[Any, ...]:
         calls.append(len(args))
         return real_compute(*args, **kwargs)
 
-    monkeypatch.setattr(gateway_series_filters.dask, "compute", tracking_compute)
+    monkeypatch.setattr(dask, "compute", tracking_compute)
 
     resolved = await gateway_series_filters.resolve_series_filters_async(
         {"left__in": left, "right__in": right}

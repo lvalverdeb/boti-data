@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import dask
-import dask.dataframe as dd
 import pandas as pd
-import polars as pl
 
+from boti_data._engines import dask as _dask
+from boti_data._engines import dask_dataframe as _dd
+from boti_data._engines import is_dask_series, is_polars_series
 from boti_data.gateway.frame_strategies import get_frame_strategy
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
+    import polars as pl
+
+
+def _is_series(value: Any) -> bool:
+    return isinstance(value, pd.Series) or is_dask_series(value) or is_polars_series(value)
 
 
 def resolve_series_filters(options: dict[str, Any]) -> dict[str, Any]:
@@ -24,14 +32,11 @@ def resolve_series_filters(options: dict[str, Any]) -> dict[str, Any]:
     is then handled by the existing chunked-IN machinery.
     """
     strategy = get_frame_strategy("dask")
-    if not any(
-        k.endswith("__in") and isinstance(v, (pd.Series, dd.Series, pl.Series))
-        for k, v in options.items()
-    ):
+    if not any(k.endswith("__in") and _is_series(v) for k, v in options.items()):
         return options
     resolved = dict(options)
     for key, value in options.items():
-        if key.endswith("__in") and isinstance(value, (pd.Series, dd.Series, pl.Series)):
+        if key.endswith("__in") and _is_series(value):
             resolved[key] = strategy.resolve_series(value)
     return resolved
 
@@ -42,9 +47,9 @@ def _classify_series_in_keys(options: dict[str, Any]) -> tuple[list[str], list[s
     for key, value in options.items():
         if not key.endswith("__in"):
             continue
-        if isinstance(value, dd.Series):
+        if is_dask_series(value):
             dask_keys.append(key)
-        elif isinstance(value, (pd.Series, pl.Series)):
+        elif isinstance(value, pd.Series) or is_polars_series(value):
             pandas_or_polars_keys.append(key)
     return dask_keys, pandas_or_polars_keys
 
@@ -62,7 +67,7 @@ async def resolve_series_filters_async(options: dict[str, Any]) -> dict[str, Any
 
     if dask_keys:
         computed = await asyncio.to_thread(
-            dask.compute,
+            _dask().compute,
             *[options[key] for key in dask_keys],
         )
         for key, series in zip(dask_keys, computed):
@@ -79,12 +84,12 @@ def series_to_dask_key_frame(
     *,
     column_name: str,
 ) -> dd.DataFrame:
-    if isinstance(join_series, dd.Series):
+    if is_dask_series(join_series):
         return join_series.dropna().drop_duplicates().to_frame(name=column_name)
-    if isinstance(join_series, pl.Series):
+    if is_polars_series(join_series):
         join_series = pd.Series(join_series.to_list(), name=column_name)
     if isinstance(join_series, pd.Series):
-        return dd.from_pandas(
+        return _dd().from_pandas(
             join_series.dropna().drop_duplicates().to_frame(name=column_name),
             npartitions=1,
         )

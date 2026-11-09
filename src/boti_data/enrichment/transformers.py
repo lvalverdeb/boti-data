@@ -7,11 +7,15 @@ via :class:`CompositeTransformer` for multi-step pipelines.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
 from boti.core.security import has_dunder_identifier
+
+from boti_data._engines import is_dask_frame
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
 
 # ``pd.DataFrame.eval()``/``query()`` evaluate the expression via Python's own
 # eval machinery (CVE-2024-9880 documents attribute-chain escapes reaching
@@ -68,7 +72,7 @@ class TypeCaster:
         applicable = {col: dt for col, dt in self._casts.items() if col in df.columns}
         if not applicable:
             return df
-        if isinstance(df, dd.DataFrame):
+        if is_dask_frame(df):
             return df.astype(applicable)
         return df.astype(applicable, errors="ignore")
 

@@ -7,6 +7,7 @@ Split out of test_facade.py purely for god-module/long-file headroom.
 
 from __future__ import annotations
 
+import boti_dask
 import dask.dataframe as dd
 import pandas as pd
 import pyarrow as pa
@@ -14,8 +15,6 @@ import pytest
 from sqlalchemy import String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
-import boti_data.gateway.core as gateway_core
-import boti_data.gateway.post_process as gateway_post_process
 from boti_data.db import SqlDatabaseConfig
 from boti_data.gateway import DataGateway
 
@@ -116,7 +115,7 @@ def test_facade_resilient_persist_uses_safe_persist_for_lazy_sql(tmp_path, monke
         calls.append(frame.npartitions)
         return frame.persist()
 
-    monkeypatch.setattr(gateway_post_process, "safe_persist", tracking_safe_persist)
+    monkeypatch.setattr(boti_dask, "safe_persist", tracking_safe_persist)
 
     with DataGateway(config) as facade:
         frame = facade.load(
@@ -160,7 +159,7 @@ def test_facade_dry_run_returns_lazy_dask_graph_without_persist(tmp_path, monkey
     def fail_safe_persist(*_args, **_kwargs) -> None:
         raise AssertionError("safe_persist should not be called during dry run")
 
-    monkeypatch.setattr(gateway_post_process, "safe_persist", fail_safe_persist)
+    monkeypatch.setattr(boti_dask, "safe_persist", fail_safe_persist)
 
     with DataGateway(config) as facade:
         frame = facade.load(
@@ -250,7 +249,7 @@ def test_facade_preview_uses_safe_head_for_lazy_sql(tmp_path, monkeypatch) -> No
         calls.append((n, npartitions))
         return frame.head(n, npartitions=npartitions)
 
-    monkeypatch.setattr(gateway_core, "safe_head", tracking_safe_head)
+    monkeypatch.setattr(boti_dask, "safe_head", tracking_safe_head)
 
     with DataGateway(config) as facade:
         preview = facade.preview(
@@ -298,7 +297,7 @@ async def test_facade_aload_resilient_persist_uses_safe_persist_for_lazy_sql(
         calls.append(frame.npartitions)
         return frame.persist()
 
-    monkeypatch.setattr(gateway_post_process, "safe_persist", tracking_safe_persist)
+    monkeypatch.setattr(boti_dask, "safe_persist", tracking_safe_persist)
 
     async with DataGateway(config) as facade:
         frame = await facade.aload(
@@ -361,7 +360,7 @@ async def test_facade_apreview_uses_async_safe_head_for_lazy_sql(tmp_path, monke
         calls.append((n, npartitions))
         return frame.head(n, npartitions=npartitions)
 
-    monkeypatch.setattr(gateway_core, "async_safe_head", tracking_async_safe_head)
+    monkeypatch.setattr(boti_dask, "async_safe_head", tracking_async_safe_head)
 
     async with DataGateway(config) as facade:
         preview = await facade.apreview(

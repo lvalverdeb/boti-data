@@ -9,10 +9,9 @@ import datetime as dt
 import functools
 import posixpath
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-import dask.dataframe as dd
 import fsspec
 import pyarrow as pa
 import pyarrow.dataset as ds
@@ -20,10 +19,14 @@ import pyarrow.fs as pafs
 from boti.core.filesystem import create_filesystem
 from boti.core.secure_io import SecureResource
 
+from boti_data._engines import dask_dataframe as _dd
 from boti_data.filters import FilterHandler
 
 from . import discovery, filesystem, schema_filters
 from .config import ParquetDataConfig
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
 
 __all__ = ["ParquetDataConfig", "ParquetDataResource"]
 
@@ -108,7 +111,7 @@ class ParquetDataResource(SecureResource):
             read_kwargs["engine"] = "pyarrow"
             read_kwargs["aggregate_files"] = True
 
-        return dd.read_parquet(
+        return _dd().read_parquet(
             files_to_load,
             **read_kwargs,
         )

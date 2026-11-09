@@ -7,15 +7,14 @@ sinks.py so every existing import path keeps working unchanged.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import fsspec
 import pandas as pd
 from boti.core import ResourceConfig, SecureResource
-from boti_dask import safe_persist
 from pydantic import Field, field_validator
 
+from boti_data._engines import boti_dask as _boti_dask
 from boti_data.pipelines.sinks_common import (
     FrameResult,
     SinkWriteResult,
@@ -26,6 +25,9 @@ from boti_data.pipelines.sinks_common import (
     resolve_sink_filesystem,
     to_dask_frame,
 )
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
 
 
 class CsvSinkConfig(ResourceConfig):
@@ -89,7 +91,7 @@ class CsvSink(_AsyncWriteViaThreadMixin, SecureResource):
             sink_name="CsvSink",
         )
         if persist:
-            ddf = safe_persist(ddf)
+            ddf = _boti_dask().safe_persist(ddf)
 
         fs, fs_path, public_path = self._filesystem_parts()
 
@@ -234,7 +236,7 @@ class JsonlSink(_AsyncWriteViaThreadMixin, SecureResource):
             sink_name="JsonlSink",
         )
         if persist:
-            ddf = safe_persist(ddf)
+            ddf = _boti_dask().safe_persist(ddf)
 
         fs, fs_path, public_path = self._filesystem_parts()
 

@@ -1,5 +1,5 @@
 """
-Optional-dependency guard for boti-data's ``dataframes`` extra.
+Optional-dependency guards for boti-data's engine extras.
 """
 
 from __future__ import annotations
@@ -7,35 +7,50 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-# Top-level modules supplied by [project.optional-dependencies] dataframes:
-# boti-dask, dask[dataframe,distributed], pandas and polars. The extra installs
-# all four together, so any one of them missing means it was never installed.
-_DATAFRAME_MODULES = frozenset({"boti_dask", "dask", "pandas", "polars"})
+# Top-level modules each extra supplies. ``dataframes`` is the union of the
+# three and stays available for users who relied on it pulling everything.
+_ENGINE_MODULES: dict[str, frozenset[str]] = {
+    "pandas": frozenset({"pandas"}),
+    "polars": frozenset({"polars"}),
+    "dask": frozenset({"dask", "distributed", "boti_dask"}),
+}
+_DATAFRAME_MODULES = frozenset().union(*_ENGINE_MODULES.values())
+
+
+def _extra_for(root: str) -> str | None:
+    for extra, modules in _ENGINE_MODULES.items():
+        if root in modules:
+            return extra
+    return None
 
 
 @contextmanager
-def dataframes_required(consumer_name: str) -> Iterator[None]:
-    """Turn a missing ``dataframes`` extra into an error that names the extra.
+def engine_required(engine: str, consumer_name: str | None = None) -> Iterator[None]:
+    """Turn a missing engine import into an error that names the extra supplying it.
 
-    The dataframe-shaped side of the package (DataGateway/DataHelper, the sink
-    pipelines, the datacube/enrichment layers) needs dask, pandas and polars,
-    while the lightweight SqlRepository/AsyncSqlRepository API deliberately does
-    not -- so a base ``pip install boti-data`` omits them. Without this, reaching
-    for the dataframe side raises a bare "No module named 'dask'" that never
-    mentions ``boti-data[dataframes]``. Same idea as the missing-DBAPI-driver
-    translation in boti_data.db.sql_engine. Every other ModuleNotFoundError --
-    including a genuine typo inside boti_data itself -- is re-raised untouched.
+    Every other ModuleNotFoundError, including a genuine typo inside boti_data,
+    is re-raised untouched. Same idea as the missing-DBAPI-driver translation in
+    boti_data.db.sql_engine.
     """
     try:
         yield
     except ModuleNotFoundError as exc:
         root = (exc.name or "").split(".", 1)[0]
-        if root not in _DATAFRAME_MODULES:
+        extra = _extra_for(root)
+        if extra is None:
             raise
+        who = consumer_name or f"boti-data's {engine} support"
         raise ModuleNotFoundError(
-            f"{consumer_name} requires boti-data's optional 'dataframes' extra, but "
-            f"{root!r} is not installed. Install it with "
-            "\"pip install 'boti-data[dataframes]'\" (or \"uv add 'boti-data[dataframes]'\").",
+            f"{who} requires boti-data's optional '{extra}' extra, but {root!r} is not "
+            f"installed. Install it with \"pip install 'boti-data[{extra}]'\" "
+            f"(or \"uv add 'boti-data[{extra}]'\"); 'boti-data[dataframes]' installs every engine.",
             name=exc.name,
             path=exc.path,
         ) from exc
+
+
+@contextmanager
+def dataframes_required(consumer_name: str) -> Iterator[None]:
+    """Guard an import that may need any engine; the error names the specific extra."""
+    with engine_required("dataframes", consumer_name):
+        yield

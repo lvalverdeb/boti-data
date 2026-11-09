@@ -3,14 +3,21 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-import dask.dataframe as dd
 import pandas as pd
-import polars as pl
 import pyarrow as pa
 
-FrameLike = pd.DataFrame | dd.DataFrame | pl.DataFrame | pa.Table
+from boti_data._engines import is_dask_frame, is_pandas_frame, is_polars_frame
+from boti_data._engines import polars as _pl
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
+    import polars as pl
+
+    FrameLike = pd.DataFrame | dd.DataFrame | pl.DataFrame | pa.Table
+else:
+    FrameLike = Any
 
 
 @dataclass
@@ -89,7 +96,7 @@ def _advance_pandas(frame: pd.DataFrame, watermark_field: str) -> Any | None:
 def _advance_polars(frame: pl.DataFrame, watermark_field: str) -> Any | None:
     if frame.is_empty():
         return None
-    result = frame.select(pl.max(watermark_field)).item()
+    result = frame.select(_pl().max(watermark_field)).item()
     if _is_null(result):
         return None
     return result
@@ -109,11 +116,17 @@ def _advance_pyarrow(frame: pa.Table, watermark_field: str) -> Any | None:
     return max(non_null)
 
 
-_ADVANCE_WATERMARK_DISPATCH: list[tuple[type, Callable[[Any, str], Any | None]]] = [
-    (dd.DataFrame, _advance_dask),
-    (pd.DataFrame, _advance_pandas),
-    (pl.DataFrame, _advance_polars),
-    (pa.Table, _advance_pyarrow),
+def _is_arrow_table(obj: Any) -> bool:
+    return isinstance(obj, pa.Table)
+
+
+_ADVANCE_WATERMARK_DISPATCH: list[
+    tuple[Callable[[Any], bool], Callable[[Any, str], Any | None]]
+] = [
+    (is_dask_frame, _advance_dask),
+    (is_pandas_frame, _advance_pandas),
+    (is_polars_frame, _advance_polars),
+    (_is_arrow_table, _advance_pyarrow),
 ]
 
 
@@ -130,7 +143,7 @@ def advance_watermark(
     Supports pandas, Dask, Polars, and PyArrow frames.
     """
     for frame_type, advance in _ADVANCE_WATERMARK_DISPATCH:
-        if isinstance(frame, frame_type):
+        if frame_type(frame):
             return advance(frame, watermark_field)
     return None
 

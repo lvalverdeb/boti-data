@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-import dask.dataframe as dd
 import pandas as pd
 import pyarrow as pa
 
@@ -21,6 +20,9 @@ from .normalization import split_control_and_filters
 from .planning import LoadPlan, LoadPlanner
 from .requests import ResolvedExecutionMode, SqlLoadRequest
 from .sql_guard import validate_raw_sql_statement
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
 
 
 def configured_call_kwargs(plan: LoadPlan) -> dict[str, Any]:

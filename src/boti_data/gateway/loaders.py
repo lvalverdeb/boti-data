@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
 import pyarrow as pa
 from sqlalchemy import select, text
@@ -27,6 +26,9 @@ from .requests import (
     ParquetLoadRequest,
     SqlLoadRequest,
 )
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
 
 
 def _prepare_sql_statement(

@@ -67,15 +67,27 @@ clickhouse = [
 duckdb = [
     "duckdb-engine>=0.17.0,<0.18.0",
 ]
-# The dataframe-shaped, bulk-oriented side of the package (DataGateway/
-# DataHelper, ParquetPipeline, HybridDataset, the sink pipelines, etc.) — not
-# needed by the lightweight SqlRepository/AsyncSqlRepository single-row API,
-# which only needs the base "boti-data" install.
-dataframes = [
+# The dataframe-shaped side of the package (DataGateway/DataHelper, the sink
+# pipelines, HybridDataset, ...) needs at least one engine; the lightweight
+# SqlRepository/AsyncSqlRepository single-row API needs none. Engines are
+# separate extras so a pandas-only user never installs Dask. polars loads are
+# shaped through pandas in places, so that extra carries pandas too; dask
+# carries boti-dask and the distributed scheduler. dataframes is the union and
+# stays for users who relied on it pulling everything.
+pandas = [
+    "pandas>=3.0.2,<4.0.0",
+]
+polars = [
+    "pandas>=3.0.2,<4.0.0",
+    "polars>=1.29.0,<2.0.0",
+]
+dask = [
     "boti-dask>=1.0.0,<2.0.0",
     "dask[dataframe,distributed]>=2026.3.0,<2027.0.0",
     "pandas>=3.0.2,<4.0.0",
-    "polars>=1.29.0,<2.0.0",
+]
+dataframes = [
+    "boti-data[dask,pandas,polars]",
 ]
 # boti >= 1.1.0 no longer installs s3fs by default; remote Parquet storage on
 # s3:// (and MinIO via fs_type=s3) needs it. Delegate the floor to boti's own

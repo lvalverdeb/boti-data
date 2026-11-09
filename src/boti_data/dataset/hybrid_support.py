@@ -12,15 +12,20 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
-import dask.dataframe as dd
 import pandas as pd
-import polars as pl
 import pyarrow as pa
 
+from boti_data._engines import dask_dataframe as _dd
+from boti_data._engines import is_dask_frame, is_pandas_frame, is_polars_frame
+from boti_data._engines import polars as _pl
 from boti_data.datacube import DatacubeConfig
 from boti_data.db import SqlDatabaseConfig
 from boti_data.gateway.frame_strategies import _to_arrow
 from boti_data.parquet.resource import ParquetDataConfig
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
+    import polars as pl
 
 if TYPE_CHECKING:
     from boti_data.dataset.hybrid import HybridDataset
@@ -28,34 +33,41 @@ if TYPE_CHECKING:
 HybridSource = Literal["auto", "historical", "live"]
 ResolvedReturnType = Literal["pandas", "arrow", "dask", "polars"]
 BackendConfig = SqlDatabaseConfig | ParquetDataConfig | DatacubeConfig
-FrameResult = pd.DataFrame | dd.DataFrame | pa.Table | pl.DataFrame
+if TYPE_CHECKING:
+    FrameResult = pd.DataFrame | dd.DataFrame | pa.Table | pl.DataFrame
+else:
+    FrameResult = Any
 
 
-_TO_PANDAS_CONVERTERS: list[tuple[type, Callable[[FrameResult], pd.DataFrame]]] = [
-    (pd.DataFrame, lambda frame: frame),
-    (dd.DataFrame, lambda frame: frame.compute()),
-    (pa.Table, lambda frame: frame.to_pandas()),
-    (pl.DataFrame, lambda frame: frame.to_pandas()),
+def _is_arrow_table(obj: Any) -> bool:
+    return isinstance(obj, pa.Table)
+
+
+_TO_PANDAS_CONVERTERS: list[tuple[Callable[[Any], bool], Callable[[FrameResult], pd.DataFrame]]] = [
+    (is_pandas_frame, lambda frame: frame),
+    (is_dask_frame, lambda frame: frame.compute()),
+    (_is_arrow_table, lambda frame: frame.to_pandas()),
+    (is_polars_frame, lambda frame: frame.to_pandas()),
 ]
 
 
 def _to_pandas(frame: FrameResult) -> pd.DataFrame:
     for frame_type, convert in _TO_PANDAS_CONVERTERS:
-        if isinstance(frame, frame_type):
+        if frame_type(frame):
             return convert(frame)
     raise TypeError(f"Unsupported frame type: {type(frame)!r}")
 
 
 def _to_polars(frame: FrameResult) -> pl.DataFrame:
-    if isinstance(frame, pl.DataFrame):
+    if is_polars_frame(frame):
         return frame
-    return pl.from_arrow(_to_arrow(frame))
+    return _pl().from_arrow(_to_arrow(frame))
 
 
 def _to_dask(frame: FrameResult) -> dd.DataFrame:
-    if isinstance(frame, dd.DataFrame):
+    if is_dask_frame(frame):
         return frame
-    return dd.from_pandas(_to_pandas(frame), npartitions=1)
+    return _dd().from_pandas(_to_pandas(frame), npartitions=1)
 
 
 @dataclass(slots=True)

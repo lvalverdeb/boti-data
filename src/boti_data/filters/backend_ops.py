@@ -8,15 +8,15 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
 from sqlalchemy import Column, String, and_, cast, false, func, or_, true
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import ColumnProperty
 from sqlalchemy.sql.sqltypes import Date, Time
 
+from boti_data._engines import dask_dataframe as _dd
 from boti_data.filters.value_parsing import (
     DATE_OPERATORS,
     DT_OPERATORS,
@@ -24,6 +24,9 @@ from boti_data.filters.value_parsing import (
     as_str,
     normalize_in_filter_values,
 )
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
 
 _log = logging.getLogger(__name__)
 
@@ -79,7 +82,9 @@ def get_dask_column(df: dd.DataFrame, field_name: str, casting: str | None) -> A
         raise AttributeError(f"Field '{field_name}' not found in dataframe.")
 
     needs_datetime = casting in (DT_OPERATORS + DATE_OPERATORS)
-    column = dd.to_datetime(df[field_name], errors="coerce") if needs_datetime else df[field_name]
+    column = (
+        _dd().to_datetime(df[field_name], errors="coerce") if needs_datetime else df[field_name]
+    )
     if needs_datetime:
         column = strip_tz(column)
     if casting == "date":

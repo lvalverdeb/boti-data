@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 __all__ = [
     "DataFrameLike",
@@ -16,13 +16,21 @@ __all__ = [
     "align_frames_for_join",
 ]
 
-import dask.dataframe as dd
 import pandas as pd
 import pyarrow as pa
 
+from boti_data._engines import dask_dataframe as _dd
+from boti_data._engines import is_dask_frame
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
+
 _logger = logging.getLogger(__name__)
 
-DataFrameLike = pd.DataFrame | dd.DataFrame
+if TYPE_CHECKING:
+    DataFrameLike = pd.DataFrame | dd.DataFrame
+else:
+    DataFrameLike = Any
 
 _CANONICAL_DTYPE_ALIASES = {
     "int64": "Int64",
@@ -145,13 +153,13 @@ def _coerce_boolean_partition(series: pd.Series) -> pd.Series:
 
 
 def _coerce_dt_utc(series: Any, is_dask: bool) -> Any:
-    fn = dd.to_datetime if is_dask else pd.to_datetime
+    fn = _dd().to_datetime if is_dask else pd.to_datetime
     return fn(series, errors="coerce", utc=True)
 
 
 def _coerce_dt(series: Any, is_dask: bool) -> Any:
     if is_dask:
-        converted = dd.to_datetime(series, errors="coerce")
+        converted = _dd().to_datetime(series, errors="coerce")
         return converted.map_partitions(
             _drop_timezone_partition,
             meta=(series.name, "datetime64[ns]"),
@@ -160,7 +168,7 @@ def _coerce_dt(series: Any, is_dask: bool) -> Any:
 
 
 def _coerce_numeric(series: Any, target_dtype: str, is_dask: bool) -> Any:
-    fn = dd.to_numeric if is_dask else pd.to_numeric
+    fn = _dd().to_numeric if is_dask else pd.to_numeric
     return fn(series, errors="coerce").astype(target_dtype)
 
 
@@ -199,7 +207,7 @@ def apply_schema_map(
     if missing and require_columns:
         raise SchemaValidationError(f"Missing required column(s): {missing}.")
 
-    if use_arrow and not isinstance(dataframe, dd.DataFrame):
+    if use_arrow and not is_dask_frame(dataframe):
         from boti_data.arrow_schema import ArrowSchema
 
         try:
@@ -210,7 +218,7 @@ def apply_schema_map(
         except (KeyError, TypeError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError):
             _logger.debug("ArrowSchema cast failed, falling back to per-column coercion")
 
-    is_dask = isinstance(dataframe, dd.DataFrame)
+    is_dask = is_dask_frame(dataframe)
     transforms = {}
     for column, target_dtype in normalized_schema.items():
         if column not in dataframe.columns:

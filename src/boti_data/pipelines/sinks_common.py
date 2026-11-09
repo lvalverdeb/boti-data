@@ -9,16 +9,20 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol, Union
+from typing import TYPE_CHECKING, Any, Protocol, Union
 from urllib.parse import urlparse
 
-import dask.dataframe as dd
 import fsspec
 import pandas as pd
-import polars as pl
 import pyarrow as pa
 
+from boti_data._engines import dask_dataframe as _dd
+from boti_data._engines import is_dask_frame, is_pandas_frame, is_polars_frame
 from boti_data.parquet import ParquetDataConfig, ParquetReader
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
+    import polars as pl
 
 type FrameResult = Union[pd.DataFrame, dd.DataFrame, pa.Table, pl.DataFrame]
 type ParquetDestination = Union[ParquetReader, ParquetDataConfig, Mapping[str, Any]]
@@ -27,20 +31,24 @@ type ParquetDestination = Union[ParquetReader, ParquetDataConfig, Mapping[str, A
 def _dask_frame_from_pandas(frame: pd.DataFrame) -> dd.DataFrame:
     rows = len(frame) or 1
     npartitions = max(1, rows // 50_000 + 1)
-    return dd.from_pandas(frame, npartitions=npartitions)
+    return _dd().from_pandas(frame, npartitions=npartitions)
 
 
-_TO_DASK_CONVERTERS: list[tuple[type, Callable[[Any], dd.DataFrame]]] = [
-    (dd.DataFrame, lambda frame: frame),
-    (pd.DataFrame, _dask_frame_from_pandas),
-    (pa.Table, lambda frame: dd.from_pandas(frame.to_pandas(), npartitions=1)),
-    (pl.DataFrame, lambda frame: dd.from_pandas(frame.to_pandas(), npartitions=1)),
+def _is_arrow_table(obj: Any) -> bool:
+    return isinstance(obj, pa.Table)
+
+
+_TO_DASK_CONVERTERS: list[tuple[Callable[[Any], bool], Callable[[Any], dd.DataFrame]]] = [
+    (is_dask_frame, lambda frame: frame),
+    (is_pandas_frame, _dask_frame_from_pandas),
+    (_is_arrow_table, lambda frame: _dd().from_pandas(frame.to_pandas(), npartitions=1)),
+    (is_polars_frame, lambda frame: _dd().from_pandas(frame.to_pandas(), npartitions=1)),
 ]
 
 
 def to_dask_frame(frame: FrameResult) -> dd.DataFrame:
     for frame_type, converter in _TO_DASK_CONVERTERS:
-        if isinstance(frame, frame_type):
+        if frame_type(frame):
             return converter(frame)
     raise TypeError(f"Unsupported frame type for sink writes: {type(frame)!r}")
 
@@ -56,7 +64,7 @@ def _derive_partition_date_column(
             f"but only found {list(frame.columns)!r}."
         )
     pre_assign_dtypes = frame.dtypes
-    parsed_dates = dd.to_datetime(frame[date_field], errors="coerce")
+    parsed_dates = _dd().to_datetime(frame[date_field], errors="coerce")
     frame = frame.assign(partition_date=parsed_dates.dt.date.astype(str))
     # dask-expr's query optimizer can re-derive _meta for the whole frame when
     # .assign() adds a column, silently dropping explicit per-column dtype hints
@@ -75,7 +83,7 @@ def _derive_partition_date_column(
 def _validate_meta_matches_real_dtypes(frame: dd.DataFrame, *, sink_name: str) -> None:
     """Guard against dask-expr's meta/real dtype divergence (wishlist #2/#7).
 
-    A bare `dd.to_datetime()`/`pd.to_numeric()` reassignment or an unannotated
+    A bare `_dd().to_datetime()`/`pd.to_numeric()` reassignment or an unannotated
     `map_partitions()` call anywhere upstream in a pipeline -- not just inside
     this module's own partition_date derivation -- can silently corrupt an
     *unrelated* column's synthetic `_meta_nonempty` sample without touching
@@ -102,7 +110,7 @@ def _validate_meta_matches_real_dtypes(frame: dd.DataFrame, *, sink_name: str) -
     raise ValueError(
         f"{sink_name} detected a dask meta/real dtype mismatch before write: {details}. "
         "This usually means a column elsewhere in the pipeline was reassigned via a bare "
-        "dd.to_datetime()/pd.to_numeric() call or an unannotated map_partitions(), which can "
+        "_dd().to_datetime()/pd.to_numeric() call or an unannotated map_partitions(), which can "
         "silently corrupt _meta_nonempty for unrelated columns. Pass an explicit meta= to "
         "map_partitions() (or route the coercion through it) instead of reassigning via a "
         "bare top-level pandas/dask function."

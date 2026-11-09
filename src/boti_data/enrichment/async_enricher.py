@@ -2,29 +2,41 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Sequence
-from typing import Any, Protocol, Union
+from typing import TYPE_CHECKING, Any, Protocol, Union
 
-import dask.dataframe as dd
 import pandas as pd
-import polars as pl
 import pyarrow as pa
 
+from boti_data._engines import dask_dataframe as _dd
+from boti_data._engines import is_dask_frame, is_pandas_frame, is_polars_frame
 from boti_data.enrichment.specs import AttachmentSpec
 
-FrameResult = Union[pd.DataFrame, dd.DataFrame, pa.Table, pl.DataFrame]
+if TYPE_CHECKING:
+    import dask.dataframe as dd
+    import polars as pl
+
+    FrameResult = Union[pd.DataFrame, dd.DataFrame, pa.Table, pl.DataFrame]
+else:
+    FrameResult = Any
 
 
-_TO_DASK_FRAME_CONVERTERS: list[tuple[type, Callable[[FrameResult], dd.DataFrame]]] = [
-    (dd.DataFrame, lambda frame: frame),
-    (pd.DataFrame, lambda frame: dd.from_pandas(frame, npartitions=max(1, len(frame) or 1))),
-    (pa.Table, lambda frame: dd.from_pandas(frame.to_pandas(), npartitions=1)),
-    (pl.DataFrame, lambda frame: dd.from_pandas(frame.to_pandas(), npartitions=1)),
+def _is_arrow_table(obj: Any) -> bool:
+    return isinstance(obj, pa.Table)
+
+
+_TO_DASK_FRAME_CONVERTERS: list[
+    tuple[Callable[[Any], bool], Callable[[FrameResult], dd.DataFrame]]
+] = [
+    (is_dask_frame, lambda frame: frame),
+    (is_pandas_frame, lambda frame: _dd().from_pandas(frame, npartitions=max(1, len(frame) or 1))),
+    (_is_arrow_table, lambda frame: _dd().from_pandas(frame.to_pandas(), npartitions=1)),
+    (is_polars_frame, lambda frame: _dd().from_pandas(frame.to_pandas(), npartitions=1)),
 ]
 
 
 def _to_dask_frame(frame: FrameResult) -> dd.DataFrame:
     for frame_type, convert in _TO_DASK_FRAME_CONVERTERS:
-        if isinstance(frame, frame_type):
+        if frame_type(frame):
             return convert(frame)
     raise TypeError(f"Unsupported frame type for enrichment: {type(frame)!r}")
 

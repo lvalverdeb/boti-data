@@ -1,21 +1,28 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
-import polars as pl
 import pyarrow as pa
 from boti.core import Logger
 from boti.core.lifecycle import LifecycleCore
 from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 
+from boti_data._engines import is_dask_frame, is_polars_frame
+
 from .contract import DatacubeConfig, DatacubeFrame
+
+if TYPE_CHECKING:
+    pass
 
 
 def _is_supported_frame(value: Any) -> bool:
-    return isinstance(value, (pd.DataFrame, dd.DataFrame, pa.Table, pl.DataFrame))
+    return (
+        isinstance(value, (pd.DataFrame, pa.Table))
+        or is_dask_frame(value)
+        or is_polars_frame(value)
+    )
 
 
 class DatacubeResource(PicklableLifecycleCoreMixin, LifecycleCore):

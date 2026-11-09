@@ -4,12 +4,14 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-import dask.dataframe as dd
 import pandas as pd
-import polars as pl
 import pyarrow as pa
+
+from boti_data._engines import dask_dataframe as _dd
+from boti_data._engines import is_dask_frame, is_dask_series, is_pandas_series, is_polars_series
+from boti_data._engines import polars as _pl
 
 from .arrow_adapters import TableOptionsSpec, apply_table_options
 from .frame_convert import (
@@ -23,10 +25,17 @@ from .frame_convert import (
 )
 from .requests import DataFrameOptions, DataFrameParams, ResolvedReturnType
 
+if TYPE_CHECKING:
+    import dask.dataframe as dd
+    import polars as pl
+
 _log = logging.getLogger(__name__)
 
 LoaderReturnType = Literal["pandas", "arrow", "dask"]
-FrameSeries = pd.Series | dd.Series | pl.Series
+if TYPE_CHECKING:
+    FrameSeries = pd.Series | dd.Series | pl.Series
+else:
+    FrameSeries = Any
 
 
 def _resolve_dask_series(value: dd.Series) -> list[Any]:
@@ -34,10 +43,10 @@ def _resolve_dask_series(value: dd.Series) -> list[Any]:
     return computed.dropna().unique().tolist()
 
 
-_SERIES_RESOLVERS: list[tuple[type, Callable[[Any], Any]]] = [
-    (dd.Series, _resolve_dask_series),
-    (pd.Series, lambda value: value.dropna().unique().tolist()),
-    (pl.Series, lambda value: value.drop_nulls().unique().to_list()),
+_SERIES_RESOLVERS: list[tuple[Callable[[Any], bool], Callable[[Any], Any]]] = [
+    (is_dask_series, _resolve_dask_series),
+    (is_pandas_series, lambda value: value.dropna().unique().tolist()),
+    (is_polars_series, lambda value: value.drop_nulls().unique().to_list()),
 ]
 
 
@@ -83,12 +92,12 @@ class FrameStrategy(ABC):
 
     def resolve_series(self, value: Any) -> Any:
         for series_type, resolver in _SERIES_RESOLVERS:
-            if isinstance(value, series_type):
+            if series_type(value):
                 return resolver(value)
         return value
 
     async def resolve_series_async(self, value: Any) -> Any:
-        if isinstance(value, dd.Series):
+        if is_dask_series(value):
             series = await asyncio.to_thread(value.compute)
             return series.dropna().unique().tolist()
         return self.resolve_series(value)
@@ -99,12 +108,14 @@ class DaskFrameStrategy(FrameStrategy):
     loader_return_type: LoaderReturnType = "dask"
 
     def normalize(self, frame: FrameResult) -> dd.DataFrame:
-        if isinstance(frame, dd.DataFrame):
+        if is_dask_frame(frame):
             return frame
-        return dd.from_pandas(_to_pandas(frame), npartitions=1)
+        return _dd().from_pandas(_to_pandas(frame), npartitions=1)
 
     def concat(self, frames: list[FrameResult]) -> dd.DataFrame:
-        return dd.concat([self.normalize(frame) for frame in frames], ignore_unknown_divisions=True)
+        return _dd().concat(
+            [self.normalize(frame) for frame in frames], ignore_unknown_divisions=True
+        )
 
     def has_any_rows(self, frame: FrameResult) -> bool:
         dataframe = self.normalize(frame)
@@ -144,7 +155,7 @@ class DaskFrameStrategy(FrameStrategy):
         if opts.group_by_expr is not None and opts.group_expr is not None:
             dataframe = dataframe.groupby(opts.group_by_expr).agg(opts.group_expr)
         if params.datetime_index:
-            dataframe[params.datetime_index] = dd.to_datetime(dataframe[params.datetime_index])
+            dataframe[params.datetime_index] = _dd().to_datetime(dataframe[params.datetime_index])
             dataframe = dataframe.set_index(params.datetime_index)
         elif params.index_col:
             dataframe = dataframe.set_index(params.index_col)
@@ -267,7 +278,7 @@ class PolarsFrameStrategy(FrameStrategy):
         return _to_polars(frame)
 
     def concat(self, frames: list[FrameResult]) -> pl.DataFrame:
-        return pl.concat([self.normalize(frame) for frame in frames], how="vertical_relaxed")
+        return _pl().concat([self.normalize(frame) for frame in frames], how="vertical_relaxed")
 
     def has_any_rows(self, frame: FrameResult) -> bool:
         dataframe = self.normalize(frame)

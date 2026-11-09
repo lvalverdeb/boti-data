@@ -5,9 +5,8 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
 
-import dask.dataframe as dd
-from boti_dask import current_client_summary, describe_frame, diagnostics_logger, safe_persist
-
+from boti_data._engines import boti_dask as _boti_dask
+from boti_data._engines import is_dask_frame
 from boti_data.schema import (
     DataFrameLike,
     apply_schema_map,
@@ -38,7 +37,7 @@ def _align_join_columns(
     )
     validate_schema(aligned_subset, normalized_schema, require_columns=True)
 
-    if isinstance(frame, dd.DataFrame):
+    if is_dask_frame(frame):
         return frame.assign(**{column: aligned_subset[column] for column in join_columns})
 
     result = frame.copy()
@@ -59,7 +58,9 @@ def left_join_frames(
     label: str = "left_join_frames",
 ) -> DataFrameLike:
     """Left join two frames after normalizing join-key dtypes to an explicit schema."""
-    active_logger = diagnostics_logger(logger, name="boti_data.joins") if diagnostics else None
+    active_logger = (
+        _boti_dask().diagnostics_logger(logger, name="boti_data.joins") if diagnostics else None
+    )
     resolved_right_on = list(right_on or left_on)
     resolved_left_on = list(left_on)
     if len(resolved_left_on) != len(resolved_right_on):
@@ -68,16 +69,12 @@ def left_join_frames(
     started = perf_counter()
     left_aligned = _align_join_columns(left, join_schema_map)
     right_aligned = _align_join_columns(right, join_schema_map)
-    if (
-        diagnostics
-        and isinstance(left_aligned, dd.DataFrame)
-        and isinstance(right_aligned, dd.DataFrame)
-    ):
+    if diagnostics and is_dask_frame(left_aligned) and is_dask_frame(right_aligned):
         active_logger.warning(
             f"{label}: direct Dask merge may trigger a full shuffle for large inputs. "
             "Prefer indexed_left_join() for large distributed joins."
         )
-        client_summary = current_client_summary()
+        client_summary = _boti_dask().current_client_summary()
         if client_summary is not None:
             active_logger.info("%s: active client=%s", label, client_summary)
 
@@ -89,7 +86,7 @@ def left_join_frames(
     )
     if diagnostics and active_logger is not None:
         active_logger.info(
-            f"{label}: completed in {perf_counter() - started:.2f}s with metrics={describe_frame(joined)}"
+            f"{label}: completed in {perf_counter() - started:.2f}s with metrics={_boti_dask().describe_frame(joined)}"
         )
     return joined
 
@@ -111,14 +108,14 @@ def _safe_persist_side(
     *,
     side_name: str = "frame",
 ) -> DataFrameLike:
-    if not options.persist or not isinstance(frame, dd.DataFrame):
+    if not options.persist or not is_dask_frame(frame):
         return frame
     if options.dry_run:
         if options.logger is not None:
             options.logger.info("%s: dry run requested; persist steps skipped", options.label)
         return frame
     if options.resilient:
-        frame = safe_persist(frame)
+        frame = _boti_dask().safe_persist(frame)
     else:
         frame = frame.persist()
     return frame
@@ -135,14 +132,14 @@ def _log_pre_join_diagnostics(
 ) -> None:
     if active_logger is None:
         return
-    client_summary = current_client_summary()
+    client_summary = _boti_dask().current_client_summary()
     if client_summary is not None:
         active_logger.info("%s: active client=%s", label, client_summary)
     active_logger.info(
-        f"{label}: left={describe_frame(left)} right={describe_frame(right)} "
+        f"{label}: left={_boti_dask().describe_frame(left)} right={_boti_dask().describe_frame(right)} "
         f"join_key={join_key} persist={persist}"
     )
-    if isinstance(left, dd.DataFrame) and not persist:
+    if is_dask_frame(left) and not persist:
         active_logger.warning(
             f"{label}: persist=False may recompute expensive set_index/join stages on repeated downstream actions."
         )
@@ -162,11 +159,11 @@ def _log_post_join_diagnostics(
         active_logger.info(
             "%s: dry run requested; execution skipped with graph=%s",
             label,
-            describe_frame(joined),
+            _boti_dask().describe_frame(joined),
         )
     else:
         active_logger.info(
-            f"{label}: completed in {perf_counter() - started:.2f}s with metrics={describe_frame(joined)}"
+            f"{label}: completed in {perf_counter() - started:.2f}s with metrics={_boti_dask().describe_frame(joined)}"
         )
 
 
@@ -223,7 +220,9 @@ def indexed_left_join(
     This is the preferred pattern for large Dask joins: pay the repartition/index
     cost once, persist both sides, then join on aligned indexes.
     """
-    active_logger = diagnostics_logger(logger, name="boti_data.joins") if diagnostics else None
+    active_logger = (
+        _boti_dask().diagnostics_logger(logger, name="boti_data.joins") if diagnostics else None
+    )
     started = perf_counter()
     persist_options = PersistOptions(
         label=label,

@@ -3,13 +3,13 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import dask
-import dask.dataframe as dd
 import pandas as pd
 from sqlalchemy.sql import Select
 
+from boti_data._engines import dask as _dask
+from boti_data._engines import dask_dataframe as _dd
 from boti_data.db.partitioned_fetch_gate import (
     GateWaitStats,
     _timed_fetch_gate,
@@ -33,6 +33,9 @@ from boti_data.db.sql_engine import (
     _create_worker_sync_engine,
     _get_worker_engine_identity,
 )
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
 
 # The fetch gate and its contention counters live in partitioned_fetch_gate.py
 # (long-file headroom) and are re-exported here so existing import paths — and
@@ -91,6 +94,12 @@ def _get_cached_worker_async_engine(config: WorkerSqlConfig) -> Any:
     return engine
 
 
+def _dask_available() -> bool:
+    import importlib.util
+
+    return importlib.util.find_spec("dask") is not None
+
+
 class SqlPartitionExecutor:
     """Execute planned partitions and assemble lazy Dask outputs."""
 
@@ -138,7 +147,7 @@ class SqlPartitionExecutor:
             )
         if as_pandas:
             return df
-        return dd.from_pandas(df, npartitions=1)
+        return _dd().from_pandas(df, npartitions=1)
 
     def _load_delayed_partitions(
         self,
@@ -150,7 +159,7 @@ class SqlPartitionExecutor:
         meta_df: pd.DataFrame,
     ) -> pd.DataFrame | dd.DataFrame:
         delayed_partitions = [
-            dask.delayed(fetch_partition)(
+            _dask().delayed(fetch_partition)(
                 config=self.config,
                 gate_key=self.gate_key,
                 max_concurrent_fetches=max_concurrent_fetches,
@@ -160,7 +169,7 @@ class SqlPartitionExecutor:
             )
             for partition in plan.partitions
         ]
-        dataframe = dd.from_delayed(delayed_partitions, meta=meta_df, verify_meta=False)
+        dataframe = _dd().from_delayed(delayed_partitions, meta=meta_df, verify_meta=False)
         if as_pandas:
             return dataframe.compute()
         return dataframe
@@ -177,7 +186,7 @@ class SqlPartitionExecutor:
         meta_df = self.build_meta_dataframe(plan.meta_dtypes, use_arrow=self.use_arrow)
 
         if not plan.partitions:
-            return meta_df if as_pandas else dd.from_pandas(meta_df, npartitions=1)
+            return meta_df if as_pandas else _dd().from_pandas(meta_df, npartitions=1)
 
         if len(plan.partitions) == 1 and fetch_partition is SqlPartitionExecutor.fetch_partition:
             return self._load_single_partition(
@@ -188,6 +197,10 @@ class SqlPartitionExecutor:
                 statement=statement,
             )
 
+        if as_pandas and not _dask_available():
+            return self._load_threaded_partitions(
+                plan, max_concurrent_fetches=max_concurrent_fetches, fetch_partition=fetch_partition
+            )
         return self._load_delayed_partitions(
             plan,
             as_pandas=as_pandas,
@@ -195,6 +208,34 @@ class SqlPartitionExecutor:
             fetch_partition=fetch_partition,
             meta_df=meta_df,
         )
+
+    def _load_threaded_partitions(
+        self,
+        plan: SqlPartitionPlan,
+        *,
+        max_concurrent_fetches: int,
+        fetch_partition: Callable[..., pd.DataFrame],
+    ) -> pd.DataFrame:
+        """pandas result with no Dask installed: fetch partitions on a bounded thread pool.
+
+        The fetch gate still bounds concurrency; the pool only replaces the task
+        graph that ``dd.from_delayed(...).compute()`` would otherwise build.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _fetch(partition: SqlPartitionSpec) -> pd.DataFrame:
+            return fetch_partition(
+                config=self.config,
+                gate_key=self.gate_key,
+                max_concurrent_fetches=max_concurrent_fetches,
+                partition=partition,
+                meta_dtypes=plan.meta_dtypes,
+                use_arrow=self.use_arrow,
+            )
+
+        with ThreadPoolExecutor(max_workers=max(1, max_concurrent_fetches)) as pool:
+            frames = list(pool.map(_fetch, plan.partitions))
+        return pd.concat(frames, ignore_index=True)
 
     build_meta_dataframe = staticmethod(build_meta_dataframe)
     _dataframe_from_result_rows = staticmethod(dataframe_from_result_rows)

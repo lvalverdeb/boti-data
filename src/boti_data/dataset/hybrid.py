@@ -5,14 +5,15 @@ import datetime as dt
 from collections.abc import Mapping
 from typing import Any, cast
 
-import dask.dataframe as dd
 import pandas as pd
-import polars as pl
 import pyarrow as pa
 from boti.core.lifecycle import LifecycleCore
 from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
-from boti_dask import safe_persist
 
+from boti_data._engines import boti_dask as _boti_dask
+from boti_data._engines import dask_dataframe as _dd
+from boti_data._engines import is_dask_frame
+from boti_data._engines import polars as _pl
 from boti_data.dataset.hybrid_support import (
     BackendConfig,
     FrameResult,
@@ -29,22 +30,22 @@ from boti_data.dataset.hybrid_support import (
 from boti_data.helper import DataHelper
 
 _MIXED_CONCAT_FNS: dict[ResolvedReturnType, Any] = {
-    "dask": lambda frames: dd.concat(
+    "dask": lambda frames: _dd().concat(
         [_to_dask(frame) for frame in frames], ignore_unknown_divisions=True
     ),
     "pandas": lambda frames: pd.concat([_to_pandas(frame) for frame in frames], ignore_index=True),
     "arrow": lambda frames: pa.concat_tables([_to_arrow(frame) for frame in frames]),
-    "polars": lambda frames: pl.concat(
+    "polars": lambda frames: _pl().concat(
         [_to_polars(frame) for frame in frames], how="vertical_relaxed"
     ),
 }
 
 
 def _persist_if_requested(combined: FrameResult, *, persist: bool, resilient: bool) -> FrameResult:
-    if not persist or not isinstance(combined, dd.DataFrame):
+    if not persist or not is_dask_frame(combined):
         return combined
     if resilient:
-        return safe_persist(combined)
+        return _boti_dask().safe_persist(combined)
     return combined.persist()
 
 

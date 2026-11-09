@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import asyncio
 from time import perf_counter
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
 from boti.core.lifecycle import LifecycleCore
 from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 from boti.core.logger import Logger
 from sqlalchemy.engine import url as sqlalchemy_url
 
+from boti_data._engines import dask_dataframe as _dd
+from boti_data._engines import is_dask_frame
 from boti_data.db.partitioned_execution import (
     SqlPartitionExecutor,
     fetch_gate_stats,
@@ -24,6 +25,9 @@ from boti_data.db.partitioned_types import (
 from boti_data.db.sql_config import SqlDatabaseConfig, WorkerSqlConfig
 from boti_data.db.sql_engine import _get_worker_engine_identity
 from boti_data.db.sql_resource import SqlDatabaseResource
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
 
 
 class SqlPartitionedLoader(PicklableLifecycleCoreMixin, LifecycleCore):
@@ -173,7 +177,7 @@ class SqlPartitionedLoader(PicklableLifecycleCoreMixin, LifecycleCore):
             df, self._planner.infer_meta_dtypes(prepared_stmt)
         )
         t_dask = perf_counter()
-        result: pd.DataFrame | dd.DataFrame = dd.from_pandas(df, npartitions=1)
+        result: pd.DataFrame | dd.DataFrame = _dd().from_pandas(df, npartitions=1)
         t_end = perf_counter()
         if request.diagnostics:
             self.logger.info(
@@ -214,7 +218,7 @@ class SqlPartitionedLoader(PicklableLifecycleCoreMixin, LifecycleCore):
         )
         t_end = perf_counter()
         if request.diagnostics:
-            result_partitions = result.npartitions if isinstance(result, dd.DataFrame) else 1
+            result_partitions = result.npartitions if is_dask_frame(result) else 1
             self.logger.info(
                 "Partitioned SQL load completed "
                 f"strategy={plan.strategy} partitions={len(plan.partitions)} "

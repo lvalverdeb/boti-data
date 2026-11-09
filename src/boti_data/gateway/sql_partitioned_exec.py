@@ -14,9 +14,10 @@ from dataclasses import dataclass, replace
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
 
+from boti_data._engines import dask_dataframe as _dd
+from boti_data._engines import is_dask_frame
 from boti_data.db import SqlDatabaseConfig, SqlPartitionedLoadRequest
 from boti_data.db.partitioned_execution import (
     GateWaitStats,
@@ -151,7 +152,7 @@ def _build_fast_path_result(
 ) -> FrameResult:
     df = SqlPartitionExecutor.align_and_coerce_partition(df, meta_dtypes)
     t_dask = perf_counter()
-    result = dd.from_pandas(df, npartitions=1)
+    result = _dd().from_pandas(df, npartitions=1)
     t_end = perf_counter()
     if request.diagnostics:
         async_resource.logger.info(
@@ -272,7 +273,7 @@ async def _execute_single_partition_plan(
     t_coerce2 = perf_counter()
     df = SqlPartitionExecutor.align_and_coerce_partition(df, plan.meta_dtypes)
     t_dask2 = perf_counter()
-    result = dd.from_pandas(df, npartitions=1)
+    result = _dd().from_pandas(df, npartitions=1)
     t_end2 = perf_counter()
     if request.diagnostics:
         async_resource.logger.info(
@@ -318,7 +319,7 @@ def _log_completion(
 ) -> None:
     if not request.diagnostics:
         return
-    result_partitions = result.npartitions if isinstance(result, dd.DataFrame) else 1
+    result_partitions = result.npartitions if is_dask_frame(result) else 1
     gate_suffix = "" if gate_context is None else format_gate_wait_suffix(*gate_context)
     async_resource.logger.info(
         "Partitioned SQL load completed "

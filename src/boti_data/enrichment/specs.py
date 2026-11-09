@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Union
+from typing import TYPE_CHECKING, Any, Union
 
-import dask.dataframe as dd
 import pandas as pd
-import polars as pl
 import pyarrow as pa
 
-FrameResult = Union[pd.DataFrame, dd.DataFrame, pa.Table, pl.DataFrame]
+if TYPE_CHECKING:
+    import dask.dataframe as dd
+    import polars as pl
+
+    FrameResult = Union[pd.DataFrame, dd.DataFrame, pa.Table, pl.DataFrame]
+else:
+    FrameResult = Any
 
 
 @dataclass(slots=True)

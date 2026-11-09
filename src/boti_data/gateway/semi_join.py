@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
-import polars as pl
+
+from boti_data._engines import is_dask_frame
 
 from . import _series_filters
 from .frame_strategies import FrameResult
 from .requests import DataFrameParams
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
+    import polars as pl
 
 
 class SemiJoinService:
@@ -89,7 +93,7 @@ class SemiJoinService:
             return_type="dask",
             execution_mode="lazy",
         )
-        assert isinstance(frame, dd.DataFrame)
+        assert is_dask_frame(frame)
         key_frame = _series_filters.series_to_dask_key_frame(join_series, column_name=on)
         if on in frame.columns:
             key_frame = key_frame.astype({on: frame.dtypes[on]})

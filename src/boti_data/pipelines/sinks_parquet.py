@@ -11,8 +11,8 @@ from typing import Any, cast
 
 from boti.core.lifecycle import LifecycleCore
 from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
-from boti_dask import safe_persist
 
+from boti_data._engines import boti_dask as _boti_dask
 from boti_data.parquet import ParquetDataConfig, ParquetReader
 from boti_data.pipelines.sinks_common import (
     FrameResult,
@@ -99,7 +99,7 @@ class ParquetSink(_AsyncWriteViaThreadMixin, PicklableLifecycleCoreMixin, Lifecy
             validate_arrow_convertible=True,
         )
         if persist:
-            ddf = safe_persist(ddf)
+            ddf = _boti_dask().safe_persist(ddf)
 
         fs = self.reader.resource.require_fs()
         target_path = cast(str, self.reader.parquet_storage_path)

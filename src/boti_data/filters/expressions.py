@@ -4,9 +4,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
 from sqlalchemy import true
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
 
 if TYPE_CHECKING:
     from .handler import FilterHandler

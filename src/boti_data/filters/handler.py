@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
-import dask.dataframe as dd
 import pyarrow as pa
 from boti.core.logger import Logger
 
@@ -34,6 +33,9 @@ from .utils import (
     rewrite_date_logic,
     suggest_in_filter_chunking,
 )
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
 
 
 class FilterHandler:

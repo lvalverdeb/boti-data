@@ -15,7 +15,6 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
 import pyarrow as pa
 
@@ -24,6 +23,9 @@ from .chunking import ChunkedLoadExecutor, ChunkFanoutSettings, InChunkPlanner
 from .frame_strategies import FrameResult
 from .post_process import strategy_for_frame
 from .requests import ReturnType
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
 
 if TYPE_CHECKING:
     from .core import DataGateway

@@ -9,29 +9,39 @@ touch no strategy state, so they move here wholesale as free functions.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
-import polars as pl
 import pyarrow as pa
 
+from boti_data._engines import is_dask_frame, is_pandas_frame, is_polars_frame
+from boti_data._engines import polars as _pl
 from boti_data.db.arrow_schema_mapper import arrow_table_to_pandas
 
-FrameResult = pd.DataFrame | dd.DataFrame | pa.Table | pl.DataFrame
+if TYPE_CHECKING:
+    import dask.dataframe as dd
+    import polars as pl
+
+    FrameResult = pd.DataFrame | dd.DataFrame | pa.Table | pl.DataFrame
+else:
+    FrameResult = Any
 
 
-_TO_PANDAS_CONVERTERS: list[tuple[type, Callable[[Any], pd.DataFrame]]] = [
-    (pd.DataFrame, lambda frame: frame),
-    (dd.DataFrame, lambda frame: frame.compute()),
-    (pa.Table, arrow_table_to_pandas),
-    (pl.DataFrame, lambda frame: frame.to_pandas()),
+def _is_arrow_table(obj: Any) -> bool:
+    return isinstance(obj, pa.Table)
+
+
+_TO_PANDAS_CONVERTERS: list[tuple[Callable[[Any], bool], Callable[[Any], pd.DataFrame]]] = [
+    (is_pandas_frame, lambda frame: frame),
+    (is_dask_frame, lambda frame: frame.compute()),
+    (_is_arrow_table, arrow_table_to_pandas),
+    (is_polars_frame, lambda frame: frame.to_pandas()),
 ]
 
 
 def _to_pandas(frame: FrameResult) -> pd.DataFrame:
     for frame_type, converter in _TO_PANDAS_CONVERTERS:
-        if isinstance(frame, frame_type):
+        if frame_type(frame):
             return converter(frame)
     raise TypeError(f"Unsupported frame type: {type(frame)!r}")
 
@@ -39,19 +49,19 @@ def _to_pandas(frame: FrameResult) -> pd.DataFrame:
 def _to_arrow(frame: FrameResult) -> pa.Table:
     if isinstance(frame, pa.Table):
         return frame
-    if isinstance(frame, dd.DataFrame):
+    if is_dask_frame(frame):
         frame = frame.compute()
     if isinstance(frame, pd.DataFrame):
         return pa.Table.from_pandas(frame, preserve_index=False)
-    if isinstance(frame, pl.DataFrame):
+    if is_polars_frame(frame):
         return frame.to_arrow()
     raise TypeError(f"Unsupported frame type: {type(frame)!r}")
 
 
 def _to_polars(frame: FrameResult) -> pl.DataFrame:
-    if isinstance(frame, pl.DataFrame):
+    if is_polars_frame(frame):
         return frame
-    return pl.from_arrow(_to_arrow(frame))
+    return _pl().from_arrow(_to_arrow(frame))
 
 
 def _normalize_duplicate_keep(value: str | bool) -> str:
@@ -106,5 +116,5 @@ def _build_polars_group_exprs(
         method_name = _POLARS_AGG_METHODS.get(func)
         if method_name is None:
             raise ValueError(f"Unsupported polars aggregation: {func!r}")
-        exprs.append(getattr(pl.col(column), method_name)().alias(column))
+        exprs.append(getattr(_pl().col(column), method_name)().alias(column))
     return exprs

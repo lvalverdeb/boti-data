@@ -7,17 +7,17 @@ DataFrame options application, and diagnostics logging.
 from __future__ import annotations
 
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
-import polars as pl
 import pyarrow as pa
 from boti.core.logger import Logger
-from boti_dask import current_client_summary, describe_frame, safe_persist
 
+from boti_data._engines import boti_dask as _boti_dask
+from boti_data._engines import is_dask_frame, is_pandas_frame, is_polars_frame
 from boti_data.db.partitioned_planner import SqlPartitionPlanner
 from boti_data.field_map import FieldMap
 from boti_data.schema import apply_schema_map
@@ -25,6 +25,9 @@ from boti_data.schema import apply_schema_map
 from .frame_strategies import FrameResult, FrameStrategy, get_frame_strategy
 from .planning import LoadPlan
 from .requests import DataFrameOptions, DataFrameParams, ResolvedReturnType, ReturnType
+
+if TYPE_CHECKING:
+    pass
 
 __all__ = [
     "PostProcessor",
@@ -47,17 +50,21 @@ def frame_strategy(return_type: ResolvedReturnType) -> FrameStrategy:
     return get_frame_strategy(return_type)
 
 
-_FRAME_TYPE_STRATEGY_KEYS: list[tuple[type, ResolvedReturnType]] = [
-    (dd.DataFrame, "dask"),
-    (pd.DataFrame, "pandas"),
-    (pa.Table, "arrow"),
-    (pl.DataFrame, "polars"),
+def _is_arrow_table(obj: Any) -> bool:
+    return isinstance(obj, pa.Table)
+
+
+_FRAME_TYPE_STRATEGY_KEYS: list[tuple[Callable[[Any], bool], ResolvedReturnType]] = [
+    (is_dask_frame, "dask"),
+    (is_pandas_frame, "pandas"),
+    (_is_arrow_table, "arrow"),
+    (is_polars_frame, "polars"),
 ]
 
 
 def strategy_for_frame(frame: FrameResult) -> FrameStrategy:
     for frame_type, key in _FRAME_TYPE_STRATEGY_KEYS:
-        if isinstance(frame, frame_type):
+        if frame_type(frame):
             return get_frame_strategy(key)
     raise TypeError(f"Unsupported frame type: {type(frame)!r}")
 
@@ -108,9 +115,9 @@ class PostProcessor:
     def finalize_load_result(self, df: Any, plan: LoadPlan) -> FrameResult:
         controls = plan.controls
         result = plan.strategy.normalize(df)
-        if controls.persist and not controls.dry_run and isinstance(result, dd.DataFrame):
+        if controls.persist and not controls.dry_run and is_dask_frame(result):
             if controls.resilient:
-                result = safe_persist(result)
+                result = _boti_dask().safe_persist(result)
             else:
                 result = get_frame_strategy("dask").persist(result)
         if controls.diagnostics:
@@ -153,7 +160,7 @@ class PostProcessor:
             f"loader_return_type={plan.loader_return_type} "
             f"persist={plan.controls.persist}"
         )
-        client_summary = current_client_summary()
+        client_summary = _boti_dask().current_client_summary()
         if client_summary is not None:
             logger.info("Gateway load active Dask client=%s", client_summary)
 
@@ -233,6 +240,6 @@ class PostProcessor:
         if hasattr(logger, "set_level"):
             logger.set_level(Logger.INFO)
         logger.info(
-            f"Gateway load completed elapsed={elapsed:.2f}s metrics={describe_frame(frame)}"
+            f"Gateway load completed elapsed={elapsed:.2f}s metrics={_boti_dask().describe_frame(frame)}"
         )
-        logger.info(f"Gateway load graph metrics={describe_frame(frame)}")  # nosec CWE-117 -- counts/engine-name only, never data-derived
+        logger.info(f"Gateway load graph metrics={_boti_dask().describe_frame(frame)}")  # nosec CWE-117 -- counts/engine-name only, never data-derived

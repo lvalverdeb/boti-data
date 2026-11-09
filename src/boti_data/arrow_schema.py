@@ -22,6 +22,8 @@ __all__ = [
 import pandas as pd
 import pyarrow as pa
 
+from boti_data._engines import is_dask_frame
+
 
 class ArrowSchema:
     """Canonical PyArrow schema contract with single-pass coercion.
@@ -82,9 +84,7 @@ class ArrowSchema:
         Note: For Dask DataFrames, this computes the schema from metadata
         without triggering execution.
         """
-        import dask.dataframe as dd
-
-        if isinstance(df, dd.DataFrame):
+        if is_dask_frame(df):
             # Use Dask metadata only — no compute
             arrow_schema = _pandas_meta_to_arrow_schema(df._meta)
         else:
@@ -141,9 +141,7 @@ class ArrowSchema:
 
         Uses PyArrow's native conversion with type preservation.
         """
-        import dask.dataframe as dd
-
-        if isinstance(df, dd.DataFrame):
+        if is_dask_frame(df):
             df = df.compute()
 
         # Convert to Arrow first
@@ -176,9 +174,7 @@ class ArrowSchema:
 
         Single-pass operation that replaces the per-column ``apply_schema_map()`` loop.
         """
-        import dask.dataframe as dd
-
-        if isinstance(df, dd.DataFrame):
+        if is_dask_frame(df):
             # For Dask, we need to compute — Arrow coercion is not lazy
             df = df.compute()
 
@@ -226,9 +222,7 @@ class ArrowSchema:
 
         Returns list of errors (empty if valid).
         """
-        import dask.dataframe as dd
-
-        if isinstance(df, dd.DataFrame):
+        if is_dask_frame(df):
             df = df._meta  # Use metadata
 
         table = self.to_arrow_table(df)

@@ -2,16 +2,22 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
-import polars as pl
 import pyarrow as pa
 from boti.core import ResourceConfig
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-DatacubeFrame = pd.DataFrame | dd.DataFrame | pa.Table | pl.DataFrame
+from boti_data._engines import is_dask_frame
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
+    import polars as pl
+
+    DatacubeFrame = pd.DataFrame | dd.DataFrame | pa.Table | pl.DataFrame
+else:
+    DatacubeFrame = Any
 DatacubeSyncLoader = Callable[[Any], DatacubeFrame]
 DatacubeAsyncLoader = Callable[[Any], Awaitable[DatacubeFrame]]
 DatacubeRequestValidator = Callable[[Any], None]
@@ -20,7 +26,7 @@ DatacubeFrameTransformer = Callable[[DatacubeFrame, Any], DatacubeFrame]
 
 
 _FRAME_HAS_DATA_CHECKS: list[tuple[Callable[[Any], bool], Callable[[Any], bool]]] = [
-    (lambda frame: isinstance(frame, dd.DataFrame), lambda frame: len(frame.index) > 0),
+    (lambda frame: is_dask_frame(frame), lambda frame: len(frame.index) > 0),
     (lambda frame: isinstance(frame, pd.DataFrame), lambda frame: len(frame.index) > 0),
     (lambda frame: isinstance(frame, pa.Table), lambda frame: len(frame) > 0),
     (lambda frame: hasattr(frame, "height"), lambda frame: frame.height > 0),

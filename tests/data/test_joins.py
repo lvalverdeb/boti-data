@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import boti_dask
 import dask.dataframe as dd
 import pandas as pd
 import pytest
@@ -214,7 +215,7 @@ def test_indexed_left_join_uses_safe_persist_when_resilient(monkeypatch) -> None
         calls.append(frame.npartitions)
         return frame.persist()
 
-    monkeypatch.setattr(joins_module, "safe_persist", fake_safe_persist)
+    monkeypatch.setattr(boti_dask, "safe_persist", fake_safe_persist)
 
     joined = indexed_left_join(
         left,
@@ -249,7 +250,7 @@ def test_indexed_left_join_dry_run_skips_persist_and_logs(monkeypatch) -> None:
     def fail_safe_persist(*_args, **_kwargs) -> None:
         raise AssertionError("safe_persist should not run in dry_run mode")
 
-    monkeypatch.setattr(joins_module, "safe_persist", fail_safe_persist)
+    monkeypatch.setattr(boti_dask, "safe_persist", fail_safe_persist)
 
     joined = indexed_left_join(
         left,

@@ -8,10 +8,12 @@ enrichment (lookup merges).  Concrete implementations live in
 
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-import dask.dataframe as dd
 import pandas as pd
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
 
 
 @runtime_checkable

@@ -5,16 +5,15 @@ Dask-first gateway over existing boti_data backend resources.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import fsspec
 import pandas as pd
-import polars as pl
 import pyarrow as pa
 from boti.core.lifecycle import LifecycleCore
 from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
-from boti_dask import async_safe_head, safe_head
+
+from boti_data._engines import boti_dask as _boti_dask
 
 from . import core_describe, core_load
 from ._gateway_init import (
@@ -35,6 +34,10 @@ from .requests import (
     ReturnType,
     TableDescription,
 )
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
+    import polars as pl
 
 
 def _log_partial_close_failure(resource: Any, exc: Exception) -> None:
@@ -282,8 +285,8 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
 
     # --- Load API — structured mode ---
 
-    # Not a copy-pasted twin: async_safe_head() is already a thin
-    # asyncio.to_thread() wrapper around safe_head(); the other half
+    # Not a copy-pasted twin: _boti_dask().async_safe_head() is already a thin
+    # asyncio.to_thread() wrapper around _boti_dask().safe_head(); the other half
     # (self.load vs await self.aload) is genuinely-different async I/O that
     # the codebase deliberately keeps separate.
     # spaghetti-ignore[sync-async-duplication]: see above
@@ -296,7 +299,7 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
         when one is active.
         """
         frame = self.load(statement=statement, model=model, limit=n, return_type="dask", **options)
-        return safe_head(frame, n=n, npartitions=npartitions)
+        return _boti_dask().safe_head(frame, n=n, npartitions=npartitions)
 
     async def apreview(
         self, statement: Any, model: Any, n: int = 5, npartitions: int = 1, **options: Any
@@ -305,7 +308,7 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
         frame = await self.aload(
             statement=statement, model=model, limit=n, return_type="dask", **options
         )
-        return await async_safe_head(frame, n=n, npartitions=npartitions)
+        return await _boti_dask().async_safe_head(frame, n=n, npartitions=npartitions)
 
     def describe(
         self, table: str | None = None, *, row_count_limit: int = 10_000

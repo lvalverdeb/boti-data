@@ -6,14 +6,17 @@ import datetime as dt
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 
+from boti_data._engines import dask_dataframe as _dd
 from boti_data.filters.utils import parse_filter_key
 
 from . import filesystem
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
 
 if TYPE_CHECKING:
     from .resource import ParquetDataResource
@@ -210,4 +213,4 @@ def raw_filter_clause(field: str, op: str, value: Any) -> ds.Expression:
 
 
 def empty_ddf() -> dd.DataFrame:
-    return dd.from_pandas(pd.DataFrame(), npartitions=1)
+    return _dd().from_pandas(pd.DataFrame(), npartitions=1)

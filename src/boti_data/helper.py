@@ -2,18 +2,21 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from boti.core.lifecycle import LifecycleCore
 from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
-from boti_dask import DaskSession, dask_session
 
+from boti_data._engines import boti_dask as _boti_dask
 from boti_data.gateway import DataGateway
 from boti_data.gateway.incremental import IncrementalLoadService
 from boti_data.gateway.requests import BackendConfig, TableDescription
 from boti_data.joins import indexed_left_join, left_join_frames
 from boti_data.schema import DataFrameLike
 from boti_data.watermark.incremental import IncrementalResult
+
+if TYPE_CHECKING:
+    from boti_dask import DaskSession
 
 
 class _EngineBoundHelper:
@@ -128,7 +131,7 @@ class _EngineBoundHelper:
 
 
 def _session(**kwargs: Any) -> DaskSession:
-    return dask_session(**kwargs)
+    return _boti_dask().dask_session(**kwargs)
 
 
 def _left_join(

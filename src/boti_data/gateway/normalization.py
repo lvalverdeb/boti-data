@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-import dask
-import dask.dataframe as dd
 import pandas as pd
+
+from boti_data._engines import dask as _dask
+from boti_data._engines import is_dask_series
 
 from .requests import NormalizedFilters, PartitionedLoadConfig
 
@@ -119,11 +120,11 @@ def prepare_period_filters(
 def _classify_series_keys(options: dict[str, Any]) -> tuple[list[str], list[str]]:
     """Returns (dask_keys, pandas_keys): the ``__in`` filter keys backed by a
     Dask or pandas Series, respectively (mutually exclusive)."""
-    dask_keys = [k for k, v in options.items() if k.endswith("__in") and isinstance(v, dd.Series)]
+    dask_keys = [k for k, v in options.items() if k.endswith("__in") and is_dask_series(v)]
     pandas_keys = [
         k
         for k, v in options.items()
-        if k.endswith("__in") and isinstance(v, pd.Series) and not isinstance(v, dd.Series)
+        if k.endswith("__in") and isinstance(v, pd.Series) and not is_dask_series(v)
     ]
     return dask_keys, pandas_keys
 
@@ -145,7 +146,7 @@ def _resolve_pandas_series_keys(
 
 # Not a copy-pasted twin: both already share _classify_series_keys()/
 # _apply_computed_dask_series()/_resolve_pandas_series_keys(); the remaining
-# difference is dask.compute(...) vs await asyncio.to_thread(dask.compute, ...)
+# difference is _dask().compute(...) vs await asyncio.to_thread(_dask().compute, ...)
 # — the offload boundary itself.
 # spaghetti-ignore[sync-async-duplication]: see above
 def resolve_series_filters(options: dict[str, Any]) -> dict[str, Any]:
@@ -155,9 +156,9 @@ def resolve_series_filters(options: dict[str, Any]) -> dict[str, Any]:
 
     resolved = dict(options)
 
-    # Batch all Dask series into a single dask.compute() call to share the scheduler pass.
+    # Batch all Dask series into a single _dask().compute() call to share the scheduler pass.
     if dask_keys:
-        computed = dask.compute(*[options[k] for k in dask_keys])
+        computed = _dask().compute(*[options[k] for k in dask_keys])
         _apply_computed_dask_series(resolved, dask_keys, computed)
 
     _resolve_pandas_series_keys(resolved, options, pandas_keys)
@@ -174,7 +175,7 @@ async def resolve_series_filters_async(options: dict[str, Any]) -> dict[str, Any
     # Batch all Dask series into one scheduler pass while keeping the event loop free.
     if dask_keys:
         computed = await asyncio.to_thread(
-            dask.compute,
+            _dask().compute,
             *[options[k] for k in dask_keys],
         )
         _apply_computed_dask_series(resolved, dask_keys, computed)

@@ -5,12 +5,11 @@ import logging
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pandas as pd
-import polars as pl
 
+from boti_data._engines import is_dask_frame, is_dask_series, is_polars_series
 from boti_data.gateway._backend_strategies import BackendStrategy
 
 from .frame_strategies import FrameResult, get_frame_strategy
@@ -18,6 +17,9 @@ from .normalization import DEFAULT_IN_CHUNK_SIZE, LOAD_CONTROL_KEYS, split_contr
 from .planning import InChunkPolicy
 from .post_process import strategy_for_frame
 from .requests import ReturnType
+
+if TYPE_CHECKING:
+    pass
 
 _log = logging.getLogger(__name__)
 
@@ -237,7 +239,7 @@ class ChunkedLoadExecutor:
         combined = get_frame_strategy(return_type).concat(non_empty)
         return (
             get_frame_strategy("dask").persist(combined)
-            if persist_dask and isinstance(combined, dd.DataFrame)
+            if persist_dask and is_dask_frame(combined)
             else combined
         )
 
@@ -266,7 +268,9 @@ class ChunkedLoadExecutor:
         return (
             hasattr(value, "__len__")
             and hasattr(value, "__getitem__")
-            and not isinstance(value, (str, bytes, pd.Series, dd.Series, pl.Series))
+            and not isinstance(value, (str, bytes, pd.Series))
+            and not is_dask_series(value)
+            and not is_polars_series(value)
             and len(value) > chunk_size
         )
 
