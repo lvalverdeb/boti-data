@@ -1,0 +1,70 @@
+name: Compatibility matrix
+
+# boti-data depends on boti and boti-dask, both of which release on their own
+# cadence. This job proves the floor, the locked and the latest versions of
+# both on every push, weekly, and on demand (workflow_dispatch, or a
+# repository_dispatch of type upstream-release sent by a dependency's publish
+# workflow), so a dependency release that breaks boti-data fails here within a
+# day instead of when a user installs it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [upstream-release]
+
+jobs:
+  matrix:
+    name: boti ${{ matrix.boti }} / boti-dask ${{ matrix.boti_dask }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { boti: floor, boti_dask: floor }
+          - { boti: locked, boti_dask: locked }
+          - { boti: latest, boti_dask: latest }
+          - { boti: latest, boti_dask: locked }
+          - { boti: locked, boti_dask: latest }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install locked dependencies
+        run: uv sync --locked --group dev
+
+      - name: Pin boti to the floor
+        if: matrix.boti == 'floor'
+        run: uv pip install "boti==1.0.2"
+
+      - name: Upgrade boti to the latest release
+        if: matrix.boti == 'latest'
+        run: uv pip install --upgrade boti
+
+      - name: Pin boti-dask to the floor
+        if: matrix.boti_dask == 'floor'
+        run: uv pip install "boti-dask==1.0.0"
+
+      - name: Upgrade boti-dask to the latest release
+        if: matrix.boti_dask == 'latest'
+        run: uv pip install --upgrade boti-dask
+
+      - name: Show resolved versions
+        run: uv pip list | grep -iE '^(boti|boti-dask|dask|distributed|sqlalchemy|pandas|fsspec) '
+
+      - name: Unit tests
+        run: uv run --no-sync pytest tests/ -m "not security_regression" --tb=short -q
+
+      - name: Security regression tests
+        run: uv run --no-sync pytest tests/ -m security_regression --tb=short -q

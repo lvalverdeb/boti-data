@@ -893,21 +893,23 @@ against the same database hold two pools: 30 connections, not 15.
 
 ### 2. Distributed fetch concurrency: `n_workers × max_concurrent_fetches`
 
-This is the one that surprises people. `max_concurrent_fetches` (default `4`, capped
-at `16`) bounds concurrent partition fetches **per worker process**, because the
-semaphore enforcing it lives in process memory. It is not a cluster-wide limit.
+`max_concurrent_fetches` (default `4`, capped at `16`) bounds concurrent partition
+fetches **across the whole cluster**: the gate is a `boti_dask.cluster_semaphore`
+held on the Dask scheduler and shared by every worker, keyed on the database alone.
+Twenty workers at `max_concurrent_fetches=4` open at most 4 fetch connections to that
+database, so the number means what it reads.
 
-```
-20 Dask workers × max_concurrent_fetches=4 = up to 80 concurrent connections
-```
+Two things keep it honest:
 
-To work backwards from a budget:
+- **One limit per database.** Two loads against the same database with different
+  limits share one gate; the first limit seen wins and a warning is logged. Limits
+  never add up.
+- **No cluster, no scheduler gate.** In a local threads run, or with `boti-dask`
+  older than 1.1.0, the same gate bounds the **process** instead, so a run with
+  several processes against one database multiplies: `n_processes × max_concurrent_fetches`.
 
-```python
-max_concurrent_fetches = max(1, connection_budget // n_workers)
-```
-
-With the 10-connection budget above and 5 workers, that is `2` — not the default `4`.
+With the 10-connection budget above, leave headroom for the client-side pool and set
+`max_concurrent_fetches` to the remainder, whatever the worker count.
 
 ### 3. Worker connections are unpooled by design
 
@@ -1238,6 +1240,20 @@ with DataHelper(prod_config, table="orders") as helper:
 ```
 
 ---
+
+## Compatibility
+
+Every push, and weekly, the compatibility-matrix workflow runs the suite against the floor,
+locked and latest releases of `boti` and `boti-dask`. The floors are the oldest versions the
+suite passes on; locked is what `uv.lock` resolves; latest is whatever PyPI serves that day.
+
+| Dependency | Floor | Locked | Latest |
+| --- | --- | --- | --- |
+| `boti` | 1.0.2 | 1.2.0 | weekly |
+| `boti-dask` | 1.0.0 | see `uv.lock` | weekly |
+
+With `boti-dask` below 1.1.0 the partition-fetch gate bounds each worker process rather than
+the cluster (see *Sizing connections* above).
 
 ## Relationship to `boti`
 

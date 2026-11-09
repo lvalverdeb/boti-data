@@ -15,24 +15,58 @@ these counters it is indistinguishable from a database that is simply slow.
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from time import perf_counter
+from typing import Any
 
-_FETCH_GATES: dict[tuple[str, int], threading.BoundedSemaphore] = {}
-_FETCH_GATES_LOCK = threading.Lock()
+_module_log = logging.getLogger(__name__)
+
+# The gate is keyed on the database identity alone, never on the limit: the
+# resource being protected is "that database", so two loads with different
+# limits must share one gate (the first limit seen wins) rather than add up.
+#
+# On a Dask cluster the gate is boti-dask's cluster_semaphore, held on the
+# scheduler and shared by every worker, so max_concurrent_fetches bounds the
+# whole cluster. With no running client (local threads, tests) the same call
+# returns a process-wide BoundedSemaphore, as before.
+
+# 16 hex characters of SHA-256 (64 bits) is plenty to keep distinct databases
+# apart while keeping the scheduler-side name short.
+_GATE_NAME_DIGEST_CHARS = 16
+
+_LOCAL_GATES: dict[str, threading.BoundedSemaphore] = {}
+_LOCAL_GATES_LOCK = threading.Lock()
 
 
-def _get_fetch_gate(gate_key: str, max_concurrent_fetches: int) -> threading.BoundedSemaphore:
-    cache_key = (gate_key, max_concurrent_fetches)
-    with _FETCH_GATES_LOCK:
-        gate = _FETCH_GATES.get(cache_key)
+def _gate_name(gate_key: str) -> str:
+    """A stable name for the gate that carries nothing of the DSN (it travels to
+    the scheduler and shows in dashboards; the key may embed credentials)."""
+    digest = hashlib.sha256(gate_key.encode()).hexdigest()[:_GATE_NAME_DIGEST_CHARS]
+    return f"boti-data:fetch-gate:{digest}"
+
+
+def _local_fetch_gate(name: str, max_concurrent_fetches: int) -> threading.BoundedSemaphore:
+    with _LOCAL_GATES_LOCK:
+        gate = _LOCAL_GATES.get(name)
         if gate is None:
             gate = threading.BoundedSemaphore(max_concurrent_fetches)
-            _FETCH_GATES[cache_key] = gate
+            _LOCAL_GATES[name] = gate
         return gate
+
+
+def _fetch_gate_for(gate_key: str, max_concurrent_fetches: int) -> Any:
+    name = _gate_name(gate_key)
+    try:
+        from boti_dask import cluster_semaphore
+    except ImportError:  # boti-dask < 1.1.0: process-wide only
+        _module_log.debug("boti-dask without cluster_semaphore; fetch gate is per process")
+        return _local_fetch_gate(name, max_concurrent_fetches)
+    return cluster_semaphore(name, max_concurrent_fetches)
 
 
 @dataclass(frozen=True)
@@ -86,9 +120,11 @@ def _record_gate_wait(gate_key: str, waited_seconds: float) -> None:
 def fetch_gate_stats() -> dict[str, GateWaitStats]:
     """Snapshot partition-fetch gate contention for **this process**, by gate key.
 
-    Scope matters for interpreting the numbers. Partition fetches are dispatched
-    as Dask tasks, so in a distributed run each worker process accumulates its
-    own counters and this function only ever sees the calling process's share.
+    Scope matters for interpreting the numbers. The gate itself is cluster-wide
+    on a Dask cluster, but the wait counters are not: partition fetches are
+    dispatched as Dask tasks, so in a distributed run each worker process
+    accumulates its own counters and this function only ever sees the calling
+    process's share.
     A lazy load returns before any fetch has run at all, so call this after
     ``.compute()``, not after the load call returns.
     """
@@ -128,7 +164,7 @@ def format_gate_wait_suffix(gate_key: str, baseline: GateWaitStats | None) -> st
 @contextmanager
 def _timed_fetch_gate(gate_key: str, max_concurrent_fetches: int) -> Iterator[None]:
     """Hold a fetch slot, recording how long it took to get one."""
-    gate = _get_fetch_gate(gate_key, max_concurrent_fetches)
+    gate = _fetch_gate_for(gate_key, max_concurrent_fetches)
     started = perf_counter()
     gate.acquire()
     _record_gate_wait(gate_key, perf_counter() - started)
