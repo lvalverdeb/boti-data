@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
+import pyarrow as pa
 from boti.core.lifecycle import LifecycleCore
 from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 from boti_dask import safe_persist
@@ -23,6 +24,13 @@ from boti_data.pipelines.sinks_common import (
     prepare_partitioned_frame,
     to_dask_frame,
 )
+from boti_data.pipelines.sinks_schema import (
+    SchemaNarrowingError,
+    evolved_write_schema,
+    frame_schema,
+)
+
+__all__ = ["ParquetSink", "SchemaNarrowingError", "awrite_parquet", "write_parquet"]
 
 
 class ParquetSink(_AsyncWriteViaThreadMixin, PicklableLifecycleCoreMixin, LifecycleCore):
@@ -89,6 +97,10 @@ class ParquetSink(_AsyncWriteViaThreadMixin, PicklableLifecycleCoreMixin, Lifecy
         partitions/dates), not just the partition(s) present in *frame* — see
         :func:`_write_with_staging`. For incremental per-date writes, do not
         rely on ``overwrite=True`` to mean "overwrite this date only".
+
+        ``overwrite=False`` onto an existing dataset is an append whose schema
+        may widen the dataset's (new columns, promoted types) but never narrow
+        it; see :mod:`boti_data.pipelines.sinks_schema`.
         """
         ddf = to_dask_frame(frame)
         ddf = prepare_partitioned_frame(
@@ -103,6 +115,7 @@ class ParquetSink(_AsyncWriteViaThreadMixin, PicklableLifecycleCoreMixin, Lifecy
 
         fs = self.reader.resource.require_fs()
         target_path = cast(str, self.reader.parquet_storage_path)
+        schema = None if overwrite else self._append_schema(fs, target_path, ddf, write_index)
 
         def _write(directory: str) -> list[str]:
             params: dict[str, Any] = {
@@ -113,6 +126,8 @@ class ParquetSink(_AsyncWriteViaThreadMixin, PicklableLifecycleCoreMixin, Lifecy
             }
             if self.partition_on:
                 params["partition_on"] = list(self.partition_on)
+            if schema is not None:
+                params["schema"] = schema
             ddf.to_parquet(**params)
             return sorted(
                 self._restore_protocol(path) for path in fs.glob(f"{directory.rstrip('/')}/*")
@@ -122,6 +137,13 @@ class ParquetSink(_AsyncWriteViaThreadMixin, PicklableLifecycleCoreMixin, Lifecy
             fs=fs, target_path=target_path, overwrite=overwrite, write_fn=_write
         )
         return SinkWriteResult(path=target_path, files=tuple(files))
+
+    def _append_schema(
+        self, fs: Any, target_path: str, ddf: Any, write_index: bool
+    ) -> pa.Schema | None:
+        """Widened schema for an append onto an existing dataset, else ``None``."""
+        incoming = frame_schema(ddf, write_index=write_index)
+        return evolved_write_schema(fs, target_path, incoming, partition_on=self.partition_on)
 
     @staticmethod
     def _restore_protocol(path: str) -> str:
