@@ -7,6 +7,8 @@ sinks.py so every existing import path keeps working unchanged.
 from __future__ import annotations
 
 import asyncio
+import re
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, Union
@@ -164,6 +166,48 @@ def _validate_meta_object_columns_are_arrow_convertible(
     )
 
 
+_UNSAFE_PARTITION_VALUES = frozenset({"", ".", ".."})
+_PARTITION_SEPARATORS = re.compile(r"[/\\\x00]")
+
+
+def _reject_unsafe_partition_values(
+    partition: pd.DataFrame, columns: list[str], sink_name: str
+) -> pd.DataFrame:
+    """Fail the write if a partition value could not safely name a directory.
+
+    Partition values become ``column=value`` directories. Runs on every
+    partition, so a value with a path separator, NUL, or ``..`` is rejected
+    before any file is written, whatever the source of the data.
+    """
+    for column in columns:
+        values = partition[column].dropna().astype(str)
+        unsafe = values[
+            values.isin(_UNSAFE_PARTITION_VALUES) | values.str.contains(_PARTITION_SEPARATORS)
+        ]
+        if not unsafe.empty:
+            raise ValueError(
+                f"{sink_name} partition column {column!r} holds values that cannot name a "
+                f"directory: {sorted(set(unsafe))[:5]!r}. Partition values must not be empty, "
+                "'.', '..', or contain '/', '\\' or NUL."
+            )
+    return partition
+
+
+def append_name_function(
+    fs: fsspec.AbstractFileSystem, target_path: str, overwrite: bool
+) -> Callable[[int], str] | None:
+    """Unique part names when appending to an existing dataset, else Dask's defaults.
+
+    Dask names output files ``part.N`` from zero on every write, so a second
+    write into the same directory would replace the first's files instead of
+    adding to them.
+    """
+    if overwrite or not fs.exists(target_path):
+        return None
+    token = uuid.uuid4().hex[:12]
+    return lambda index: f"part-{token}.{index}"
+
+
 def prepare_partitioned_frame(
     frame: dd.DataFrame,
     *,
@@ -196,6 +240,9 @@ def prepare_partitioned_frame(
                 f"{sink_name} partition columns must already exist in the loaded frame or be "
                 f"derivable from date_field. Missing columns: {missing!r}."
             )
+        frame = frame.map_partitions(
+            _reject_unsafe_partition_values, partition_columns, sink_name, meta=frame._meta
+        )
 
     _validate_meta_matches_real_dtypes(frame, sink_name=sink_name)
     if validate_arrow_convertible:

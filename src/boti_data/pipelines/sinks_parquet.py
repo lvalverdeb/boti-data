@@ -21,6 +21,7 @@ from boti_data.pipelines.sinks_common import (
     SinkWriteResult,
     _AsyncWriteViaThreadMixin,
     _write_with_staging,
+    append_name_function,
     prepare_partitioned_frame,
     to_dask_frame,
 )
@@ -116,6 +117,7 @@ class ParquetSink(_AsyncWriteViaThreadMixin, PicklableLifecycleCoreMixin, Lifecy
         fs = self.reader.resource.require_fs()
         target_path = cast(str, self.reader.parquet_storage_path)
         schema = None if overwrite else self._append_schema(fs, target_path, ddf, write_index)
+        name_function = append_name_function(fs, target_path, overwrite)
 
         def _write(directory: str) -> list[str]:
             params: dict[str, Any] = {
@@ -128,6 +130,8 @@ class ParquetSink(_AsyncWriteViaThreadMixin, PicklableLifecycleCoreMixin, Lifecy
                 params["partition_on"] = list(self.partition_on)
             if schema is not None:
                 params["schema"] = schema
+            if name_function is not None:
+                params["name_function"] = lambda index: f"{name_function(index)}.parquet"
             ddf.to_parquet(**params)
             return sorted(
                 self._restore_protocol(path) for path in fs.glob(f"{directory.rstrip('/')}/*")

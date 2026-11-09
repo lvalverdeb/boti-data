@@ -7,7 +7,9 @@ _MULTI_STATEMENT_RE = re.compile(r";\s*\S")
 _FIRST_TOKEN_RE = re.compile(r"\A([a-zA-Z_][a-zA-Z0-9_]*)")
 _MUTATION_KEYWORD_RE = re.compile(
     r"\b(?:insert|update|delete|merge|upsert|replace|alter|drop|create|truncate|grant|revoke|"
-    r"comment|vacuum|analyze|attach|detach|copy|call|exec|execute|do|pragma)\b",
+    r"comment|vacuum|analyze|attach|detach|copy|call|exec|execute|do|pragma|"
+    r"into|set|set_config|reset|load|install|export|import|lo_import|lo_export|setval|nextval|"
+    r"pg_terminate_backend|pg_cancel_backend)\b",
     re.IGNORECASE,
 )
 _ALLOWED_FIRST_TOKENS = {"select", "with"}

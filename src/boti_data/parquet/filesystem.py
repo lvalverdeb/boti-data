@@ -68,15 +68,27 @@ def uses_nonlocal_explicit_fs(resource: ParquetDataResource) -> bool:
     return _protocol_is_nonlocal(getattr(fs, "protocol", None))
 
 
-def dataset_source(resource: ParquetDataResource) -> tuple[str, Any | None]:
-    parsed = urlparse(resource.parquet_storage_path)
-    if parsed.scheme and parsed.scheme != "file":
-        return strip_protocol(resource.parquet_storage_path), arrow_filesystem(resource)
-    if uses_nonlocal_explicit_fs(resource):
-        return resource.parquet_storage_path, arrow_filesystem(resource)
+def secure_local_path(resource: ParquetDataResource, path: str) -> str:
+    """*path* confined to the sandbox, for a resource whose filesystem is local.
 
-    local_path = str(resource._secure_local_path(resource.parquet_storage_path))
-    return local_path, None
+    A scheme other than ``file`` names a remote location, and a local
+    filesystem cannot be the right one for it; letting it through would
+    strip the scheme and read the remainder as a local path outside the
+    sandbox's checks.
+    """
+    parsed = urlparse(path)
+    if parsed.scheme and parsed.scheme != "file":
+        raise PermissionError(
+            f"{path!r} names a {parsed.scheme}:// location but this resource's filesystem "
+            "is local. Configure a remote filesystem (filesystem_config or fs) for it."
+        )
+    return str(resource._secure_local_path(path))
+
+
+def dataset_source(resource: ParquetDataResource) -> tuple[str, Any | None]:
+    if uses_nonlocal_explicit_fs(resource):
+        return strip_protocol(resource.parquet_storage_path), arrow_filesystem(resource)
+    return secure_local_path(resource, resource.parquet_storage_path), None
 
 
 def _as_arrow_filesystem(fs: Any) -> pafs.FileSystem:
@@ -86,30 +98,21 @@ def _as_arrow_filesystem(fs: Any) -> pafs.FileSystem:
 
 
 def arrow_filesystem(resource: ParquetDataResource) -> pafs.FileSystem | None:
-    parsed = urlparse(resource.parquet_storage_path)
     if uses_nonlocal_explicit_fs(resource):
         return _as_arrow_filesystem(resource.require_fs())
-    if parsed.scheme and parsed.scheme != "file":
-        return pafs.PyFileSystem(pafs.FSSpecHandler(resource.require_fs()))
     return None
 
 
 def normalized_load_path(resource: ParquetDataResource, path: str) -> str:
-    parsed = urlparse(path)
     if uses_nonlocal_explicit_fs(resource):
         return path
-    if parsed.scheme and parsed.scheme != "file":
-        return path
-    return str(resource._secure_local_path(path))
+    return secure_local_path(resource, path)
 
 
 def normalized_arrow_load_path(resource: ParquetDataResource, path: str) -> str:
-    parsed = urlparse(path)
     if uses_nonlocal_explicit_fs(resource):
-        return path
-    if parsed.scheme and parsed.scheme != "file":
         return strip_protocol(path)
-    return str(resource._secure_local_path(path))
+    return secure_local_path(resource, path)
 
 
 def strip_protocol(path: str) -> str:

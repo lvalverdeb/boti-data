@@ -6,7 +6,7 @@ sinks.py so every existing import path keeps working unchanged.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import fsspec
@@ -21,6 +21,7 @@ from boti_data.pipelines.sinks_common import (
     _AsyncWriteViaThreadMixin,
     _validate_storage_path,
     _write_with_staging,
+    append_name_function,
     prepare_partitioned_frame,
     resolve_sink_filesystem,
     to_dask_frame,
@@ -94,6 +95,7 @@ class CsvSink(_AsyncWriteViaThreadMixin, SecureResource):
             ddf = _boti_dask().safe_persist(ddf)
 
         fs, fs_path, public_path = self._filesystem_parts()
+        name_function = append_name_function(fs, fs_path, overwrite)
 
         def _write(directory: str) -> list[str]:
             if self.config.partition_on:
@@ -102,12 +104,14 @@ class CsvSink(_AsyncWriteViaThreadMixin, SecureResource):
                     fs=fs,
                     base_path=directory,
                     write_index=write_index,
+                    name_function=name_function,
                 )
             return self._write_csv_pattern(
                 ddf,
                 fs=fs,
                 directory=directory,
                 write_index=write_index,
+                name_function=name_function,
             )
 
         files = _write_with_staging(
@@ -122,6 +126,7 @@ class CsvSink(_AsyncWriteViaThreadMixin, SecureResource):
         fs: fsspec.AbstractFileSystem,
         base_path: str,
         write_index: bool,
+        name_function: Callable[[int], str] | None = None,
     ) -> list[str]:
         partition_on = self.config.partition_on or []
         if len(partition_on) != 1:
@@ -141,6 +146,7 @@ class CsvSink(_AsyncWriteViaThreadMixin, SecureResource):
                     fs=fs,
                     directory=directory,
                     write_index=write_index,
+                    name_function=name_function,
                 )
             )
         return sorted(written)
@@ -152,10 +158,11 @@ class CsvSink(_AsyncWriteViaThreadMixin, SecureResource):
         fs: fsspec.AbstractFileSystem,
         directory: str,
         write_index: bool,
+        name_function: Callable[[int], str] | None = None,
     ) -> list[str]:
         fs.makedirs(directory, exist_ok=True)
         pattern = f"{directory.rstrip('/')}/{self.config.filename_pattern}"
-        frame.to_csv(pattern, index=write_index)
+        frame.to_csv(pattern, index=write_index, name_function=name_function)
         return [
             self._restore_protocol(str(path))
             for path in sorted(fs.glob(f"{directory.rstrip('/')}/*.csv"))
@@ -239,6 +246,7 @@ class JsonlSink(_AsyncWriteViaThreadMixin, SecureResource):
             ddf = _boti_dask().safe_persist(ddf)
 
         fs, fs_path, public_path = self._filesystem_parts()
+        name_function = append_name_function(fs, fs_path, overwrite)
 
         def _write(directory: str) -> list[str]:
             if self.config.partition_on:
@@ -247,12 +255,14 @@ class JsonlSink(_AsyncWriteViaThreadMixin, SecureResource):
                     fs=fs,
                     base_path=directory,
                     write_index=write_index,
+                    name_function=name_function,
                 )
             return self._write_jsonl_pattern(
                 ddf,
                 fs=fs,
                 directory=directory,
                 write_index=write_index,
+                name_function=name_function,
             )
 
         files = _write_with_staging(
@@ -267,6 +277,7 @@ class JsonlSink(_AsyncWriteViaThreadMixin, SecureResource):
         fs: fsspec.AbstractFileSystem,
         base_path: str,
         write_index: bool,
+        name_function: Callable[[int], str] | None = None,
     ) -> list[str]:
         partition_on = self.config.partition_on or []
         if len(partition_on) != 1:
@@ -286,6 +297,7 @@ class JsonlSink(_AsyncWriteViaThreadMixin, SecureResource):
                     fs=fs,
                     directory=directory,
                     write_index=write_index,
+                    name_function=name_function,
                 )
             )
         return sorted(written)
@@ -297,6 +309,7 @@ class JsonlSink(_AsyncWriteViaThreadMixin, SecureResource):
         fs: fsspec.AbstractFileSystem,
         directory: str,
         write_index: bool,
+        name_function: Callable[[int], str] | None = None,
     ) -> list[str]:
         fs.makedirs(directory, exist_ok=True)
         pattern = f"{directory.rstrip('/')}/{self.config.filename_pattern}"
@@ -306,6 +319,7 @@ class JsonlSink(_AsyncWriteViaThreadMixin, SecureResource):
             lines=True,
             date_format="iso",
             compute=True,
+            name_function=name_function,
         )
         return [
             self._restore_protocol(str(path))

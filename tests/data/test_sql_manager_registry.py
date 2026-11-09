@@ -284,7 +284,10 @@ def test_build_sync_engine_kwargs_injects_duckdb_read_only(tmp_path) -> None:
 
     kwargs = _build_sync_engine_kwargs(config)
 
-    assert kwargs["connect_args"] == {"read_only": True}
+    assert kwargs["connect_args"] == {
+        "read_only": True,
+        "config": {"enable_external_access": False},
+    }
 
 
 def test_build_sync_engine_kwargs_does_not_inject_read_only_when_query_only_false(

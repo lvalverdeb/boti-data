@@ -58,7 +58,8 @@ ADBC_BACKENDS: dict[str, tuple[str, str, dict[str, Any]]] = {
     _SQLITE: ("adbc_driver_sqlite", "PRAGMA query_only = 1", {}),
 }
 
-_PYFORMAT = re.compile(r"%\((\w+)\)s")
+# One pass: an escaped percent is consumed before a placeholder can start inside it.
+_PYFORMAT = re.compile(r"%%|%\((\w+)\)s")
 
 
 def _backend_of(config: WorkerSqlConfig) -> URL:
@@ -94,10 +95,12 @@ def _dollar_numbered(sql: str, params: dict[str, Any]) -> tuple[str, tuple[Any, 
     order: list[str] = []
 
     def _number(match: re.Match[str]) -> str:
+        if match.group(1) is None:
+            return "%"
         order.append(match.group(1))
         return f"${len(order)}"
 
-    rewritten = _PYFORMAT.sub(_number, sql).replace("%%", "%")
+    rewritten = _PYFORMAT.sub(_number, sql)
     return rewritten, tuple(params[name] for name in order)
 
 

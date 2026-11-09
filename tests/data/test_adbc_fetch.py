@@ -111,6 +111,15 @@ def test_adbc_partition_matches_the_sqlalchemy_partition(ro_sqlite, monkeypatch)
     assert via_adbc.equals(via_sqlalchemy), (via_adbc, via_sqlalchemy)
 
 
+def test_escaped_percent_before_a_parenthesis_is_not_a_placeholder() -> None:
+    """psycopg renders a literal ``%`` as ``%%``; ``%%(a_1)s`` is a percent then text."""
+    sql, params = adbc_fetch.positional(
+        'select "%%(a_1)s" from t where x = %(a_1)s', {"a_1": 1}, "postgresql"
+    )
+    assert sql == 'select "%(a_1)s" from t where x = $1'
+    assert params == (1,)
+
+
 def test_the_adbc_session_itself_refuses_writes(ro_sqlite) -> None:
     with (
         adbc_fetch.open_read_only(_config(ro_sqlite)) as connection,

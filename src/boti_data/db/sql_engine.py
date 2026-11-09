@@ -184,7 +184,12 @@ def _apply_duckdb_read_only_connect_arg(
     backend = sqlalchemy_url.make_url(_normalize_connection_url(connection_url)).get_backend_name()
     if backend != "duckdb":
         return connect_args
-    return {**connect_args, "read_only": True}
+    # read_only protects the database file only; table functions such as
+    # read_text()/read_csv() and httpfs would still read local files and the
+    # network from inside an allowed SELECT. Locked at connect time, it cannot
+    # be re-enabled by a later SET.
+    duckdb_config = {**connect_args.get("config", {}), "enable_external_access": False}
+    return {**connect_args, "read_only": True, "config": duckdb_config}
 
 
 def _build_sync_engine_kwargs(
@@ -356,6 +361,8 @@ def _create_worker_async_engine(config: SqlDatabaseConfig | WorkerSqlConfig) -> 
         **_build_worker_engine_kwargs(worker_config),
     )
     instrument_engine_pool(engine, connection_url)
+    if worker_config.query_only:
+        _configure_query_only_engine(engine.sync_engine, parsed)
     return engine
 
 

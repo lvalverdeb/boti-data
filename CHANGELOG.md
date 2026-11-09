@@ -94,6 +94,34 @@ Targeting 1.4.0.
   or `ON DUPLICATE KEY UPDATE` (MySQL), registered as the `"upsert"` sink.
   Guide: `docs/guides/incremental-loads.md`.
 
+### Security
+
+Findings of the 2026-11 audit, each with a regression test under
+`tests/security/`:
+
+- Partition values taken from the data (`partition_on` columns) are validated
+  before any sink writes: a value that is empty, `.`, `..`, or contains `/`,
+  `\` or NUL fails the write. Such a value previously became a directory
+  name and could place files outside the project root.
+- A `parquet_storage_path` with a scheme other than `file://` is refused when
+  the resource's filesystem is local. The scheme was stripped and the rest
+  read as a local path, bypassing the sandbox on the Dask load path.
+- **`overwrite=False` now appends.** Dask names output files `part.N` from
+  zero on every write, so a second write into an existing dataset replaced
+  the first's files. Appended files carry a unique token in their name.
+- The raw-SQL guard also rejects `INTO`, `SET`, `set_config`, `RESET`,
+  `LOAD`, `INSTALL`, `EXPORT`, `IMPORT`, `lo_import`, `lo_export`, `setval`,
+  `nextval` and backend-termination functions. The guard remains a heuristic;
+  database-enforced read-only (`query_only=True`) is the control to rely on.
+- **DuckDB under `query_only=True` connects with `enable_external_access`
+  off**, locked at connect time. `read_only` protects the database file only;
+  table functions such as `read_text()` and `read_csv()` could still read
+  local files and, through httpfs, the network. Reading external files from
+  a query-only DuckDB connection now needs `query_only=False`.
+- Async worker engines (`AsyncSqlPartitionedLoader`) now receive the same
+  read-only session statement as sync worker engines; they validated support
+  but never applied it.
+
 ### Changed
 
 - `boti` floor raised to 1.2.0: `ParquetDataResource` resolves a relative
