@@ -107,9 +107,10 @@ Targeting 1.4.0.
   called the old row-list finaliser. Both paths now share one finaliser, and
   the async path is tested.
 - Reading a Parquet dataset whose files disagree on a column's type in a way
-  that is not a widening (string in one file, int64 in another) failed with
-  an Arrow unification error since the schema-evolution read. Such datasets
-  fall back to the plain read, as before.
+  Arrow cannot promote (int64 in some files, strings in others) failed, since
+  1.3.x on the first non-parsing value and since the schema-evolution read on
+  unification. Such columns are now read as string, eagerly and through Dask,
+  with a warning naming them; every value is kept.
 - Boolean coercion on pandas 3.1: a column whose values all miss the literal
   map (floats such as `1.0`) came back as a null-typed Arrow series and the
   numeric fallback could not assign into it. The fallback now works on an

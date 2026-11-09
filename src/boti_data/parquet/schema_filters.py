@@ -53,6 +53,44 @@ def _hive_partition_fields(files: list[str]) -> list[pa.Field]:
     return [pa.field(name, pa.string()) for name in names]
 
 
+def _merge_field(seen: pa.Field, field: pa.Field, stringified: list[str]) -> pa.Field:
+    """*seen* widened to also hold *field*; string when Arrow cannot promote the pair."""
+    if seen.type == field.type:
+        return seen
+    try:
+        return pa.unify_schemas(
+            [pa.schema([seen]), pa.schema([field])], promote_options="permissive"
+        )[0]
+    except (pa.ArrowTypeError, pa.ArrowInvalid):
+        stringified.append(field.name)
+        return pa.field(field.name, pa.string(), nullable=True)
+
+
+def _unify_or_stringify(schemas: list[pa.Schema], logger: Any) -> pa.Schema:
+    """The permissive union of *schemas*; columns Arrow cannot promote become string.
+
+    A column typed int64 in some files and string in others (an identifier
+    that later grew letters, say) has no numeric type that fits both. Every
+    value fits a string, so the dataset is read that way rather than failing
+    on the first file whose values do not parse as the first file's type.
+    """
+    try:
+        return pa.unify_schemas(schemas, promote_options="permissive")
+    except (pa.ArrowTypeError, pa.ArrowInvalid):
+        pass
+    fields: dict[str, pa.Field] = {}
+    stringified: list[str] = []
+    for schema in schemas:
+        for field in schema:
+            seen = fields.get(field.name)
+            fields[field.name] = field if seen is None else _merge_field(seen, field, stringified)
+    logger.warning(
+        "Column(s) %s have types Arrow cannot promote across this dataset's files; read as string.",
+        sorted(set(stringified)),
+    )
+    return pa.schema(list(fields.values()))
+
+
 def evolved_read_schema(resource: ParquetDataResource, files: list[str]) -> pa.Schema | None:
     """Unified schema when *files* do not all share one, else ``None``.
 
@@ -70,13 +108,7 @@ def evolved_read_schema(resource: ParquetDataResource, files: list[str]) -> pa.S
         schemas.append(pq.read_schema(source, filesystem=arrow_fs).remove_metadata())
     if all(schema.equals(schemas[0]) for schema in schemas[1:]):
         return None
-    try:
-        unified = pa.unify_schemas(schemas, promote_options="permissive")
-    except (pa.ArrowTypeError, pa.ArrowInvalid) as exc:
-        # Not a widening (e.g. string in one file, int64 in another): keep the
-        # plain read, where pyarrow casts each fragment to the first file's schema.
-        resource.logger.debug("Files do not unify to one schema; plain read: %s", exc)
-        return None
+    unified = _unify_or_stringify(schemas, resource.logger)
     for field in _hive_partition_fields(files):
         if field.name not in unified.names:
             unified = unified.append(field)

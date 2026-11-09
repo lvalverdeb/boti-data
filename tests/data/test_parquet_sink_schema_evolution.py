@@ -143,8 +143,8 @@ def test_unify_dataset_schemas_names_the_conflicting_column() -> None:
     assert widened.field("a").type == pa.float64()
 
 
-def test_files_with_incompatible_types_still_read_like_before(tmp_path) -> None:
-    """string in one file, int64 in another is not a widening: the plain read applies."""
+def test_columns_arrow_cannot_promote_are_read_as_string(tmp_path) -> None:
+    """int64 in one file, hex strings in another: both survive, as strings, eager and Dask."""
     import pyarrow as pa
     import pyarrow.parquet as pq
 
@@ -153,9 +153,14 @@ def test_files_with_incompatible_types_still_read_like_before(tmp_path) -> None:
     root = tmp_path / "ds"
     root.mkdir()
     pq.write_table(
-        pa.table({"id": [1, 2], "card": pa.array([11, 12], pa.int64())}), root / "a.parquet"
+        pa.table({"id": [1, 2], "device": pa.array([11, 12], pa.int64())}), root / "a.parquet"
     )
-    pq.write_table(pa.table({"id": [3, 4], "card": pa.array(["13", "14"])}), root / "b.parquet")
+    pq.write_table(
+        pa.table({"id": [3, 4], "device": pa.array(["828dbb9cc3930efa", "14"])}), root / "b.parquet"
+    )
     with ParquetDataResource(ParquetDataConfig(parquet_storage_path=str(root))) as resource:
-        frame = resource.load_arrow().to_pandas()
-    assert sorted(frame["id"].tolist()) == [1, 2, 3, 4]
+        eager = resource.load_arrow()
+        lazy = resource.load_files().compute()
+    assert eager.schema.field("device").type == pa.string()
+    assert sorted(eager.column("device").to_pylist()) == ["11", "12", "14", "828dbb9cc3930efa"]
+    assert sorted(lazy["device"].astype(str).tolist()) == ["11", "12", "14", "828dbb9cc3930efa"]
