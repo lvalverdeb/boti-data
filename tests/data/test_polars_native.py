@@ -77,3 +77,23 @@ def test_scan_polars_is_lazy_and_reads_through_the_resource_filesystem(tmp_path)
         assert isinstance(lazy, pl.LazyFrame)
         out = lazy.filter(pl.col("id") >= 30).collect()
     assert out.columns == ["id"] and out.height == 10
+
+
+def test_async_arrow_and_polars_sql_loads(orders_db) -> None:
+    import asyncio
+
+    import pyarrow as pa
+
+    async def run():
+        gateway = DataGateway(
+            SqlDatabaseConfig(connection_url=f"sqlite+aiosqlite:///{orders_db}", query_only=False),
+            table="orders",
+        )
+        async with gateway:
+            table = await gateway.aload(return_type="arrow", customer="c2", limit=5)
+            frame = await gateway.aload(return_type="polars", customer="c2")
+        return table, frame
+
+    table, frame = asyncio.run(run())
+    assert isinstance(table, pa.Table) and table.num_rows == 5
+    assert isinstance(frame, pl.DataFrame) and frame.height == 17

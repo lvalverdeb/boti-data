@@ -22,8 +22,9 @@ def datacube_loader(request) -> pd.DataFrame:
     for key, value in request.filters.items():
         if key.endswith("__exact"):
             frame = frame[frame[key.removesuffix("__exact")] == value]
-    if request.columns:
-        frame = frame[request.columns]
+    columns = getattr(request, "columns", None)  # extra field, present only when passed
+    if columns:
+        frame = frame[columns]
     if request.limit is not None:
         frame = frame.head(request.limit)
     return frame

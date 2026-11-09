@@ -24,8 +24,12 @@ _FAST_DEFAULTS: dict[str, str] = {
 }
 
 
+# The runner itself, and the interactive menu (it blocks on stdin).
+_NOT_EXAMPLES = {"smoke_all_examples.py", "menu.py"}
+
+
 def discover_examples(examples_dir: Path) -> list[Path]:
-    scripts = sorted(p for p in examples_dir.glob("*.py") if p.name != "smoke_all_examples.py")
+    scripts = sorted(p for p in examples_dir.glob("*.py") if p.name not in _NOT_EXAMPLES)
     return scripts
 
 

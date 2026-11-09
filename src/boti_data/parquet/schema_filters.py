@@ -70,7 +70,13 @@ def evolved_read_schema(resource: ParquetDataResource, files: list[str]) -> pa.S
         schemas.append(pq.read_schema(source, filesystem=arrow_fs).remove_metadata())
     if all(schema.equals(schemas[0]) for schema in schemas[1:]):
         return None
-    unified = pa.unify_schemas(schemas, promote_options="permissive")
+    try:
+        unified = pa.unify_schemas(schemas, promote_options="permissive")
+    except (pa.ArrowTypeError, pa.ArrowInvalid) as exc:
+        # Not a widening (e.g. string in one file, int64 in another): keep the
+        # plain read, where pyarrow casts each fragment to the first file's schema.
+        resource.logger.debug("Files do not unify to one schema; plain read: %s", exc)
+        return None
     for field in _hive_partition_fields(files):
         if field.name not in unified.names:
             unified = unified.append(field)

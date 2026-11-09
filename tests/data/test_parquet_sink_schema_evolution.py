@@ -141,3 +141,21 @@ def test_unify_dataset_schemas_names_the_conflicting_column() -> None:
         [pa.schema([("a", pa.int32())]), pa.schema([("a", pa.float64())])]
     )
     assert widened.field("a").type == pa.float64()
+
+
+def test_files_with_incompatible_types_still_read_like_before(tmp_path) -> None:
+    """string in one file, int64 in another is not a widening: the plain read applies."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from boti_data.parquet import ParquetDataConfig, ParquetDataResource
+
+    root = tmp_path / "ds"
+    root.mkdir()
+    pq.write_table(
+        pa.table({"id": [1, 2], "card": pa.array([11, 12], pa.int64())}), root / "a.parquet"
+    )
+    pq.write_table(pa.table({"id": [3, 4], "card": pa.array(["13", "14"])}), root / "b.parquet")
+    with ParquetDataResource(ParquetDataConfig(parquet_storage_path=str(root))) as resource:
+        frame = resource.load_arrow().to_pandas()
+    assert sorted(frame["id"].tolist()) == [1, 2, 3, 4]

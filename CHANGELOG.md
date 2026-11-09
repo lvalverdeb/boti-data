@@ -95,6 +95,14 @@ Targeting 1.4.0.
 
 ### Fixed
 
+- Async Arrow and polars SQL loads (`aload(return_type="arrow" | "polars")`)
+  raised a `TypeError` after the Arrow-fetch change: the async loader still
+  called the old row-list finaliser. Both paths now share one finaliser, and
+  the async path is tested.
+- Reading a Parquet dataset whose files disagree on a column's type in a way
+  that is not a widening (string in one file, int64 in another) failed with
+  an Arrow unification error since the schema-evolution read. Such datasets
+  fall back to the plain read, as before.
 - Boolean coercion on pandas 3.1: a column whose values all miss the literal
   map (floats such as `1.0`) came back as a null-typed Arrow series and the
   numeric fallback could not assign into it. The fallback now works on an

@@ -180,12 +180,7 @@ async def read_sql_async(
     async with resource.engine.connect() as conn:
         if request.return_type == "arrow":
             result = await conn.execute(statement, execute_params or {})
-            return _finalize_arrow_result(
-                [tuple(row) for row in result.fetchall()],
-                list(result.keys()),
-                statement=statement,
-                limit=request.limit,
-            )
+            return _finalize_arrow_result(result, statement=statement, limit=request.limit)
         frame = await conn.run_sync(
             lambda sync_conn: pd.read_sql(statement, sync_conn, params=execute_params)
         )
