@@ -425,7 +425,7 @@ dev = [
 requires-dist = [
     { name = "asyncmy", marker = "extra == 'mysql'", specifier = ">=0.2.11,<0.3.0" },
     { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.30.0,<0.32.0" },
-    { name = "boti", specifier = ">=1.0.2,<2.0.0" },
+    { name = "boti", specifier = ">=1.2.0,<2.0.0" },
     { name = "boti", extras = ["s3"], marker = "extra == 's3'", specifier = ">=1.1.0,<2.0.0" },
     { name = "boti-dask", marker = "extra == 'dataframes'", specifier = ">=1.0.0,<2.0.0" },
     { name = "clickhouse-connect", marker = "extra == 'clickhouse'", specifier = ">=1.6.0,<2.0.0" },

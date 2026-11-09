@@ -46,7 +46,7 @@ jobs:
 
       - name: Pin boti to the floor
         if: matrix.boti == 'floor'
-        run: uv pip install "boti==1.0.2"
+        run: uv pip install "boti==1.2.0"
 
       - name: Upgrade boti to the latest release
         if: matrix.boti == 'latest'

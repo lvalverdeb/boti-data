@@ -1249,7 +1249,7 @@ suite passes on; locked is what `uv.lock` resolves; latest is whatever PyPI serv
 
 | Dependency | Floor | Locked | Latest |
 | --- | --- | --- | --- |
-| `boti` | 1.0.2 | 1.2.0 | weekly |
+| `boti` | 1.2.0 | 1.2.0 | weekly |
 | `boti-dask` | 1.0.0 | see `uv.lock` | weekly |
 
 With `boti-dask` below 1.1.0 the partition-fetch gate bounds each worker process rather than
