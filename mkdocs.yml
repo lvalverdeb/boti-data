@@ -36,6 +36,7 @@ nav:
       - Distributed loading: guides/distributed.md
       - Datacube backend: guides/datacube.md
       - Security: guides/security.md
+      - Metrics and tracing: guides/telemetry.md
   - API reference:
       - Database access: api/db.md
       - Gateway and helper: api/gateway.md

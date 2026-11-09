@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import threading
 from typing import Any
 
 from sqlalchemy import create_engine, event
@@ -12,6 +13,44 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool, Pool, QueuePool, StaticPool
 
 from boti_data.db.sql_config import SqlDatabaseConfig, WorkerSqlConfig
+from boti_data.telemetry import current_provider
+
+# Live checkouts per engine digest, so the gauge reports an absolute level.
+_CHECKED_OUT: dict[str, int] = {}
+_CHECKED_OUT_LOCK = threading.Lock()
+
+
+def _bump_checked_out(digest: str, delta: int) -> int:
+    with _CHECKED_OUT_LOCK:
+        level = max(0, _CHECKED_OUT.get(digest, 0) + delta)
+        _CHECKED_OUT[digest] = level
+        return level
+
+
+def instrument_engine_pool(engine: Engine | AsyncEngine, connection_url: str) -> None:
+    """Report pool checkouts to telemetry, keyed on the URL digest (never the DSN).
+
+    Counter ``boti_data.pool.checkouts`` and gauge ``boti_data.pool.checked_out``,
+    both with ``engine=<digest>``. Async engines listen through ``sync_engine``.
+    """
+    digest = _connection_url_digest(connection_url)
+    target = getattr(engine, "sync_engine", engine)
+    if not isinstance(target, Engine):  # test doubles stand in for engines
+        return
+
+    @event.listens_for(target, "checkout")
+    def _on_checkout(_dbapi_connection: Any, _record: Any, _proxy: Any) -> None:
+        provider = current_provider()
+        provider.counter("boti_data.pool.checkouts").add(1, engine=digest)
+        provider.gauge("boti_data.pool.checked_out").set(
+            _bump_checked_out(digest, 1), engine=digest
+        )
+
+    @event.listens_for(target, "checkin")
+    def _on_checkin(_dbapi_connection: Any, _record: Any) -> None:
+        level = _bump_checked_out(digest, -1)
+        current_provider().gauge("boti_data.pool.checked_out").set(level, engine=digest)
+
 
 _CONNECTION_URL_DRIVER_ALIASES = {
     "mysql+pymsql": "mysql+pymysql",
@@ -312,10 +351,12 @@ def _create_worker_async_engine(config: SqlDatabaseConfig | WorkerSqlConfig) -> 
     if worker_config.query_only:
         _validate_query_only_support(parsed)
 
-    return create_async_engine(
+    engine = create_async_engine(
         connection_url,
         **_build_worker_engine_kwargs(worker_config),
     )
+    instrument_engine_pool(engine, connection_url)
+    return engine
 
 
 def _create_worker_sync_engine(config: SqlDatabaseConfig | WorkerSqlConfig) -> Engine:
@@ -332,6 +373,7 @@ def _create_worker_sync_engine(config: SqlDatabaseConfig | WorkerSqlConfig) -> E
         connection_url,
         **_build_worker_engine_kwargs(worker_config),
     )
+    instrument_engine_pool(engine, connection_url)
     if worker_config.query_only:
         _configure_query_only_engine(engine, parsed)
     return engine

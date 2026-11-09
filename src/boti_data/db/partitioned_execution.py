@@ -12,6 +12,7 @@ from boti_data._engines import dask as _dask
 from boti_data._engines import dask_dataframe as _dd
 from boti_data.db.partitioned_fetch_gate import (
     GateWaitStats,
+    _gate_name,
     _timed_fetch_gate,
     fetch_gate_stats,
     format_gate_wait_suffix,
@@ -33,6 +34,7 @@ from boti_data.db.sql_engine import (
     _create_worker_sync_engine,
     _get_worker_engine_identity,
 )
+from boti_data.telemetry import current_provider
 
 if TYPE_CHECKING:
     import dask.dataframe as dd
@@ -92,6 +94,20 @@ def _get_cached_worker_async_engine(config: WorkerSqlConfig) -> Any:
         engine = _create_worker_async_engine(config)
         engines[key] = engine
     return engine
+
+
+def _traced_partition(
+    gate_key: str, partition: SqlPartitionSpec, fetch: Callable[[], pd.DataFrame]
+) -> pd.DataFrame:
+    """Run one partition fetch inside a ``boti_data.partition.fetch`` span."""
+    attributes: dict[str, Any] = {"gate": _gate_name(gate_key)}
+    index = getattr(partition, "index", None)
+    if index is not None:
+        attributes["partition"] = index
+    with current_provider().span("boti_data.partition.fetch", **attributes) as span:
+        frame = fetch()
+        span.set("rows", len(frame))
+        return frame
 
 
 def _dask_available() -> bool:
@@ -262,20 +278,26 @@ class SqlPartitionExecutor:
         meta_dtypes: dict[str, str],
         use_arrow: bool = True,
     ) -> pd.DataFrame:
-        with _timed_fetch_gate(gate_key, max_concurrent_fetches):
-            engine = _get_cached_worker_sync_engine(config)
-            with engine.connect() as conn:
-                if not use_arrow:
-                    result = conn.exec_driver_sql(partition.sql, partition.params)
-                    return SqlPartitionExecutor._dataframe_from_result_rows(result, meta_dtypes)
-                result = conn.exec_driver_sql(*SqlPartitionExecutor._partition_exec_args(partition))
-                columns = list(result.keys())
-                return SqlPartitionExecutor._materialize_partition_from_result(
-                    result,
-                    columns,
-                    meta_dtypes,
-                    use_arrow=use_arrow,
-                )
+
+        def _fetch() -> pd.DataFrame:
+            with _timed_fetch_gate(gate_key, max_concurrent_fetches):
+                engine = _get_cached_worker_sync_engine(config)
+                with engine.connect() as conn:
+                    if not use_arrow:
+                        result = conn.exec_driver_sql(partition.sql, partition.params)
+                        return SqlPartitionExecutor._dataframe_from_result_rows(result, meta_dtypes)
+                    result = conn.exec_driver_sql(
+                        *SqlPartitionExecutor._partition_exec_args(partition)
+                    )
+                    columns = list(result.keys())
+                    return SqlPartitionExecutor._materialize_partition_from_result(
+                        result,
+                        columns,
+                        meta_dtypes,
+                        use_arrow=use_arrow,
+                    )
+
+        return _traced_partition(gate_key, partition, _fetch)
 
     _iter_result_batches = staticmethod(iter_result_batches)
     _materialize_partition_from_result = staticmethod(materialize_partition_from_result)
@@ -318,7 +340,7 @@ class SqlPartitionExecutor:
                     )
 
             loop = _get_or_create_worker_loop()
-            return loop.run_until_complete(_fetch())
+            return _traced_partition(gate_key, partition, lambda: loop.run_until_complete(_fetch()))
 
     @staticmethod
     def probe_capped(

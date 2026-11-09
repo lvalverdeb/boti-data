@@ -43,6 +43,13 @@ Targeting 1.4.0.
 - polars-native path: `return_type="polars"` is built from Arrow with no
   pandas detour for SQL and Parquet loads; `ParquetDataResource.scan_polars()`
   returns a lazy polars frame over the resource's filesystem.
+- Metrics and tracing (R8): `boti_data.telemetry` with a no-op default, an
+  in-memory provider for tests and an OpenTelemetry provider behind the new
+  `otel` extra, selected with `telemetry.configure()` or
+  `BOTI_DATA_TELEMETRY=otel`. Spans around every gateway load and partition
+  fetch, a histogram of fetch-gate waits, and pool checkout counter and
+  checked-out gauge from SQLAlchemy pool events on every engine, keyed on the
+  connection-URL digest, never the DSN. See the "Metrics and tracing" guide.
 - Cluster-wide partition fetch gate: on a Dask cluster the gate is
   `boti_dask.cluster_semaphore`, a scheduler-side semaphore shared by every
   worker, so `max_concurrent_fetches` bounds the whole cluster rather than

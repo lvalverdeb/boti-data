@@ -9,6 +9,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from boti_data.db.sql_engine import instrument_engine_pool
+
 _log = logging.getLogger(__name__)
 
 
@@ -63,6 +65,7 @@ class EngineRegistry:
             return cached, True
 
         engine = create_engine(url, **kwargs)
+        instrument_engine_pool(engine, url)
         result_engine, was_cached, duplicate = cls._register_or_flag_duplicate(key, engine)
         if duplicate is not None:
             try:
@@ -78,6 +81,7 @@ class EngineRegistry:
             return cached, True
 
         engine = create_async_engine(url, **kwargs)
+        instrument_engine_pool(engine, url)
         result_engine, was_cached, duplicate = cls._register_or_flag_duplicate(
             key, engine, is_async=True
         )

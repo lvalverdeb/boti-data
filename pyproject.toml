@@ -95,6 +95,12 @@ dataframes = [
 s3 = [
     "boti[s3]>=1.1.0,<2.0.0",
 ]
+# Metrics and tracing through the application's global OpenTelemetry tracer
+# and meter providers (boti_data.telemetry.OpenTelemetryProvider).
+otel = [
+    "opentelemetry-api>=1.20,<2",
+    "opentelemetry-sdk>=1.20,<2",
+]
 
 [project.urls]
 Homepage = "https://github.com/lvalverdeb/boti-data"
@@ -148,6 +154,8 @@ dev = [
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
     "pytest-benchmark>=5.1.0",
+    # Exercises boti_data.telemetry.OpenTelemetryProvider end to end.
+    "opentelemetry-sdk>=1.20,<2",
     "pytest-cov>=6.0.0",
     "ruff>=0.11.0",
 ]
