@@ -31,7 +31,7 @@ def _empty_loader(request: Any) -> pd.DataFrame:
 
 
 def _run_async(coro: Any) -> Any:
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ── fix_data / afix_data hook dispatch ──────────────────────────────────────

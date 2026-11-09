@@ -12,8 +12,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import dask.dataframe as dd
 import pyarrow as pa
+
+from boti_data._engines import dask_dataframe as _dd
+
+if TYPE_CHECKING:
+    import dask.dataframe as dd
 import pyarrow.dataset as ds
 
 from . import filesystem, schema_filters
@@ -62,8 +66,8 @@ def load_files_unified(
     empty = dataset.schema.empty_table()
     meta = empty.select(columns or dataset.schema.names).to_pandas()
     if not fragments:
-        return dd.from_pandas(meta, npartitions=1)
-    return dd.from_map(
+        return _dd().from_pandas(meta, npartitions=1)
+    return _dd().from_map(
         _fragment_to_pandas,
         fragments,
         meta=meta,
