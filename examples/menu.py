@@ -30,6 +30,7 @@ CATEGORIES: list[tuple[str, list[str]]] = [
             "sql_model_builder.py",
             "sql_async_resource.py",
             "sql_partitioned_loader.py",
+            "sql_adbc_fetch.py",
             "sql_pgvector.py",
         ],
     ),

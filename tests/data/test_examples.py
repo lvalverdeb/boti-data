@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "examples"
 
 
@@ -179,3 +181,15 @@ def test_datacube_contract_rejection_example_reports_actionable_error(capsys) ->
     assert "Datacube contract request validation failed" in result["error"]
     assert "cube='inventory'" in result["error"]
     assert "filter_keys=['status__exact']" in result["error"]
+
+
+def test_adbc_example_runs_and_returns_summary(capsys) -> None:
+    pytest.importorskip("adbc_driver_sqlite")
+    module = _load_example_module("sql_adbc_fetch.py")
+    result = module.main()
+    output = capsys.readouterr().out
+    assert result["driver_installed"] is True
+    assert result["eligibility"]["query_only=True (default)"] is True
+    assert result["eligibility"]["query_only=False"] is False
+    assert result["rows"] == (module.ROWS, module.ROWS)
+    assert "Write through the ADBC session refused" in output

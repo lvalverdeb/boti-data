@@ -20,6 +20,7 @@ python examples/sql_model_registry.py
 python examples/sql_model_builder.py
 python examples/sql_async_resource.py
 python examples/sql_partitioned_loader.py
+python examples/sql_adbc_fetch.py
 python examples/sql_pgvector.py
 python examples/parquet_resource.py
 python examples/data_facade_db.py
