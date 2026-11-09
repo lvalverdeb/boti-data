@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from boti_data.gateway import DataGateway
 from boti_data.schema import DataFrameLike
 from boti_data.watermark.incremental import (
     IncrementalResult,
     advance_watermark,
     build_incremental_filters,
 )
+
+if TYPE_CHECKING:
+    from boti_data.gateway import DataGateway
 
 
 @runtime_checkable
@@ -142,3 +145,80 @@ class IncrementalLoadService:
             watermark_store=watermark_store,
             commit_on_success=commit_on_success,
         )
+
+
+_SINCE_TUPLE_ARITY = 3
+
+
+@dataclass(frozen=True)
+class SinceSpec:
+    """What ``DataGateway.load(since=...)`` needs: the field, the store and the source key."""
+
+    field: str
+    store: WatermarkStore
+    source: str
+    operator: str = "gt"
+    initial_value: Any = None
+
+
+def resolve_since(since: Any, options: dict[str, Any], *, default_source: str | None) -> SinceSpec:
+    """Build a :class:`SinceSpec` from ``since`` plus the ``watermark_*`` keywords in ``options``.
+
+    ``since`` is either a watermark field name (then ``watermark_store=`` is
+    required and ``watermark_source=`` defaults to the configured table) or a
+    ``(field, store, source)`` tuple. The keywords are removed from ``options``.
+    """
+    store = options.pop("watermark_store", None)
+    source = options.pop("watermark_source", None)
+    operator = options.pop("watermark_operator", "gt")
+    initial_value = options.pop("watermark_initial", None)
+    if isinstance(since, tuple):
+        if len(since) != _SINCE_TUPLE_ARITY:
+            raise ValueError("since must be a field name or a (field, store, source) tuple.")
+        field, store, source = since
+    elif isinstance(since, str):
+        field = since
+    else:
+        raise TypeError("since must be a field name or a (field, store, source) tuple.")
+    source = source or default_source
+    if store is None or not isinstance(store, WatermarkStore):
+        raise ValueError(
+            "since= needs a watermark store with read()/write(); pass watermark_store=."
+        )
+    if not source:
+        raise ValueError(
+            "since= needs a watermark source; pass watermark_source= or configure a table."
+        )
+    return SinceSpec(
+        field=field, store=store, source=source, operator=operator, initial_value=initial_value
+    )
+
+
+def _since_call(options: dict[str, Any], *, default_source: str | None) -> dict[str, Any]:
+    """Keyword arguments for :class:`IncrementalLoadService` from a ``since=`` option set."""
+    spec = resolve_since(options.pop("since"), options, default_source=default_source)
+    return {
+        "watermark_field": spec.field,
+        "watermark_source": spec.source,
+        "watermark_store": spec.store,
+        "operator": spec.operator,
+        "initial_value": spec.initial_value,
+        **options,
+    }
+
+
+# Not a copy-pasted twin: everything but the await lives in _since_call().
+# spaghetti-ignore[sync-async-duplication]: see above
+def load_since(gateway: DataGateway, options: dict[str, Any], *, default_source: str | None) -> Any:
+    """``DataGateway.load(since=...)``: load above the watermark and advance it on success."""
+    call = _since_call(options, default_source=default_source)
+    return IncrementalLoadService(gateway).load(**call).frame
+
+
+async def aload_since(
+    gateway: DataGateway, options: dict[str, Any], *, default_source: str | None
+) -> Any:
+    """Async twin of :func:`load_since`."""
+    call = _since_call(options, default_source=default_source)
+    result = await IncrementalLoadService(gateway).aload(**call)
+    return result.frame

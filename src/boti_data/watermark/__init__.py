@@ -8,12 +8,18 @@ with dataframes_required(__name__):
         advance_watermark,
         build_incremental_filters,
     )
-    from boti_data.watermark.store import FileWatermarkStore, FsspecWatermarkStore, WatermarkStore
+    from boti_data.watermark.store import (
+        FileWatermarkStore,
+        FsspecWatermarkStore,
+        SqlWatermarkStore,
+        WatermarkStore,
+    )
 
 __all__ = [
     "FileWatermarkStore",
     "FsspecWatermarkStore",
     "IncrementalResult",
+    "SqlWatermarkStore",
     "WatermarkStore",
     "advance_watermark",
     "build_incremental_filters",

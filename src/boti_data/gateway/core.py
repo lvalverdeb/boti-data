@@ -15,7 +15,7 @@ from boti.core.lifecycle_pickle import PicklableLifecycleCoreMixin
 
 from boti_data._engines import boti_dask as _boti_dask
 
-from . import core_describe, core_load
+from . import core_describe, core_load, incremental
 from ._gateway_init import (
     GatewayInitOptions,
     build_gateway_from_backend,
@@ -349,8 +349,15 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
             persist: If ``True`` and the result is a Dask DataFrame, pin it on
                 the workers with ``.persist()`` before returning.
             as_pandas: If ``True``, compute the result to a Pandas DataFrame.
+            since: Opt-in incremental load. A watermark field name (with
+                ``watermark_store=`` and, in structured mode, ``watermark_source=``)
+                or a ``(field, store, source)`` tuple. Rows above the stored
+                watermark are loaded, the result is computed, and the watermark
+                advances to the new maximum before the frame is returned.
             **options: Filter kwargs (configured mode) or load-request fields.
         """
+        if "since" in options:
+            return incremental.load_since(self, options, default_source=self._table)
         return core_load.load_sync(self, options)
 
     def iter_batches(self, **options: Any) -> Iterator[pa.RecordBatch]:
@@ -381,6 +388,8 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
                 sub-queries run at once. ``None`` preserves the existing
                 unbounded fan-out behavior.
         """
+        if "since" in options:
+            return await incremental.aload_since(self, options, default_source=self._table)
         return await core_load.load_async(self, options)
 
     def load_period(

@@ -48,10 +48,21 @@ def _jsonl_factory(config: Mapping[str, Any] | Any) -> PipelineSink:
     return JsonlSink(config)
 
 
+def _upsert_factory(config: Mapping[str, Any] | Any) -> PipelineSink:
+    from boti_data.pipelines.sinks_upsert import UpsertSink
+
+    options = dict(config)
+    table = options.pop("table")
+    key_columns = options.pop("key_columns")
+    extras = {name: options.pop(name) for name in ("schema", "chunk_rows") if name in options}
+    return UpsertSink(options, table=table, key_columns=list(key_columns), **extras)
+
+
 _DEFAULT_SINK_REGISTRY = SinkRegistry()
 _DEFAULT_SINK_REGISTRY.register("parquet", _parquet_factory)
 _DEFAULT_SINK_REGISTRY.register("csv", _csv_factory)
 _DEFAULT_SINK_REGISTRY.register("jsonl", _jsonl_factory)
+_DEFAULT_SINK_REGISTRY.register("upsert", _upsert_factory)
 
 
 def register_sink(name: str, factory: SinkFactory, *, overwrite: bool = False) -> None:
