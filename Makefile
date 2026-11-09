@@ -4,7 +4,7 @@
 # from the Makefile's own location instead (always one level up).
 REPO_ROOT := $(shell realpath $(dir $(realpath $(lastword $(MAKEFILE_LIST))))..)
 
-.PHONY: help clean build verify check publish publish-test upload upload-test install-dev test test-security lint validate-spec
+.PHONY: help clean build verify check publish publish-test upload upload-test install-dev test test-security lint validate-spec bench bench-compare bench-baseline docs docs-serve
 
 LOAD_ENV = if [ -f .env ]; then set -a; . ./.env; set +a; fi
 REQUIRE_PUBLISH_TOKEN = test -n "$$UV_PUBLISH_TOKEN" || { echo "UV_PUBLISH_TOKEN is required (set it in .env or the environment)."; exit 1; }
@@ -24,6 +24,11 @@ help:
 	@echo "  test-security  - Run security regression tests only"
 	@echo "  lint           - Run ruff linter on src/ and tests/"
 	@echo "  validate-spec  - Validate spec test counts match actual collection"
+	@echo "  bench          - Run the benchmark suite and save results to benchmarks/results/"
+	@echo "  bench-compare  - Run the benchmarks and fail on a >20% mean regression against the baseline"
+	@echo "  bench-baseline - Regenerate the committed baseline (do this on each release)"
+	@echo "  docs           - Build the documentation site into site/ (strict)"
+	@echo "  docs-serve     - Serve the documentation site locally with live reload"
 
 clean:
 	rm -rf $(REPO_ROOT)/dist/ $(REPO_ROOT)/build/ *.egg-info src/*.egg-info
@@ -65,3 +70,26 @@ lint:
 validate-spec:
 	uv run python scripts/validate_spec_counts.py
 
+
+# Benchmarks live outside tests/ and are marked perf, so the default suite
+# never runs them. The baseline is per platform (pytest-benchmark keys it on
+# OS/interpreter) and is regenerated on each release.
+BENCH_FLAGS = -m perf --benchmark-only --benchmark-min-rounds=5 -p no:cacheprovider
+BENCH_STORAGE = --benchmark-storage=file://benchmarks/baseline
+
+bench:
+	mkdir -p benchmarks/results
+	uv run pytest benchmarks/ $(BENCH_FLAGS) --benchmark-json=benchmarks/results/$$(date +%Y%m%dT%H%M%S).json
+
+bench-compare:
+	uv run pytest benchmarks/ $(BENCH_FLAGS) $(BENCH_STORAGE) --benchmark-compare='*/0001_baseline' --benchmark-compare-fail=mean:20%
+
+bench-baseline:
+	rm -rf benchmarks/baseline
+	uv run pytest benchmarks/ $(BENCH_FLAGS) $(BENCH_STORAGE) --benchmark-save=baseline
+
+docs:
+	uv run --group docs mkdocs build --strict
+
+docs-serve:
+	uv run --group docs mkdocs serve
