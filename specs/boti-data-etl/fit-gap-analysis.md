@@ -180,7 +180,7 @@
 | Aspect | Detail |
 |--------|--------|
 | **Status** | ✅ Spec corrected; auto-validated in CI |
-| **Evidence** | `pytest tests/security/ --collect-only -q` returns 30 tests. All 30 pass. |
+| **Evidence** | `pytest tests/security/ --collect-only -q` returns 59 tests. All 59 pass. |
 | **Recommendation** | Count auto-validated by `scripts/validate_spec_counts.py` in CI. |
 
 ---
