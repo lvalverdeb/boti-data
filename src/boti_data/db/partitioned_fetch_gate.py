@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
 
+from boti_data.telemetry import current_provider
+
 _module_log = logging.getLogger(__name__)
 
 # The gate is keyed on the database identity alone, never on the limit: the
@@ -106,6 +108,9 @@ _GATE_WAIT_LOCK = threading.Lock()
 
 
 def _record_gate_wait(gate_key: str, waited_seconds: float) -> None:
+    current_provider().histogram("boti_data.gate.wait_seconds").record(
+        waited_seconds, gate=_gate_name(gate_key)
+    )
     with _GATE_WAIT_LOCK:
         current = _GATE_WAIT_STATS.get(gate_key, GateWaitStats())
         _GATE_WAIT_STATS[gate_key] = GateWaitStats(

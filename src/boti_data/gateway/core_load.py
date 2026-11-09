@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 import pyarrow as pa
 
+from boti_data.telemetry import current_provider
+
 from . import _series_filters, load_execution
 from .chunking import ChunkedLoadExecutor, ChunkFanoutSettings, InChunkPlanner
 from .frame_strategies import FrameResult
@@ -33,14 +35,45 @@ if TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 
+def _load_span(gateway: DataGateway) -> Any:
+    """Open the ``boti_data.load`` span; the plan and result fill it in later."""
+    # spaghetti-ignore[encapsulation-violation]: the executor's strategy is the backend of record
+    backend = getattr(gateway._load_executor._strategy, "name", "unknown")
+    return current_provider().span("boti_data.load", backend=backend)
+
+
+def _describe_plan(span: Any, plan: Any) -> None:
+    span.set("return_type", plan.resolved_return_type)
+    span.set("execution_mode", plan.resolved_execution_mode)
+
+
+def _describe_result(span: Any, frame: Any) -> None:
+    """Rows when the frame is materialised; lazy frames report nothing."""
+    rows = getattr(frame, "num_rows", None)
+    if rows is None and isinstance(frame, pd.DataFrame):
+        rows = len(frame.index)
+    if rows is None and getattr(frame, "height", None) is not None:
+        rows = frame.height
+    if rows is not None:
+        span.set("rows", int(rows))
+
+
 # Not a copy-pasted twin: every line differs by a genuine sync/async variant
 # call (.plan vs await .aplan, resolve_series_filters vs its _async twin,
 # perform_load_sync vs perform_load_async, _chunked_in_load_sync vs
 # _chunked_in_load) — there's no further shared logic left to hoist.
 # spaghetti-ignore[sync-async-duplication]: see above
 def load_sync(gateway: DataGateway, options: dict[str, Any]) -> FrameResult:
+    with _load_span(gateway) as span:
+        frame = _load_sync_traced(gateway, options, span)
+        _describe_result(span, frame)
+        return frame
+
+
+def _load_sync_traced(gateway: DataGateway, options: dict[str, Any], span: Any) -> FrameResult:
     request = load_execution.resolve_control_and_request(options)
     plan = gateway._load_executor.load_planner().plan(options, request=request)
+    _describe_plan(span, plan)
     loader_options = gateway._load_executor.prepare_load_options(options, plan)
 
     loader_options = _series_filters.resolve_series_filters(loader_options)
@@ -66,8 +99,18 @@ def load_sync(gateway: DataGateway, options: dict[str, Any]) -> FrameResult:
 
 
 async def load_async(gateway: DataGateway, options: dict[str, Any]) -> FrameResult:
+    with _load_span(gateway) as span:
+        frame = await _load_async_traced(gateway, options, span)
+        _describe_result(span, frame)
+        return frame
+
+
+async def _load_async_traced(
+    gateway: DataGateway, options: dict[str, Any], span: Any
+) -> FrameResult:
     request = load_execution.resolve_control_and_request(options)
     plan = await gateway._load_executor.load_planner().aplan(options, request=request)
+    _describe_plan(span, plan)
     loader_options = gateway._load_executor.prepare_load_options(options, plan)
 
     # Resolve any Series values before chunked dispatch so the chunker

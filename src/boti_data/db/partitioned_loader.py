@@ -17,6 +17,7 @@ from boti_data.db.partitioned_execution import (
     fetch_gate_stats,
     format_gate_wait_suffix,
 )
+from boti_data.db.partitioned_fetch_gate import _gate_name
 from boti_data.db.partitioned_planner import SqlPartitionPlanner
 from boti_data.db.partitioned_types import (
     SqlPartitionedLoadRequest,
@@ -25,6 +26,7 @@ from boti_data.db.partitioned_types import (
 from boti_data.db.sql_config import SqlDatabaseConfig, WorkerSqlConfig
 from boti_data.db.sql_engine import _get_worker_engine_identity
 from boti_data.db.sql_resource import SqlDatabaseResource
+from boti_data.telemetry import current_provider
 
 if TYPE_CHECKING:
     import dask.dataframe as dd
@@ -231,13 +233,14 @@ class SqlPartitionedLoader(PicklableLifecycleCoreMixin, LifecycleCore):
         return result
 
     def load_request(self, request: SqlPartitionedLoadRequest) -> pd.DataFrame | dd.DataFrame:
-        started = perf_counter()
-        # Fast path: bypass planner entirely for small queries
-        if not request.use_arrow and not request.as_pandas:
-            fast_result = self._try_fast_path(request, started)
-            if fast_result is not None:
-                return fast_result
-        return self._load_via_plan(request, started)
+        with current_provider().span("boti_data.partitioned.load", gate=_gate_name(self._gate_key)):
+            started = perf_counter()
+            # Fast path: bypass planner entirely for small queries
+            if not request.use_arrow and not request.as_pandas:
+                fast_result = self._try_fast_path(request, started)
+                if fast_result is not None:
+                    return fast_result
+            return self._load_via_plan(request, started)
 
     _fetch_partition_static = staticmethod(SqlPartitionExecutor.fetch_partition)
 
