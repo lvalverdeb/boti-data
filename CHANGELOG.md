@@ -31,8 +31,10 @@ Targeting 1.4.0.
   partitions are fetched through ADBC, which returns Arrow straight from the
   wire protocol. The ADBC session gets the same read-only statement the
   SQLAlchemy engine issues, only the planner's compiled partitions are sent
-  (psycopg placeholders are rewritten to `$n`), and a driver error falls back
-  to SQLAlchemy for that partition. `adbc=False` opts out.
+  (psycopg placeholders are rewritten to `$n`), one connection is opened per
+  fetch and closed with it (the workers' `NullPool` rule, so the fetch gate
+  bounds open connections), and a driver error falls back to SQLAlchemy for
+  that partition. `adbc=False` opts out.
 - Arrow-native partition fetch (`boti_data.db.arrow_fetch`): cursor results
   become `pyarrow.Table` in one columnar pass, using the driver's own Arrow
   reader where there is one (DuckDB) and raw DBAPI rows elsewhere, with a

@@ -24,7 +24,8 @@ import importlib
 import importlib.util
 import logging
 import re
-import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
@@ -32,11 +33,7 @@ from sqlalchemy.engine import make_url
 
 from boti_data.db.arrow_fetch import _cast_table, _check_columns
 from boti_data.db.arrow_schema_mapper import build_arrow_schema_from_meta_dtypes
-from boti_data.db.sql_engine import (
-    _get_worker_engine_identity,
-    _resolve_worker_connection_url,
-    _validate_query_only_support,
-)
+from boti_data.db.sql_engine import _resolve_worker_connection_url, _validate_query_only_support
 
 if TYPE_CHECKING:
     from sqlalchemy.engine.url import URL
@@ -44,7 +41,7 @@ if TYPE_CHECKING:
     from boti_data.db.partitioned_types import SqlPartitionSpec
     from boti_data.db.sql_config import WorkerSqlConfig
 
-__all__ = ["ADBC_BACKENDS", "adbc_eligible", "fetch_partition_table"]
+__all__ = ["ADBC_BACKENDS", "adbc_eligible", "fetch_partition_table", "open_read_only"]
 
 _logger = logging.getLogger(__name__)
 
@@ -62,7 +59,6 @@ ADBC_BACKENDS: dict[str, tuple[str, str, dict[str, Any]]] = {
 }
 
 _PYFORMAT = re.compile(r"%\((\w+)\)s")
-_CONNECTIONS = threading.local()
 
 
 def _backend_of(config: WorkerSqlConfig) -> URL:
@@ -128,27 +124,30 @@ def _connect(config: WorkerSqlConfig) -> Any:
     return connection
 
 
-def connection_for(config: WorkerSqlConfig) -> Any:
-    """A thread-local ADBC connection for *config*, opened read-only on first use."""
-    cache = getattr(_CONNECTIONS, "by_identity", None)
-    if cache is None:
-        cache = _CONNECTIONS.by_identity = {}
-    key = _get_worker_engine_identity(config)
-    connection = cache.get(key)
-    if connection is None:
-        connection = cache[key] = _connect(config)
-    return connection
+@contextmanager
+def open_read_only(config: WorkerSqlConfig) -> Iterator[Any]:
+    """One ADBC connection for the duration of the block, then closed.
+
+    Worker engines run on ``NullPool``: a connection per fetch, released as
+    soon as the fetch ends, so open connections never exceed the fetch gate's
+    limit. ADBC connections follow the same rule rather than lingering per
+    thread.
+    """
+    connection = _connect(config)
+    try:
+        yield connection
+    finally:
+        connection.close()
 
 
 def fetch_partition_table(
     config: WorkerSqlConfig, partition: SqlPartitionSpec, meta_dtypes: dict[str, str]
 ) -> pa.Table:
     """Run one compiled partition through ADBC and cast it to the plan's schema."""
-    connection = connection_for(config)
     sql, params = positional(
         partition.sql, partition.params, _backend_of(config).get_backend_name()
     )
-    with connection.cursor() as cursor:
+    with open_read_only(config) as connection, connection.cursor() as cursor:
         cursor.execute(sql, params) if params else cursor.execute(sql)
         table = cursor.fetch_arrow_table()
     schema = build_arrow_schema_from_meta_dtypes(meta_dtypes)

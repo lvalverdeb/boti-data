@@ -112,12 +112,31 @@ def test_adbc_partition_matches_the_sqlalchemy_partition(ro_sqlite, monkeypatch)
 
 
 def test_the_adbc_session_itself_refuses_writes(ro_sqlite) -> None:
-    connection = adbc_fetch.connection_for(_config(ro_sqlite))
     with (
+        adbc_fetch.open_read_only(_config(ro_sqlite)) as connection,
         connection.cursor() as cursor,
         pytest.raises(Exception, match="(?i)readonly|read-only|query_only"),
     ):
         cursor.execute("insert into t values (9, 'z', 0.0, 1, null)")
+
+
+def test_each_fetch_opens_and_closes_its_own_connection(ro_sqlite, monkeypatch) -> None:
+    """No connection outlives a fetch: the same rule as the workers' NullPool engines."""
+    opened: list[object] = []
+    closed: list[object] = []
+    real_connect = adbc_fetch._connect
+
+    def _tracking_connect(config):
+        connection = real_connect(config)
+        opened.append(connection)
+        real_close = connection.close
+        connection.close = lambda: (closed.append(connection), real_close())
+        return connection
+
+    monkeypatch.setattr(adbc_fetch, "_connect", _tracking_connect)
+    _fetch(_config(ro_sqlite))
+    _fetch(_config(ro_sqlite))
+    assert len(opened) == 2 and closed == opened
 
 
 def test_driver_errors_fall_back_to_sqlalchemy_with_a_warning(
@@ -158,6 +177,8 @@ def test_postgres_partition_through_adbc_is_read_only_and_numbered(monkeypatch) 
         cursor.execute(f"drop table if exists {table}")
         cursor.execute(f"create table {table} (id bigint, name text, amount double precision)")
         cursor.execute(f"insert into {table} values (1, 'a', 1.5), (2, 'b', 2.5), (3, 'c', null)")
+        cursor.execute("select count(*) from pg_stat_activity where usename = current_user")
+        before = cursor.fetch_arrow_table().column(0)[0].as_py()
     try:
         # The SQLAlchemy driver suffix is only parsed, never imported, on the ADBC path.
         config = _config(uri.replace("postgresql://", "postgresql+psycopg://"))
@@ -181,10 +202,15 @@ def test_postgres_partition_through_adbc_is_read_only_and_numbered(monkeypatch) 
         )
         assert calls and frame["id"].tolist() == [2, 3]
         with (
-            adbc_fetch.connection_for(config).cursor() as cursor,
+            adbc_fetch.open_read_only(config) as connection,
+            connection.cursor() as cursor,
             pytest.raises(Exception, match="(?i)read-only"),
         ):
             cursor.execute(f"insert into {table} values (4, 'd', 4.0)")
+        with admin.cursor() as cursor:
+            cursor.execute("select count(*) from pg_stat_activity where usename = current_user")
+            after = cursor.fetch_arrow_table().column(0)[0].as_py()
+        assert after == before, "an ADBC connection outlived its fetch"
     finally:
         with admin.cursor() as cursor:
             cursor.execute(f"drop table if exists {table}")
