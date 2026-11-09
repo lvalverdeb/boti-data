@@ -7,6 +7,7 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
+from boti_data._contract import Deprecation, deprecated
 from boti_data._optional import dataframes_required
 
 __all__ = [
@@ -92,6 +93,103 @@ __all__ = [
     "vector_distance",
     "write_parquet",
 ]
+
+# Public API contract (see CHANGELOG.md, "Versioning policy"). Every name in
+# __all__ is in exactly one of these; tests/data/test_public_api_contract.py
+# holds that invariant. STABLE names change shape only in a major release and
+# are deprecated at least one minor release first; EXPERIMENTAL names may
+# change in any minor release.
+STABLE: tuple[str, ...] = (
+    "And",
+    "AsyncSqlDatabaseResource",
+    "AsyncSqlRepository",
+    "AsyncSqlUnitOfWork",
+    "BuilderConfig",
+    "ConnectionCatalog",
+    "CsvSink",
+    "CsvSinkConfig",
+    "DataFrameOptions",
+    "DataFrameParams",
+    "DataGateway",
+    "DataHelper",
+    "DefaultBase",
+    "EngineRegistry",
+    "Expr",
+    "FieldMap",
+    "FilterHandler",
+    "JsonlSink",
+    "JsonlSinkConfig",
+    "Not",
+    "Or",
+    "ParquetDataConfig",
+    "ParquetDataResource",
+    "ParquetLoadRequest",
+    "ParquetMaterializationResult",
+    "ParquetPipeline",
+    "ParquetReader",
+    "ParquetSink",
+    "RegistryConfig",
+    "SchemaValidationError",
+    "SinkPipeline",
+    "SinkRegistry",
+    "SinkWriteResult",
+    "SqlAlchemyModelBuilder",
+    "SqlDatabaseConfig",
+    "SqlDatabaseResource",
+    "SqlLoadRequest",
+    "SqlModelRegistry",
+    "SqlRepository",
+    "SqlUnitOfWork",
+    "TableDescription",
+    "TrueExpr",
+    "align_frames_for_join",
+    "apply_schema_map",
+    "available_sinks",
+    "awrite_parquet",
+    "create_sink",
+    "ensure_greenlet_available",
+    "get_global_registry",
+    "indexed_left_join",
+    "infer_schema_map",
+    "left_join_frames",
+    "normalize_dtype_alias",
+    "normalize_schema_map",
+    "register_sink",
+    "validate_schema",
+    "write_parquet",
+)
+
+EXPERIMENTAL: tuple[str, ...] = (
+    "AsyncFrameEnricher",
+    "AttachmentSpec",
+    "BaseArtifact",
+    "BaseDataCube",
+    "DatacubeConfig",
+    "DatacubeContract",
+    "FileWatermarkStore",
+    "FrameEnricher",
+    "FsspecWatermarkStore",
+    "GateWaitStats",
+    "HybridDataset",
+    "IncrementalResult",
+    "SqlPartitionPlan",
+    "SqlPartitionSpec",
+    "SqlPartitionedLoadRequest",
+    "SqlPartitionedLoader",
+    "VectorMetric",
+    "WatermarkStore",
+    "advance_watermark",
+    "build_incremental_filters",
+    "fetch_gate_stats",
+    "nearest_neighbors",
+    "reset_fetch_gate_stats",
+    "vector_distance",
+)
+
+# Names kept importable for one more minor release. Accessing one warns with
+# the removal version and, where there is one, the replacement. Empty today.
+DEPRECATED: dict[str, Deprecation] = {}
+
 
 # Every public name is loaded lazily (PEP 562) so that importing boti_data (or
 # any of its dependency-clean pieces, e.g. SqlRepository) never pulls in the
@@ -194,6 +292,9 @@ _LAZY = {
 # spaghetti-ignore[duplicate-function-body]: see above
 def __getattr__(name: str) -> Any:
     if name in _LAZY:
+        if name in DEPRECATED:
+            note = DEPRECATED[name]
+            deprecated(name, removal=note.removal, replacement=note.replacement)
         module_name, attr = _LAZY[name]
         with dataframes_required(module_name):
             value = getattr(importlib.import_module(module_name), attr)
