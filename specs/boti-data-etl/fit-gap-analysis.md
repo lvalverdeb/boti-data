@@ -175,7 +175,7 @@
 | **Evidence** | `pytest --collect-only -q` returns 748 tests. All pass. |
 | **Recommendation** | Count auto-validated by `scripts/validate_spec_counts.py` in CI. Update expected count in `fit-gap-analysis.md` when tests are added/removed. |
 
-### SC-006: 30 security regression tests ✅ Fixed
+### SC-006: 59 security regression tests ✅ Fixed
 
 | Aspect | Detail |
 |--------|--------|
