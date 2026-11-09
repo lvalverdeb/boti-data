@@ -100,6 +100,12 @@ pip install "boti-data[clickhouse]" # clickhouse-connect (sync only)
 pip install "boti-data[duckdb]"     # duckdb-engine (sync only)
 ```
 
+Parquet storage on `s3://` (including MinIO through `fs_type=s3`) needs `s3fs`, which `boti` 1.1.0 and later no longer install by default:
+
+```bash
+pip install "boti-data[s3]"         # boti[s3] -> s3fs
+```
+
 ClickHouse support is sync-only: there is no maintained async SQLAlchemy driver for ClickHouse, so `AsyncSqlDatabaseResource` rejects a ClickHouse connection URL — use `SqlDatabaseResource` instead. `SqlUnitOfWork`/`AsyncSqlUnitOfWork` also reject ClickHouse outright, since ClickHouse's transaction support is experimental, single-node, and MergeTree-only, with no real cross-table ACID guarantees to back a multi-table unit of work — use `SqlRepository`/`AsyncSqlRepository` directly, one table at a time, instead.
 
 Verified against a real ClickHouse instance:

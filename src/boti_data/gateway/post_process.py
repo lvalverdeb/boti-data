@@ -92,6 +92,15 @@ class PostProcessor:
     def set_logger(self, logger: Any | None) -> None:
         self._logger = logger
 
+    # A logger is transient runtime state (boti's ManagedResource drops its own
+    # on pickle and rebuilds it on unpickle). Since boti 1.0.11 a Logger holds
+    # a threading.Event, so carrying one across the wire fails outright.
+    # DataGateway.__setstate__ re-attaches the restored resource's logger.
+    def __getstate__(self) -> dict[str, Any]:
+        state = self.__dict__.copy()
+        state["_logger"] = None
+        return state
+
     # ------------------------------------------------------------------
     # Public entry points
     # ------------------------------------------------------------------

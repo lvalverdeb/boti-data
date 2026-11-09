@@ -263,9 +263,15 @@ class DataGateway(PicklableLifecycleCoreMixin, LifecycleCore):
         await self._strategy.teardown_async_context(self)
         self._cleanup()
 
-    # __getstate__/__setstate__ come from PicklableLifecycleCoreMixin; pickle-
-    # security gating is enforced by the wrapped `resource` (a ManagedResource),
-    # pickled recursively as part of __dict__ — no gate needed here too.
+    # __getstate__ comes from PicklableLifecycleCoreMixin; pickle-security
+    # gating is enforced by the wrapped `resource` (a ManagedResource), pickled
+    # recursively as part of __dict__ — no gate needed here too.
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        # The resource rebuilt its logger in its own __setstate__; the post
+        # processor dropped its copy in PostProcessor.__getstate__.
+        self._post_processor.set_logger(self.logger)
 
     # --- Load API — structured mode ---
 
