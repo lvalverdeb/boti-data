@@ -240,17 +240,6 @@ def test_sync_resource_accepts_clickhouse_dsn() -> None:
         db.close()
 
 
-@pytest.mark.asyncio
-async def test_async_resource_rejects_clickhouse_dsn_with_actionable_error() -> None:
-    """ClickHouse has no maintained async SQLAlchemy driver, so the async resource
-    must reject it up front instead of failing deep inside engine construction."""
-    config = SqlDatabaseConfig(connection_url="clickhousedb://user:pass@localhost:8123/test_db")
-
-    with pytest.raises(SQLAlchemyError, match="does not support ClickHouse"):
-        async with AsyncSqlDatabaseResource(config):
-            pass
-
-
 def test_validate_query_only_support_accepts_clickhouse() -> None:
     """Verify query_only=True is allowed for clickhouse, enforced via the driver's
     native readonly setting rather than a Postgres/MySQL-style SET statement."""
@@ -273,17 +262,6 @@ def test_sync_resource_accepts_duckdb_dsn(tmp_path) -> None:
         assert db.engine.url.get_backend_name() == "duckdb"
     finally:
         db.close()
-
-
-@pytest.mark.asyncio
-async def test_async_resource_rejects_duckdb_dsn_with_actionable_error(tmp_path) -> None:
-    """DuckDB has no maintained async SQLAlchemy driver, so the async resource
-    must reject it up front instead of failing deep inside engine construction."""
-    config = SqlDatabaseConfig(connection_url=f"duckdb:///{tmp_path / 'test.duckdb'}")
-
-    with pytest.raises(SQLAlchemyError, match="does not support DuckDB"):
-        async with AsyncSqlDatabaseResource(config):
-            pass
 
 
 def test_validate_query_only_support_accepts_duckdb(tmp_path) -> None:

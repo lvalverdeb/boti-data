@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from boti_data.db.sql_config import SqlDatabaseConfig
 from boti_data.db.sql_model_registry import get_global_registry
-from boti_data.db.sql_readonly import ReadOnlyAsyncSession, ReadOnlySession
+from boti_data.db.sql_readonly import ReadOnlySession, is_read_only_session
 from boti_data.db.sql_resource import AsyncSqlDatabaseResource, SqlDatabaseResource
 
 __all__ = ["AsyncSqlRepository", "AsyncSqlUnitOfWork", "SqlRepository", "SqlUnitOfWork"]
@@ -422,7 +422,7 @@ class AsyncSqlUnitOfWork:
         try:
             if exc_type is not None:
                 await self._session.rollback()
-            elif not isinstance(self._session, ReadOnlyAsyncSession):
+            elif not is_read_only_session(self._session):
                 await self._session.commit()
             # else: read-only session, exited cleanly — a read never needs a
             # commit, and ReadOnlyAsyncSession.commit() always raises

@@ -74,3 +74,11 @@ class ReadOnlyAsyncSession(AsyncSession):
 
     async def commit(self) -> None:
         raise SQLAlchemyError("AsyncSqlDatabaseResource sessions are read-only.")
+
+
+def is_read_only_session(session: Any) -> bool:
+    """True for ``ReadOnlySession``/``ReadOnlyAsyncSession`` and for an
+    executor-backed ``ThreadedAsyncSession`` wrapping a ``ReadOnlySession``."""
+    if isinstance(session, (ReadOnlySession, ReadOnlyAsyncSession)):
+        return True
+    return isinstance(getattr(session, "sync_session", None), ReadOnlySession)

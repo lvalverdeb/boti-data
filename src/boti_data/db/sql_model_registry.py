@@ -431,6 +431,16 @@ class SqlModelRegistry:
             async with engine.begin() as conn:
                 await conn.run_sync(md.reflect, only=[tname], schema=schema)
             tbl = md.tables.get(qname)
+            if tbl is not None:
+                # Same catalog fix-up as the sync path; a DuckDB engine only
+                # reaches here through the threaded facade (sync engine inside).
+                await asyncio.to_thread(
+                    _recover_duckdb_primary_key,
+                    getattr(engine, "sync_engine", engine),
+                    tbl,
+                    tname=tname,
+                    schema=schema,
+                )
         return tbl
 
     def clear(self) -> None:

@@ -100,22 +100,24 @@ def _validate_sync_driver_url(
     return parsed
 
 
+# Backends whose only SQLAlchemy dialect is synchronous. AsyncSqlDatabaseResource
+# serves them through boti_data.db.threaded_async (worker threads) instead of
+# SQLAlchemy's asyncio extension, which refuses a sync dialect outright.
+EXECUTOR_BACKED_ASYNC_BACKENDS = frozenset({"duckdb", "clickhousedb"})
+
+
+def is_executor_backed_async_backend(parsed_url: sqlalchemy_url.URL) -> bool:
+    return parsed_url.get_backend_name() in EXECUTOR_BACKED_ASYNC_BACKENDS
+
+
 def _validate_async_driver_url(
     connection_url: str,
     *,
     consumer_name: str = "AsyncSqlDatabaseResource",
 ) -> sqlalchemy_url.URL:
     parsed = _parse_connection_url(connection_url, consumer_name=consumer_name)
-    if parsed.get_backend_name() == "clickhousedb":
-        raise SQLAlchemyError(
-            f"{consumer_name} does not support ClickHouse: there is no maintained "
-            "asynchronous SQLAlchemy driver for it. Use SqlDatabaseResource instead."
-        )
-    if parsed.get_backend_name() == "duckdb":
-        raise SQLAlchemyError(
-            f"{consumer_name} does not support DuckDB: there is no maintained "
-            "asynchronous SQLAlchemy driver for it. Use SqlDatabaseResource instead."
-        )
+    if is_executor_backed_async_backend(parsed):
+        return parsed
     if not parsed.get_dialect().is_async:
         suggested_driver = _build_driver_example(parsed, async_mode=True)
         raise SQLAlchemyError(
