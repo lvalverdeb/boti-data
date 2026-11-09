@@ -151,6 +151,13 @@ dev = [
     "pytest-cov>=6.0.0",
     "ruff>=0.11.0",
 ]
+# Reference documentation site (make docs): mkdocs-material + mkdocstrings
+# build the API pages from docstrings; mike publishes one site per release.
+docs = [
+    "mkdocs-material>=9.6.0,<10.0.0",
+    "mkdocstrings[python]>=1.0.0,<2.0.0",
+    "mike>=2.1.0,<3.0.0",
+]
 
 [tool.ruff]
 line-length = 100

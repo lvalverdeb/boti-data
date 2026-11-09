@@ -8,7 +8,9 @@ wheels/
 .idea/
 .pytest_cache/
 logs/
-docs/
+docs/.cache/
+site/
 .env
 .env.*
-benchmarks/
+benchmarks/results/
+.benchmarks/

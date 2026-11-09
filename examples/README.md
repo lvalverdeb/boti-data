@@ -75,5 +75,5 @@ the module docstring; skips gracefully otherwise, including inside
 - `examples/sql_pgvector.py` (`Vector` column reflection + `nearest_neighbors`)
 - `notebooks/23_pgvector.ipynb` (interactive notebook flow)
 
-See [`docs/BIG_DATA_READYNESS.md`](../docs/BIG_DATA_READYNESS.md) for operating guidance.
-Datacube contract guidance: [`docs/DATACUBE_CONTRACT.md`](../docs/DATACUBE_CONTRACT.md).
+See [`docs/BIG_DATA_READYNESS.md`](../docs/proposals/BIG_DATA_READYNESS.md) for operating guidance.
+Datacube contract guidance: [`docs/DATACUBE_CONTRACT.md`](../docs/proposals/DATACUBE_CONTRACT.md).

@@ -1,0 +1,98 @@
+site_name: boti-data
+site_description: Data access and transformation layer of the Boti ecosystem
+site_url: https://lvalverdeb.github.io/boti-data/
+repo_url: https://github.com/lvalverdeb/boti-data
+repo_name: lvalverdeb/boti-data
+edit_uri: edit/main/docs/
+copyright: boti-data contributors
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Guides:
+      - SQL loads: guides/sql-loads.md
+      - Parquet: guides/parquet.md
+      - Sinks and enrichment: guides/sinks.md
+      - Distributed loading: guides/distributed.md
+      - Datacube backend: guides/datacube.md
+      - Security: guides/security.md
+  - API reference:
+      - Database access: api/db.md
+      - Gateway and helper: api/gateway.md
+      - Parquet: api/parquet.md
+      - Pipelines and sinks: api/pipelines.md
+      - Filters: api/filters.md
+      - Watermarks: api/watermark.md
+      - Enrichment: api/enrichment.md
+      - Datacube: api/datacube.md
+  - Benchmarks: benchmarks.md
+  - Changelog: changelog.md
+  - Proposals and reviews:
+      - Index: proposals/index.md
+      - Big data readiness: proposals/BIG_DATA_READYNESS.md
+      - Dask resilience use cases: proposals/DASK_RESILIENCE_USE_CASES.md
+      - Datacube contract: proposals/DATACUBE_CONTRACT.md
+      - Deployment: proposals/DEPLOYMENT.md
+      - IN-clause response time: proposals/IN_CLAUSE_RESPONSE_TIME_PROPOSAL.md
+      - PyArrow integration: proposals/PYARROW_INTEGRATION_PROPOSAL.md
+      - Security hardening: proposals/SECURITY_HARDENING.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            docstring_options:
+              ignore_init_summary: true
+              # DataGateway.load documents its **options keys as parameters on
+              # purpose; griffe cannot match them to the signature.
+              warn_unknown_params: false
+              warn_missing_types: false
+            show_source: false
+            show_root_heading: false
+            show_root_toc_entry: false
+            members_order: source
+            filters: ["!^_"]
+            show_signature_annotations: true
+            separate_signature: true
+            merge_init_into_class: true
+            show_if_no_docstring: false
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+
+extra:
+  version:
+    provider: mike
+    default: latest
