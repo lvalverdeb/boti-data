@@ -143,6 +143,11 @@ class PrefixOnlyFakeFileSystem(AbstractFileSystem):
         keys = sorted(key for key in self.store if key == path or key.startswith(prefix))
         if withdirs and path not in keys:
             keys = [path, *keys]
+        if detail:
+            return {
+                key: {"name": key, "type": "file", "size": len(self.store.get(key, b""))}
+                for key in keys
+            }
         return keys
 
     def exists(self, path, **kwargs) -> bool:

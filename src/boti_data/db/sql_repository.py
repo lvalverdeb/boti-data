@@ -85,6 +85,24 @@ def _reject_clickhouse_backend(config: SqlDatabaseConfig, *, consumer_name: str)
         )
 
 
+def _check_updatable(model: Any, values: dict[str, Any]) -> None:
+    """Only mapped, non-key columns may be assigned by ``update()``.
+
+    ``setattr`` on an instance accepts any name, so an unknown key was
+    silently stored on the object and a primary-key column could be
+    rewritten through a plain update.
+    """
+    mapper = sa_inspect(model)
+    columns = {attr.key for attr in mapper.column_attrs}
+    keys = {mapper.get_property_by_column(column).key for column in mapper.primary_key}
+    unknown = sorted(set(values) - columns)
+    if unknown:
+        raise ValueError(f"update() got keys that are not mapped columns: {unknown!r}.")
+    touched_keys = sorted(set(values) & keys)
+    if touched_keys:
+        raise ValueError(f"update() cannot change primary key columns: {touched_keys!r}.")
+
+
 class SqlRepository(LifecycleCore):
     """Single-row get/insert/update/delete against one table, by primary key.
 
@@ -207,6 +225,7 @@ class SqlRepository(LifecycleCore):
             assume_unique_key=assume_unique_key,
             operation="SqlRepository.update()",
         )
+        _check_updatable(self._model, values)
         with self._session_scope() as session:
             instance = session.get(self._model, pk)
             if instance is None:

@@ -20,6 +20,7 @@ from boti_data.db.arrow_schema_mapper import (
 )
 from boti_data.db.sql_model_builder import SqlAlchemyModelBuilder
 from boti_data.filters import FilterHandler
+from boti_data.filters.backend_ops import get_sqlalchemy_column
 from boti_data.parquet.resource import ParquetDataResource
 
 from .requests import (
@@ -237,7 +238,7 @@ def load_parquet(
 
 def _select_from_model(model: Any, db_column_names: list[str] | None) -> Any:
     if db_column_names:
-        columns = [getattr(model, col) for col in db_column_names]
+        columns = [get_sqlalchemy_column(col, model, None) for col in db_column_names]
         return select(*columns)
     return select(model)
 

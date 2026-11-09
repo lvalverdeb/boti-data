@@ -101,6 +101,17 @@ def evolved_read_schema(resource: ParquetDataResource, files: list[str]) -> pa.S
     """
     if len(files) <= 1:
         return None
+    cache: dict[tuple[str, ...], pa.Schema | None] = resource.__dict__.setdefault(
+        "_evolved_schema_cache", {}
+    )
+    file_key = tuple(files)
+    if file_key not in cache:
+        # Every footer is read once per file list, not once per load.
+        cache[file_key] = _read_evolved_schema(resource, files)
+    return cache[file_key]
+
+
+def _read_evolved_schema(resource: ParquetDataResource, files: list[str]) -> pa.Schema | None:
     arrow_fs = filesystem.arrow_filesystem(resource)
     schemas: list[pa.Schema] = []
     for path in files:

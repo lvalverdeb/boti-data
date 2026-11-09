@@ -167,20 +167,20 @@
 | **Evidence** | `test_parquet_resource.py:263` creates Hive partitions for 2024-01-01, 2024-01-02, 2024-01-03, loads range 2024-01-01–2024-01-02, and asserts `part3.parquet` is absent from discovered files. |
 | **Recommendation** | — |
 
-### SC-005: 758 tests pass ✅ Verified
+### SC-005: 769 tests pass ✅ Verified
 
 | Aspect | Detail |
 |--------|--------|
 | **Status** | ✅ Verified (auto-validated in CI) |
-| **Evidence** | `pytest --collect-only -q` returns 758 tests. All pass. |
+| **Evidence** | `pytest --collect-only -q` returns 769 tests. All pass. |
 | **Recommendation** | Count auto-validated by `scripts/validate_spec_counts.py` in CI. Update expected count in `fit-gap-analysis.md` when tests are added/removed. |
 
-### SC-006: 69 security regression tests ✅ Fixed
+### SC-006: 80 security regression tests ✅ Fixed
 
 | Aspect | Detail |
 |--------|--------|
 | **Status** | ✅ Spec corrected; auto-validated in CI |
-| **Evidence** | `pytest tests/security/ --collect-only -q` returns 69 tests. All 69 pass. |
+| **Evidence** | `pytest tests/security/ --collect-only -q` returns 80 tests. All 80 pass. |
 | **Recommendation** | Count auto-validated by `scripts/validate_spec_counts.py` in CI. |
 
 ---

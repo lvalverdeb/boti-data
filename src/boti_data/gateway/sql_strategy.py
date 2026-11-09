@@ -27,6 +27,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from boti_data.db import SqlDatabaseConfig, SqlDatabaseResource, SqlPartitionedLoadRequest
 from boti_data.field_map import FieldMap
+from boti_data.filters.backend_ops import get_sqlalchemy_column
 
 from . import _backend_strategies, _payloads, sql_strategy_configured_async
 from ._backend_strategies import BackendStrategy, ConfiguredLoadContext, StructuredLoadContext
@@ -118,7 +119,9 @@ class SqlAlchemyStrategy(BackendStrategy):
         if not columns or statement is None or model is None:
             return options
         projected_names = [field_map.to_db(column) if field_map else column for column in columns]
-        projected_columns = [getattr(model, column) for column in projected_names]
+        projected_columns = [
+            get_sqlalchemy_column(column, model, None) for column in projected_names
+        ]
         prepared = dict(options)
         prepared["statement"] = statement.with_only_columns(
             *projected_columns,

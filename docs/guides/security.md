@@ -48,6 +48,20 @@ payload's `__reduce__` before any class-level hook can inspect it, so unpickling
 an untrusted source is still arbitrary code execution. Enable it only where every producer is
 trusted.
 
+A pickled resource carries what it needs to work on a worker, and for a remote dataset that
+includes its `FilesystemConfig` with the access key and secret. Ship pickles only over
+transports you trust (TLS between Dask client, scheduler and workers), and prefer a
+`worker_connection_env_var` or a catalog profile name over embedded credentials where the
+resource supports it.
+
+## Checkpoints and watermarks
+
+`FileCheckpointStore` and `FileWatermarkStore` take a plain root directory. Keys are
+validated to be simple names, never paths, so a key cannot leave the root; the root itself
+is yours to place. A plan checkpoint stores the compiled partition SQL and its bound
+parameter values, so filter values (which may be personal data) sit in `plan.json` under
+that root for as long as the checkpoint lives: clear checkpoints when a load completes.
+
 ## Logging
 
 The `boti` logger redacts secrets, and diagnostics lines log counts, engine names and timings,

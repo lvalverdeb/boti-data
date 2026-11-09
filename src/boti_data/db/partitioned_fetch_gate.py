@@ -16,6 +16,7 @@ these counters it is indistinguishable from a database that is simply slow.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import logging
 import threading
 from collections.abc import Iterator
@@ -68,6 +69,11 @@ def _fetch_gate_for(gate_key: str, max_concurrent_fetches: int) -> Any:
     except ImportError:  # boti-dask < 1.1.0: process-wide only
         _module_log.debug("boti-dask without cluster_semaphore; fetch gate is per process")
         return _local_fetch_gate(name, max_concurrent_fetches)
+    # One gate per database: the first creator's limit is the cluster's, by
+    # design. boti-dask 1.3 raises on a mismatch unless told otherwise; older
+    # versions warn and adopt, which is the same outcome.
+    if "strict" in inspect.signature(cluster_semaphore).parameters:
+        return cluster_semaphore(name, max_concurrent_fetches, strict=False)
     return cluster_semaphore(name, max_concurrent_fetches)
 
 

@@ -7,6 +7,7 @@ sinks.py so every existing import path keeps working unchanged.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -29,6 +30,9 @@ if TYPE_CHECKING:
 
 type FrameResult = Union[pd.DataFrame, dd.DataFrame, pa.Table, pl.DataFrame]
 type ParquetDestination = Union[ParquetReader, ParquetDataConfig, Mapping[str, Any]]
+
+
+_log = logging.getLogger(__name__)
 
 
 def _dask_frame_from_pandas(frame: pd.DataFrame) -> dd.DataFrame:
@@ -388,13 +392,25 @@ def _write_with_staging(
     if not overwrite or not fs.exists(target_path):
         return write_fn(target_path)
 
-    staging_path = f"{target_path.rstrip('/')}.staging"
-    if fs.exists(staging_path):
-        # Leftover from a previous crashed run.
-        _rm_recursive(fs, staging_path)
+    target_root = target_path.rstrip("/")
+    if "/" not in fs._strip_protocol(target_root).strip("/"):
+        # A sibling of a bucket root would be another bucket.
+        raise ValueError(
+            f"Cannot overwrite {target_path!r}: the staging directory would be a sibling of a "
+            "bucket root. Write to a prefix within the bucket."
+        )
+    # One staging directory per run: two overwriters of the same target no
+    # longer delete each other's in-progress output. A crashed run leaves its
+    # directory behind; it is reported, not removed, since it may belong to a
+    # run still in progress.
+    staging_path = f"{target_root}.staging-{uuid.uuid4().hex[:12]}"
+    leftovers = [path for path in fs.glob(f"{target_root}.staging-*") if path != staging_path]
+    if leftovers:
+        _log.warning(
+            "Staging directories from earlier runs remain beside %s: %s", target_path, leftovers
+        )
 
     files = write_fn(staging_path)
-    target_root = target_path.rstrip("/")
 
     try:
         _rm_recursive(fs, target_path)

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import datetime
+import decimal
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -100,6 +103,32 @@ def _prepare_offset_plan_context(
 
 _KEY_HEX_LENGTH = 16
 
+# Bound parameters a checkpoint must restore with their type: a date bound as
+# a date must not come back as a string, which drivers such as asyncpg reject.
+_TYPED_PARAMS: dict[str, tuple[type, Callable[[str], Any]]] = {
+    "datetime": (datetime.datetime, datetime.datetime.fromisoformat),
+    "date": (datetime.date, datetime.date.fromisoformat),
+    "time": (datetime.time, datetime.time.fromisoformat),
+    "decimal": (decimal.Decimal, decimal.Decimal),
+}
+
+
+def _encode_param(value: Any) -> Any:
+    for tag, (kind, _) in _TYPED_PARAMS.items():
+        if type(value) is kind:
+            return {"$type": tag, "value": str(value) if tag == "decimal" else value.isoformat()}
+    return value
+
+
+def _decode_param(value: Any) -> Any:
+    if (
+        isinstance(value, dict)
+        and set(value) == {"$type", "value"}
+        and value["$type"] in _TYPED_PARAMS
+    ):
+        return _TYPED_PARAMS[value["$type"]][1](value["value"])
+    return value
+
 
 @dataclass(frozen=True)
 class SqlPartitionSpec:
@@ -118,14 +147,21 @@ class SqlPartitionSpec:
 
     def to_json(self) -> dict[str, Any]:
         kind = "tuple" if isinstance(self.params, tuple) else "dict" if self.params else "none"
-        params = list(self.params) if isinstance(self.params, tuple) else self.params
+        if isinstance(self.params, tuple):
+            params: Any = [_encode_param(value) for value in self.params]
+        elif isinstance(self.params, dict):
+            params = {name: _encode_param(value) for name, value in self.params.items()}
+        else:
+            params = self.params
         return {"sql": self.sql, "params": params, "params_kind": kind}
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> SqlPartitionSpec:
         params = payload.get("params")
         if payload.get("params_kind") == "tuple":
-            params = tuple(params or ())
+            params = tuple(_decode_param(value) for value in params or ())
+        elif isinstance(params, dict):
+            params = {name: _decode_param(value) for name, value in params.items()}
         return cls(sql=payload["sql"], params=params or None)
 
 

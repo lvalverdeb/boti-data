@@ -150,6 +150,27 @@ Medium findings of the same audit, tests under
   checkpoint reloaded from disk (dates stored as ISO strings) maps to the
   same partition keys and resumes instead of refetching everything.
 
+Low findings of the same audit:
+
+- Overwrites stage into a per-run `.staging-<token>` directory, so two
+  overwriters of one target no longer delete each other's in-progress output.
+  Leftover staging directories from crashed runs are reported, not removed.
+  **Overwriting a bucket root is refused**, since its staging sibling would
+  be another bucket.
+- The unified read schema of an evolved Parquet dataset is cached per file
+  list, so every footer is read once per dataset, not once per load.
+- Checkpoints store `date`, `datetime`, `time` and `Decimal` parameters
+  with their type and restore them as such; a resumed partition bound ISO
+  strings where the plan had bound dates.
+- `columns=` is resolved through the mapper like filter fields are; a name
+  such as `__table__` widened the projection to every column.
+- `in_chunk_size` must be at least 1 and `in_chunk_concurrency` between 1
+  and 64; any integer was accepted and became the thread count.
+- `SqlRepository.update()` rejects keys that are not mapped columns and keys
+  of primary-key columns; any attribute name was assigned.
+- The security guide documents what a pickled resource carries (remote
+  filesystem credentials) and that checkpoint plans hold bound filter values.
+
 ### Changed
 
 - `boti` floor raised to 1.2.0: `ParquetDataResource` resolves a relative

@@ -18,6 +18,10 @@ from .planning import InChunkPolicy
 from .post_process import strategy_for_frame
 from .requests import ReturnType
 
+# One thread per concurrent chunk query; beyond this the database, not the
+# client, is the bottleneck, and a typo must not open thousands of threads.
+MAX_IN_CHUNK_CONCURRENCY = 64
+
 if TYPE_CHECKING:
     pass
 
@@ -76,6 +80,13 @@ class InChunkPlanner:
     ) -> tuple[int, int | None]:
         size = DEFAULT_IN_CHUNK_SIZE if in_chunk_size_raw is None else int(in_chunk_size_raw)
         concurrency = None if in_chunk_concurrency_raw is None else int(in_chunk_concurrency_raw)
+        if size < 1:
+            raise ValueError(f"in_chunk_size must be at least 1, got {size}.")
+        if concurrency is not None and not 1 <= concurrency <= MAX_IN_CHUNK_CONCURRENCY:
+            raise ValueError(
+                f"in_chunk_concurrency must be between 1 and {MAX_IN_CHUNK_CONCURRENCY}, "
+                f"got {concurrency}."
+            )
         return size, concurrency
 
     def _auto_controls(
