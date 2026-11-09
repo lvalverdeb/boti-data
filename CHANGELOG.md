@@ -95,6 +95,11 @@ Targeting 1.4.0.
 
 ### Fixed
 
+- Boolean coercion on pandas 3.1: a column whose values all miss the literal
+  map (floats such as `1.0`) came back as a null-typed Arrow series and the
+  numeric fallback could not assign into it. The fallback now works on an
+  object array. Caught by the compatibility matrix's "latest" jobs.
+
 - `DataGateway` is pickleable again on boti 1.0.11 and later: the boti
   `Logger` now holds a `threading.Event`, so the gateway's post-processor
   drops its logger on pickle and `DataGateway.__setstate__` re-attaches the

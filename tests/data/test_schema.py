@@ -197,3 +197,12 @@ def test_arrow_table_from_pylist_with_fallback_isolates_unsupported_column() -> 
 
 def test_arrow_table_from_pylist_with_fallback_handles_empty_rows() -> None:
     assert arrow_table_from_pylist_with_fallback([], ["id", "uid"]).num_rows == 0
+
+
+def test_boolean_coercion_of_numeric_column_without_arrow_fast_path() -> None:
+    # Floats never match the literal map, so every value takes the numeric
+    # fallback; pandas >= 3.1 used to hand that fallback a null-typed series.
+    frame = pd.DataFrame({"flag": [1.0, 0.0, None, 2.0]})
+    out = apply_schema_map(frame, {"flag": "boolean"}, use_arrow=False)
+    assert str(out["flag"].dtype) == "boolean"
+    assert out["flag"].tolist() == [True, False, pd.NA, True]

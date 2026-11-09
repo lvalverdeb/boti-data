@@ -139,10 +139,11 @@ def _drop_timezone_partition(series: pd.Series) -> pd.Series:
 
 
 def _coerce_boolean_partition(series: pd.Series) -> pd.Series:
-    as_string = series.astype("string")
-    stripped = as_string.str.strip()
-    normalized = stripped.str.lower()
-    coerced = normalized.map(_BOOLEAN_LITERAL_MAP)
+    normalized = series.astype("string").str.strip().str.lower()
+    # Work on an object array: pandas >= 3.1 maps Arrow-backed strings to an
+    # Arrow array, and an all-unmatched column comes back null-typed, which
+    # refuses the boolean assignment below.
+    coerced = normalized.map(_BOOLEAN_LITERAL_MAP).astype(object)
     unresolved = coerced.isna() & normalized.notna()
     if unresolved.any():
         numeric = pd.to_numeric(normalized[unresolved], errors="coerce")
