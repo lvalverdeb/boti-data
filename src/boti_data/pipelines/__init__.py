@@ -18,6 +18,7 @@ with dataframes_required(__name__):
         awrite_parquet,
         write_parquet,
     )
+    from .sinks_upsert import UpsertSink
 
 __all__ = [
     "CsvSink",
@@ -30,6 +31,7 @@ __all__ = [
     "SinkRegistry",
     "SinkPipeline",
     "SinkWriteResult",
+    "UpsertSink",
     "available_sinks",
     "awrite_parquet",
     "create_sink",

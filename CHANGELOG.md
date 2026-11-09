@@ -49,6 +49,17 @@ Targeting 1.4.0.
 - Reference documentation site built with mkdocs-material and mkdocstrings,
   versioned with mike on release tags; README cut to installation, three
   examples and links.
+- Incremental loads: `DataGateway.load(since=...)` / `aload(since=...)`
+  filter by a stored watermark and advance it after a successful load;
+  `SqlWatermarkStore` keeps the watermark in a `boti_watermarks` table next to
+  the data. Partitioned SQL loads are resumable: `SqlPartitionedLoader
+  .load_request(request, checkpoint=PlanCheckpoint(store, key))` persists
+  each finished partition, and `resume=True` on the request fetches only the
+  partitions still pending (`SqlPartitionPlan.to_json()`/`from_json()`,
+  `FileCheckpointStore`). `UpsertSink` merges a frame into a SQL table with
+  `INSERT ... ON CONFLICT` (PostgreSQL, SQLite), `INSERT OR REPLACE` (DuckDB)
+  or `ON DUPLICATE KEY UPDATE` (MySQL), registered as the `"upsert"` sink.
+  Guide: `docs/guides/incremental-loads.md`.
 
 ### Changed
 

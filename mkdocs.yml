@@ -33,6 +33,7 @@ nav:
       - SQL loads: guides/sql-loads.md
       - Parquet: guides/parquet.md
       - Sinks and enrichment: guides/sinks.md
+      - Incremental loads: guides/incremental-loads.md
       - Distributed loading: guides/distributed.md
       - Datacube backend: guides/datacube.md
       - Security: guides/security.md
