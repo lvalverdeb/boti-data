@@ -105,6 +105,25 @@ Use `auto` when result size is uncertain and you want sensible defaults without 
 
 ---
 
+## Streaming a result
+
+`iter_batches` never materialises the whole result. SQL sources read through a
+server-side cursor, Parquet sources through dataset batches, and each batch is a
+typed `pyarrow.RecordBatch` already renamed through the gateway's field map:
+
+```python
+with DataGateway(config, table="orders") as gateway:
+    for batch in gateway.iter_batches(status="active", batch_size=50_000):
+        sink.write(batch)          # about one batch of memory at any time
+
+with SqlRepository(config, "orders") as repo:
+    for batch in repo.iter_batches(columns=["id", "total"]):
+        ...
+```
+
+`return_type="polars"` builds the frame from Arrow directly (no pandas on the
+way), and `return_type="arrow"` needs no engine extra at all.
+
 ## Non-distributed usage
 
 For local analysis, notebooks, or small-scale pipelines, use `DataHelper` without any Dask cluster. The default output is a Dask DataFrame, but you can force pandas or polars.

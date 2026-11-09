@@ -20,6 +20,12 @@ with DataHelper(config) as helper:
 
 ---
 
+### Lazy polars scans
+
+`ParquetDataResource.scan_polars(columns=...)` returns a `pl.LazyFrame` over the
+dataset, read through the resource's own (sandboxed) filesystem. Nothing is read
+until `.collect()`, and polars pushes column and filter selection into the scan.
+
 ## Date-bounded Parquet source
 
 ```python

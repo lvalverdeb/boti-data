@@ -48,13 +48,20 @@ If a Postgres table has a [pgvector](https://github.com/pgvector/pgvector) `vect
 pip install "boti-data[pgvector]"
 ```
 
-The base install is deliberately light: single-row transactional access (`SqlRepository`/`AsyncSqlRepository`, see the [SQL loads guide](guides/sql-loads.md)) works out of the box, with no dask/pandas/polars pulled in. The dataframe-shaped, bulk-oriented side of the package (`DataGateway`/`DataHelper`, `ParquetPipeline`, `HybridDataset`, the sink pipelines, ...) needs the `dataframes` extra:
+The base install is deliberately light: single-row transactional access (`SqlRepository`/`AsyncSqlRepository`, see the [SQL loads guide](guides/sql-loads.md)) works out of the box, with no dask/pandas/polars pulled in. The dataframe-shaped side of the package (`DataGateway`/`DataHelper`, `ParquetPipeline`, `HybridDataset`, the sink pipelines, ...) needs at least one engine extra:
 
 ```bash
-pip install "boti-data[dataframes]"  # dask + pandas + polars + boti-dask
+pip install "boti-data[pandas]"      # pandas results; Dask is never imported
+pip install "boti-data[polars]"      # polars results built from Arrow; pandas comes along for shaping
+pip install "boti-data[dask]"        # lazy and distributed loads: dask[dataframe,distributed] + boti-dask
+pip install "boti-data[dataframes]"  # the union of the three
 ```
 
-Every name importable from `boti_data` is loaded lazily on first access, so `import boti_data` alone never touches dask/pandas/polars — only accessing a dataframe-shaped name does.
+Pick the engine with `return_type` (`"pandas"`, `"polars"`, `"dask"`, or `"arrow"` for a
+`pyarrow.Table`, which needs no extra at all). A multi-partition SQL load to pandas with no
+Dask installed fetches partitions on a bounded thread pool instead of a task graph; the same
+`max_concurrent_fetches` limit applies. Asking for an engine that is not installed raises a
+`ModuleNotFoundError` naming the extra to add.
 
 ## Imports
 

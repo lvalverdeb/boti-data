@@ -12,11 +12,11 @@ from boti_data.db import (
     SqlPartitionedLoader,
     SqlPartitionedLoadRequest,
 )
+from boti_data.db.arrow_fetch import fetcher_for
 from boti_data.db.arrow_schema_mapper import (
     arrow_table_from_pylist_with_fallback,
     arrow_table_to_pandas,
     build_arrow_schema_from_sqlalchemy_types,
-    rows_to_arrow_table,
 )
 from boti_data.db.sql_model_builder import SqlAlchemyModelBuilder
 from boti_data.filters import FilterHandler
@@ -58,25 +58,25 @@ def _prepare_sql_statement(
     return statement, execute_params
 
 
-def _arrow_table_from_sql_result(
-    rows: list[tuple[Any, ...]],
-    columns: list[str],
-    *,
-    statement: Any | None,
-) -> pa.Table:
-    # A raw-SQL-text load's statement is a SQLAlchemy TextClause, which has no
-    # .selected_columns (that's Select-only) -- treat it the same as no
-    # statement at all rather than letting the attribute lookup below crash.
+def _arrow_table_from_sql_result(result: Any, *, statement: Any | None) -> pa.Table:
+    """Materialise an executed result as Arrow without a pandas detour.
+
+    A ``Select`` types the table from its column types and streams through the
+    Arrow fetcher (no SQLAlchemy ``Row`` objects). A raw-SQL-text load's
+    statement is a TextClause with no ``.selected_columns``, so pyarrow infers
+    the schema from the values, per column when whole-table inference fails.
+    """
+    columns = list(result.keys())
     if statement is None or not hasattr(statement, "selected_columns"):
+        rows = [tuple(row) for row in result.fetchall()]
         if not rows:
             return pa.table({name: [] for name in columns})
         return arrow_table_from_pylist_with_fallback(
             [dict(zip(columns, row)) for row in rows], columns
         )
-
     sql_types = [getattr(selected, "type", None) for selected in statement.selected_columns]
     schema = build_arrow_schema_from_sqlalchemy_types(columns, sql_types)
-    return rows_to_arrow_table(rows, columns, schema)
+    return fetcher_for(result).fetch_table(result, schema)
 
 
 def should_use_partitioned_sql(options: dict[str, Any]) -> bool:
@@ -123,14 +123,8 @@ def build_sql_partitioned_request(options: dict[str, Any]) -> SqlPartitionedLoad
     return SqlPartitionedLoadRequest.model_validate(partitioned_options)
 
 
-def _finalize_arrow_result(
-    rows: list[tuple[Any, ...]],
-    columns: list[str],
-    *,
-    statement: Any | None,
-    limit: int | None,
-) -> pa.Table:
-    table = _arrow_table_from_sql_result(rows, columns, statement=statement)
+def _finalize_arrow_result(result: Any, *, statement: Any | None, limit: int | None) -> pa.Table:
+    table = _arrow_table_from_sql_result(result, statement=statement)
     if limit is not None:
         table = table.slice(0, limit)
     return table
@@ -155,12 +149,7 @@ def load_sql(
     with resource.engine.connect() as conn:
         if request.return_type == "arrow":
             result = conn.execute(statement, execute_params or {})
-            return _finalize_arrow_result(
-                [tuple(row) for row in result.fetchall()],
-                list(result.keys()),
-                statement=statement,
-                limit=request.limit,
-            )
+            return _finalize_arrow_result(result, statement=statement, limit=request.limit)
         frame = pd.read_sql(statement, conn, params=execute_params)
 
     return _finalize_frame_result(frame, limit=request.limit)

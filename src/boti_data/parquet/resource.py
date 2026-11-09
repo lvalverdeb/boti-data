@@ -20,6 +20,7 @@ from boti.core.filesystem import create_filesystem
 from boti.core.secure_io import SecureResource
 
 from boti_data._engines import dask_dataframe as _dd
+from boti_data._engines import polars as _pl
 from boti_data.filters import FilterHandler
 
 from . import discovery, evolved_read, filesystem, schema_filters
@@ -27,6 +28,7 @@ from .config import ParquetDataConfig
 
 if TYPE_CHECKING:
     import dask.dataframe as dd
+    import polars as pl
 
 __all__ = ["ParquetDataConfig", "ParquetDataResource"]
 
@@ -120,6 +122,25 @@ class ParquetDataResource(SecureResource):
             files_to_load,
             **read_kwargs,
         )
+
+    def scan_polars(self, *, columns: list[str] | None = None) -> pl.LazyFrame:
+        """A lazy polars frame over the dataset, read through the resource's filesystem.
+
+        Built on ``pl.scan_pyarrow_dataset`` so the existing fsspec/Arrow
+        filesystem (and its sandboxing) is reused; nothing is read until
+        ``.collect()``, and no pandas object is created on the way.
+        """
+        files_to_load = self._resolve_files_to_load()
+        if not files_to_load:
+            self.logger.warning("No files found.")
+            return _pl().DataFrame().lazy()
+        dataset = ds.dataset(
+            [filesystem.normalized_arrow_load_path(self, path) for path in files_to_load],
+            filesystem=filesystem.arrow_filesystem(self),
+            format="parquet",
+        )
+        lazy = _pl().scan_pyarrow_dataset(dataset)
+        return lazy.select(columns) if columns else lazy
 
     def load_arrow(
         self,

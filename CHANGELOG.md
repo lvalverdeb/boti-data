@@ -26,6 +26,23 @@ Targeting 1.4.0.
 
 ### Added
 
+- Arrow-native partition fetch (`boti_data.db.arrow_fetch`): cursor results
+  become `pyarrow.Table` in one columnar pass, using the driver's own Arrow
+  reader where there is one (DuckDB) and raw DBAPI rows elsewhere, with a
+  vectorised `pyarrow.compute` cast before any per-value coercion. A 1M-row
+  SQLite partition fetch went from 2.93 s to 0.87 s; the Arrow and pandas
+  paths produce identical frames.
+- Streaming results: `DataGateway.iter_batches(...)`,
+  `SqlRepository.iter_batches()` and `AsyncSqlRepository.iter_batches()` yield
+  Arrow record batches through a server-side cursor, holding about one batch
+  of memory however large the result.
+- Engine extras `pandas`, `polars` and `dask`; `dataframes` is now their
+  union. No module imports dask, polars or boti-dask at import time
+  (`boti_data._engines` loads them on first use), so a pandas-only install
+  never loads Dask, and a missing engine is reported as the extra to add.
+- polars-native path: `return_type="polars"` is built from Arrow with no
+  pandas detour for SQL and Parquet loads; `ParquetDataResource.scan_polars()`
+  returns a lazy polars frame over the resource's filesystem.
 - Cluster-wide partition fetch gate: on a Dask cluster the gate is
   `boti_dask.cluster_semaphore`, a scheduler-side semaphore shared by every
   worker, so `max_concurrent_fetches` bounds the whole cluster rather than

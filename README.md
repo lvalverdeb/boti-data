@@ -21,8 +21,14 @@ Arrow and dataframe shaping. Full documentation: **https://lvalverdeb.github.io/
 
 ```bash
 pip install boti-data                 # single-row API only; no pandas or dask
-pip install "boti-data[dataframes]"   # DataGateway/DataHelper, pipelines: dask + pandas + polars + boti-dask
+pip install "boti-data[pandas]"       # DataGateway/DataHelper/pipelines returning pandas; no Dask on the path
+pip install "boti-data[polars]"       # polars results built from Arrow (pandas comes along for shaping)
+pip install "boti-data[dask]"         # lazy and distributed loads: dask + distributed + boti-dask
+pip install "boti-data[dataframes]"   # all three engines
 ```
+
+The engines are separate extras, so a pandas-only service never installs or imports Dask;
+`boti_data` detects an engine from the object it is handed and loads it on first use.
 
 Install the driver matching your connection URL's scheme, and `s3` for `s3://` Parquet storage:
 
@@ -34,6 +40,13 @@ pip install "boti-data[clickhouse]"   # clickhouse-connect (sync only)
 pip install "boti-data[duckdb]"       # duckdb-engine (sync only)
 pip install "boti-data[s3]"           # boti[s3] -> s3fs
 ```
+
+Loads stream too: `DataGateway.iter_batches(...)`, `SqlRepository.iter_batches()` and
+`AsyncSqlRepository.iter_batches()` yield Arrow record batches through a server-side cursor,
+so a scan of any size costs about one batch of memory. Partition fetches build Arrow in one
+columnar pass (3.4x faster than 1.3.x on a 1M-row SQLite fetch), `return_type="polars"` is
+built from that Arrow with no pandas detour, and `ParquetDataResource.scan_polars()` returns
+a lazy polars frame over the resource's filesystem.
 
 Every name importable from `boti_data` loads lazily, so `import boti_data` costs a few
 milliseconds and never touches dask, pandas or polars until a dataframe-shaped name is used.
