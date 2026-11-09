@@ -67,6 +67,16 @@ clickhouse = [
 duckdb = [
     "duckdb-engine>=0.17.0,<0.18.0",
 ]
+# ADBC drivers return Arrow straight from the database protocol. boti-data uses
+# them only for read-only partition fetches (query_only=True, Select-compiled
+# partitions), re-applying the same session read-only statement the SQLAlchemy
+# engine issues; everything else stays on SQLAlchemy. MySQL and ClickHouse have
+# no ADBC driver and are unaffected.
+adbc = [
+    "adbc-driver-manager>=1.4.0,<2.0.0",
+    "adbc-driver-postgresql>=1.4.0,<2.0.0",
+    "adbc-driver-sqlite>=1.4.0,<2.0.0",
+]
 # The dataframe-shaped side of the package (DataGateway/DataHelper, the sink
 # pipelines, HybridDataset, ...) needs at least one engine; the lightweight
 # SqlRepository/AsyncSqlRepository single-row API needs none. Engines are
@@ -126,6 +136,10 @@ dev = [
     # dependency of boti_data itself, and not part of [mysql]/[postgres]/
     # [dataframes] since SQLite isn't one of boti-data's supported backends.
     "aiosqlite>=0.21.0,<0.23.0",
+    # tests/data/test_adbc_fetch.py and the ADBC benchmark case need the drivers.
+    "adbc-driver-manager>=1.4.0,<2.0.0",
+    "adbc-driver-postgresql>=1.4.0,<2.0.0",
+    "adbc-driver-sqlite>=1.4.0,<2.0.0",
     # boti-data itself no longer requires these (see [project.optional-dependencies]
     # dataframes), but the bulk of the test suite exercises DataGateway/
     # DataHelper/ParquetPipeline/HybridDataset and friends, which do — so the

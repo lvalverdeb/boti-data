@@ -26,6 +26,13 @@ Targeting 1.4.0.
 
 ### Added
 
+- ADBC partition fetches behind the read-only guards (`boti-data[adbc]`):
+  with the driver installed and `query_only=True`, PostgreSQL and SQLite
+  partitions are fetched through ADBC, which returns Arrow straight from the
+  wire protocol. The ADBC session gets the same read-only statement the
+  SQLAlchemy engine issues, only the planner's compiled partitions are sent
+  (psycopg placeholders are rewritten to `$n`), and a driver error falls back
+  to SQLAlchemy for that partition. `adbc=False` opts out.
 - Arrow-native partition fetch (`boti_data.db.arrow_fetch`): cursor results
   become `pyarrow.Table` in one columnar pass, using the driver's own Arrow
   reader where there is one (DuckDB) and raw DBAPI rows elsewhere, with a

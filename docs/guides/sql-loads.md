@@ -124,6 +124,11 @@ with SqlRepository(config, "orders") as repo:
 `return_type="polars"` builds the frame from Arrow directly (no pandas on the
 way), and `return_type="arrow"` needs no engine extra at all.
 
+With `boti-data[adbc]` installed, read-only partition fetches on PostgreSQL and
+SQLite use the ADBC driver and skip DBAPI rows entirely; see
+[installation](../installation.md#adbc-partition-fetches) for the guards that
+keep that path read-only.
+
 ## Non-distributed usage
 
 For local analysis, notebooks, or small-scale pipelines, use `DataHelper` without any Dask cluster. The default output is a Dask DataFrame, but you can force pandas or polars.

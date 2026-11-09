@@ -25,6 +25,7 @@ Parquet storage on `s3://` (including MinIO through `fs_type=s3`) needs `s3fs`, 
 
 ```bash
 pip install "boti-data[s3]"         # boti[s3] -> s3fs
+pip install "boti-data[adbc]"         # ADBC drivers: Arrow straight from PostgreSQL/SQLite on read-only partition fetches
 ```
 
 ClickHouse support is sync-only: there is no maintained async SQLAlchemy driver for ClickHouse, so `AsyncSqlDatabaseResource` rejects a ClickHouse connection URL — use `SqlDatabaseResource` instead. `SqlUnitOfWork`/`AsyncSqlUnitOfWork` also reject ClickHouse outright, since ClickHouse's transaction support is experimental, single-node, and MergeTree-only, with no real cross-table ACID guarantees to back a multi-table unit of work — use `SqlRepository`/`AsyncSqlRepository` directly, one table at a time, instead.
@@ -62,6 +63,20 @@ Pick the engine with `return_type` (`"pandas"`, `"polars"`, `"dask"`, or `"arrow
 Dask installed fetches partitions on a bounded thread pool instead of a task graph; the same
 `max_concurrent_fetches` limit applies. Asking for an engine that is not installed raises a
 `ModuleNotFoundError` naming the extra to add.
+
+## ADBC partition fetches
+
+With the `adbc` extra installed, read-only partition fetches (`query_only=True`,
+the default) on PostgreSQL and SQLite go through the backend's ADBC driver,
+which returns Arrow straight from the wire protocol instead of DBAPI rows.
+ADBC sits outside SQLAlchemy, so boti-data re-applies the same guards before
+using it: the DSN must already pass the read-only validation (a SQLite DSN
+with `mode=ro`), the ADBC session gets the same read-only statement the
+SQLAlchemy engine issues on connect, and only the planner's compiled partition
+statements are ever sent, never raw SQL text. Writable connections, MySQL and
+ClickHouse, raw SQL and the async loader stay on SQLAlchemy. Set `adbc=False`
+on the SQL config to opt out; a driver error on a partition logs a warning and
+falls back to SQLAlchemy for that partition.
 
 ## Imports
 

@@ -39,6 +39,7 @@ pip install "boti-data[pgvector]"     # registers pgvector's Vector type for ref
 pip install "boti-data[clickhouse]"   # clickhouse-connect (sync only)
 pip install "boti-data[duckdb]"       # duckdb-engine (sync only)
 pip install "boti-data[s3]"           # boti[s3] -> s3fs
+pip install "boti-data[adbc]"         # ADBC drivers: Arrow straight from PostgreSQL/SQLite on read-only fetches
 ```
 
 Loads stream too: `DataGateway.iter_batches(...)`, `SqlRepository.iter_batches()` and

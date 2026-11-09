@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -10,6 +11,8 @@ from sqlalchemy.sql import Select
 
 from boti_data._engines import dask as _dask
 from boti_data._engines import dask_dataframe as _dd
+from boti_data.db.adbc_fetch import adbc_eligible, driver_error_type, fetch_partition_table
+from boti_data.db.arrow_schema_mapper import arrow_table_to_pandas
 from boti_data.db.partitioned_fetch_gate import (
     GateWaitStats,
     _gate_name,
@@ -35,6 +38,11 @@ from boti_data.db.sql_engine import (
     _get_worker_engine_identity,
 )
 from boti_data.telemetry import current_provider
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+
+_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import dask.dataframe as dd
@@ -108,6 +116,17 @@ def _traced_partition(
         frame = fetch()
         span.set("rows", len(frame))
         return frame
+
+
+def _adbc_partition_or_none(
+    config: WorkerSqlConfig, partition: SqlPartitionSpec, meta_dtypes: dict[str, str]
+) -> pa.Table | None:
+    """The partition through ADBC, or ``None`` (after a warning) on a driver error."""
+    try:
+        return fetch_partition_table(config, partition, meta_dtypes)
+    except driver_error_type() as exc:
+        _logger.warning("ADBC fetch failed, using SQLAlchemy for this partition: %s", exc)
+        return None
 
 
 def _dask_available() -> bool:
@@ -281,6 +300,10 @@ class SqlPartitionExecutor:
 
         def _fetch() -> pd.DataFrame:
             with _timed_fetch_gate(gate_key, max_concurrent_fetches):
+                if use_arrow and adbc_eligible(config):
+                    table = _adbc_partition_or_none(config, partition, meta_dtypes)
+                    if table is not None:
+                        return arrow_table_to_pandas(table)
                 engine = _get_cached_worker_sync_engine(config)
                 with engine.connect() as conn:
                     if not use_arrow:

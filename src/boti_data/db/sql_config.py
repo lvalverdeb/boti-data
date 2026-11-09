@@ -51,6 +51,14 @@ class SqlDatabaseConfig(ResourceConfig):
             "without serializing credentials inside distributed task payloads."
         ),
     )
+    adbc: bool = Field(
+        default=True,
+        description=(
+            "Fetch partitions through the backend's ADBC driver when it is installed "
+            "(boti-data[adbc]) and query_only=True; the driver returns Arrow directly. "
+            "Writable connections and backends without a driver use SQLAlchemy."
+        ),
+    )
     pool_size: int = Field(default=5, ge=0)
     max_overflow: int = Field(default=10, ge=0)
     pool_timeout: int = Field(default=30, ge=0)
@@ -128,6 +136,7 @@ class WorkerSqlConfig(BaseModel):
     connection_url: SecretStr | None = Field(default=None)
     connection_env_var: str | None = Field(default=None)
     query_only: bool = Field(default=True)
+    adbc: bool = Field(default=True)
     pool_recycle: int = Field(default=1800)
     pool_pre_ping: bool = Field(default=True)
     connect_args: dict[str, Any] = Field(default_factory=dict)
@@ -154,6 +163,7 @@ class WorkerSqlConfig(BaseModel):
     def from_database_config(cls, config: SqlDatabaseConfig) -> WorkerSqlConfig:
         payload: dict[str, Any] = {
             "query_only": config.query_only,
+            "adbc": config.adbc,
             "pool_recycle": config.pool_recycle,
             "pool_pre_ping": config.pool_pre_ping,
             "connect_args": config.connect_args,
