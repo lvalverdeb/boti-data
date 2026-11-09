@@ -174,3 +174,77 @@ class FileWatermarkStore(_JsonWatermarkStoreBase):
         tmp_path = self._path.with_suffix(self._path.suffix + ".tmp")
         tmp_path.write_text(json.dumps(data, default=str))
         os.replace(tmp_path, self._path)
+
+
+class SqlWatermarkStore:
+    """A watermark store kept in the database next to the data.
+
+    Uses one small table, ``boti_watermarks(source TEXT PRIMARY KEY, value TEXT,
+    updated_at TEXT)``, created on first use. Values are JSON-encoded exactly as
+    the file-backed stores encode them, so a watermark can move between stores.
+    Every operation is one short transaction on the given engine.
+
+    Args:
+        engine: A SQLAlchemy engine (sync) with write access.
+        table_name: Override for the bookkeeping table name.
+    """
+
+    def __init__(self, engine: Any, *, table_name: str = "boti_watermarks") -> None:
+        import sqlalchemy as sa
+
+        self._engine = engine
+        self._table = sa.Table(
+            table_name,
+            sa.MetaData(),
+            sa.Column("source", sa.String(255), primary_key=True),
+            sa.Column("value", sa.Text, nullable=True),
+            sa.Column("updated_at", sa.String(64), nullable=False),
+        )
+        self._lock = threading.Lock()
+        self._created = False
+
+    def _ensure_table(self) -> None:
+        if not self._created:
+            self._table.create(self._engine, checkfirst=True)
+            self._created = True
+
+    def read(self, *, source: str) -> Any | None:
+        import sqlalchemy as sa
+
+        with self._lock:
+            self._ensure_table()
+            with self._engine.connect() as conn:
+                row = conn.execute(
+                    sa.select(self._table.c.value).where(self._table.c.source == source)
+                ).first()
+        return None if row is None or row[0] is None else json.loads(row[0])
+
+    def write(self, *, source: str, value: Any) -> None:
+        import datetime as dt
+
+        import sqlalchemy as sa
+
+        payload = json.dumps(value, default=str)
+        stamp = dt.datetime.now(dt.UTC).isoformat()
+        with self._lock:
+            self._ensure_table()
+            with self._engine.begin() as conn:
+                updated = conn.execute(
+                    sa.update(self._table)
+                    .where(self._table.c.source == source)
+                    .values(value=payload, updated_at=stamp)
+                ).rowcount
+                if not updated:
+                    conn.execute(
+                        sa.insert(self._table).values(
+                            source=source, value=payload, updated_at=stamp
+                        )
+                    )
+
+    def clear(self, *, source: str) -> None:
+        import sqlalchemy as sa
+
+        with self._lock:
+            self._ensure_table()
+            with self._engine.begin() as conn:
+                conn.execute(sa.delete(self._table).where(self._table.c.source == source))
