@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 
 from boti_data._engines import dask_dataframe as _dd
 from boti_data.filters.utils import parse_filter_key
@@ -43,6 +44,37 @@ def _load_dataset_schema(resource: ParquetDataResource, files: list[str]) -> pa.
         return dataset.schema
     except (FileNotFoundError, OSError, pa.ArrowInvalid, pa.ArrowException):
         return None
+
+
+def _hive_partition_fields(files: list[str]) -> list[pa.Field]:
+    """Partition fields named by ``key=value`` path segments of the first file."""
+    segments = files[0].replace("\\", "/").split("/")[:-1]
+    names = [segment.split("=", 1)[0] for segment in segments if "=" in segment]
+    return [pa.field(name, pa.string()) for name in names]
+
+
+def evolved_read_schema(resource: ParquetDataResource, files: list[str]) -> pa.Schema | None:
+    """Unified schema when *files* do not all share one, else ``None``.
+
+    A dataset appended to by ``ParquetSink`` can hold files of widening
+    schemas (new columns, promoted types). Reading them as one frame needs
+    the unified schema up front, so each file's footer is read; ``None``
+    means the plain single-schema read applies.
+    """
+    if len(files) <= 1:
+        return None
+    arrow_fs = filesystem.arrow_filesystem(resource)
+    schemas: list[pa.Schema] = []
+    for path in files:
+        source = filesystem.normalized_arrow_load_path(resource, path)
+        schemas.append(pq.read_schema(source, filesystem=arrow_fs).remove_metadata())
+    if all(schema.equals(schemas[0]) for schema in schemas[1:]):
+        return None
+    unified = pa.unify_schemas(schemas, promote_options="permissive")
+    for field in _hive_partition_fields(files):
+        if field.name not in unified.names:
+            unified = unified.append(field)
+    return unified
 
 
 def dataset_schema(resource: ParquetDataResource) -> pa.Schema | None:

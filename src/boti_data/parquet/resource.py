@@ -22,7 +22,7 @@ from boti.core.secure_io import SecureResource
 from boti_data._engines import dask_dataframe as _dd
 from boti_data.filters import FilterHandler
 
-from . import discovery, filesystem, schema_filters
+from . import discovery, evolved_read, filesystem, schema_filters
 from .config import ParquetDataConfig
 
 if TYPE_CHECKING:
@@ -100,6 +100,11 @@ class ParquetDataResource(SecureResource):
             return schema_filters.empty_ddf()
 
         self.logger.debug("Loading %s from %s", files_to_load, self.parquet_storage_path)
+        evolved = schema_filters.evolved_read_schema(self, files_to_load)
+        if evolved is not None:
+            return evolved_read.load_files_unified(
+                self, files_to_load, evolved, filters=filters, columns=columns
+            )
         fs_ = self.require_fs()
         read_kwargs: dict[str, Any] = {
             "filesystem": fs_,
@@ -132,6 +137,7 @@ class ParquetDataResource(SecureResource):
             [filesystem.normalized_arrow_load_path(self, path) for path in files_to_load],
             filesystem=filesystem.arrow_filesystem(self),
             format="parquet",
+            schema=schema_filters.evolved_read_schema(self, files_to_load),
         )
         expression = schema_filters.raw_filters_to_expression(filters)
         return dataset.to_table(filter=expression, columns=columns)
