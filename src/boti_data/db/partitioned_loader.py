@@ -12,6 +12,7 @@ from sqlalchemy.engine import url as sqlalchemy_url
 
 from boti_data._engines import dask_dataframe as _dd
 from boti_data._engines import is_dask_frame
+from boti_data.db.partitioned_checkpoint import CheckpointedFetch, PlanCheckpoint
 from boti_data.db.partitioned_execution import (
     SqlPartitionExecutor,
     fetch_gate_stats,
@@ -191,10 +192,36 @@ class SqlPartitionedLoader(PicklableLifecycleCoreMixin, LifecycleCore):
             )
         return result
 
+    def _checkpointed_plan(
+        self, request: SqlPartitionedLoadRequest, checkpoint: PlanCheckpoint | None
+    ) -> tuple[SqlPartitionPlan, Any]:
+        """The plan to run and the fetcher to run it with, honouring a checkpoint.
+
+        ``resume=True`` with a stored plan reuses it (done partitions come back
+        from the store); otherwise a fresh plan replaces whatever was stored.
+        """
+        if checkpoint is None:
+            return self.plan_request(request), self._fetch_partition_static
+        stored = PlanCheckpoint.load(checkpoint.store, checkpoint.key) if request.resume else None
+        if stored is not None:
+            checkpoint.plan = stored.plan
+            if request.diagnostics:
+                self.logger.info(
+                    f"Resuming partitioned SQL load from checkpoint {checkpoint.key!r}: "
+                    f"{len(checkpoint.pending)} of {len(stored.plan.partitions)} partitions pending"
+                )
+        else:
+            checkpoint.begin(self.plan_request(request))
+        assert checkpoint.plan is not None
+        return checkpoint.plan, CheckpointedFetch(checkpoint, self._fetch_partition_static)
+
     def _load_via_plan(
-        self, request: SqlPartitionedLoadRequest, started: float
+        self,
+        request: SqlPartitionedLoadRequest,
+        started: float,
+        checkpoint: PlanCheckpoint | None = None,
     ) -> pd.DataFrame | dd.DataFrame:
-        plan = self.plan_request(request)
+        plan, fetch_partition = self._checkpointed_plan(request, checkpoint)
         # Use the request's use_arrow flag; if the executor was created with a different
         # value, we need to create a new executor with the correct flag.
         executor = self._executor
@@ -213,7 +240,7 @@ class SqlPartitionedLoader(PicklableLifecycleCoreMixin, LifecycleCore):
             plan,
             as_pandas=request.as_pandas,
             max_concurrent_fetches=request.max_concurrent_fetches,
-            fetch_partition=self._fetch_partition_static,
+            fetch_partition=fetch_partition,
             statement=prepared_stmt,
         )
         t_end = perf_counter()
@@ -230,14 +257,20 @@ class SqlPartitionedLoader(PicklableLifecycleCoreMixin, LifecycleCore):
             )
         return result
 
-    def load_request(self, request: SqlPartitionedLoadRequest) -> pd.DataFrame | dd.DataFrame:
+    def load_request(
+        self,
+        request: SqlPartitionedLoadRequest,
+        *,
+        checkpoint: PlanCheckpoint | None = None,
+    ) -> pd.DataFrame | dd.DataFrame:
+        """Run ``request``; with ``checkpoint`` the plan is resumable (see partitioned_checkpoint)."""
         started = perf_counter()
         # Fast path: bypass planner entirely for small queries
-        if not request.use_arrow and not request.as_pandas:
+        if checkpoint is None and not request.use_arrow and not request.as_pandas:
             fast_result = self._try_fast_path(request, started)
             if fast_result is not None:
                 return fast_result
-        return self._load_via_plan(request, started)
+        return self._load_via_plan(request, started, checkpoint)
 
     _fetch_partition_static = staticmethod(SqlPartitionExecutor.fetch_partition)
 

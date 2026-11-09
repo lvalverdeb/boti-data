@@ -98,10 +98,31 @@ def _prepare_offset_plan_context(
     )
 
 
+_KEY_HEX_LENGTH = 16
+
+
 @dataclass(frozen=True)
 class SqlPartitionSpec:
     sql: str
     params: SqlPartitionParams = None
+
+    def key(self) -> str:
+        """Stable identity of this partition inside a plan (used by checkpoints)."""
+        import hashlib
+
+        return hashlib.sha256(f"{self.sql}|{self.params!r}".encode()).hexdigest()[:_KEY_HEX_LENGTH]
+
+    def to_json(self) -> dict[str, Any]:
+        kind = "tuple" if isinstance(self.params, tuple) else "dict" if self.params else "none"
+        params = list(self.params) if isinstance(self.params, tuple) else self.params
+        return {"sql": self.sql, "params": params, "params_kind": kind}
+
+    @classmethod
+    def from_json(cls, payload: dict[str, Any]) -> SqlPartitionSpec:
+        params = payload.get("params")
+        if payload.get("params_kind") == "tuple":
+            params = tuple(params or ())
+        return cls(sql=payload["sql"], params=params or None)
 
 
 @dataclass(frozen=True)
@@ -110,6 +131,24 @@ class SqlPartitionPlan:
     strategy: PartitionStrategy
     partitions: tuple[SqlPartitionSpec, ...]
     meta_dtypes: dict[str, str]
+
+    def to_json(self) -> dict[str, Any]:
+        """A JSON-serialisable form that :meth:`from_json` restores exactly."""
+        return {
+            "total_rows": self.total_rows,
+            "strategy": self.strategy,
+            "partitions": [partition.to_json() for partition in self.partitions],
+            "meta_dtypes": dict(self.meta_dtypes),
+        }
+
+    @classmethod
+    def from_json(cls, payload: dict[str, Any]) -> SqlPartitionPlan:
+        return cls(
+            total_rows=int(payload["total_rows"]),
+            strategy=payload["strategy"],
+            partitions=tuple(SqlPartitionSpec.from_json(p) for p in payload["partitions"]),
+            meta_dtypes=dict(payload["meta_dtypes"]),
+        )
 
 
 class SqlPartitionedLoadRequest(BaseModel):
@@ -137,6 +176,9 @@ class SqlPartitionedLoadRequest(BaseModel):
     as_pandas: bool = False
     use_arrow: bool = True
     estimated_rows: int | None = Field(default=None, ge=0)
+    # With a checkpoint passed to the loader: reuse the stored plan and skip the
+    # partitions it already marks done. Without resume the checkpoint starts afresh.
+    resume: bool = False
 
     @model_validator(mode="after")
     def validate_request(self) -> SqlPartitionedLoadRequest:

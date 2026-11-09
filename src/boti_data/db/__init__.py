@@ -35,6 +35,8 @@ __all__ = [
     "AsyncSqlDatabaseResource",
     "AsyncSqlRepository",
     "AsyncSqlUnitOfWork",
+    "FileCheckpointStore",
+    "PlanCheckpoint",
     "BuilderConfig",
     "DefaultBase",
     "EngineRegistry",
@@ -59,6 +61,8 @@ __all__ = [
 # imports in this package — deferred so `from boti_data.db import SqlRepository`
 # et al. doesn't pull them in.
 _LAZY = {
+    "FileCheckpointStore": ("boti_data.db.partitioned_checkpoint", "FileCheckpointStore"),
+    "PlanCheckpoint": ("boti_data.db.partitioned_checkpoint", "PlanCheckpoint"),
     "SqlPartitionedLoader": ("boti_data.db.partitioned_loader", "SqlPartitionedLoader"),
     "SqlPartitionedLoadRequest": ("boti_data.db.partitioned_loader", "SqlPartitionedLoadRequest"),
 }
