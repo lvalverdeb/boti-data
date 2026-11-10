@@ -450,16 +450,17 @@ s3 = [
 
 [[package]]
 name = "boti-dask"
-version = "1.0.7"
+version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boti" },
     { name = "dask", extra = ["dataframe", "distributed"] },
+    { name = "packaging" },
     { name = "pandas" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/de/79/486b3a257b1431cb81e6b4d7df28fb2b4193bb3b945f4b45bd38fb9ec047/boti_dask-1.0.7.tar.gz", hash = "sha256:2508276f207c7b6639d9a4dde639779b5d0e7796c3752225fcd7cfc1992a2a10", size = 19077, upload-time = "2026-09-22T17:52:37.372Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fe/de/88be7f8a2141c93752b4b843619247635de78e497476174b9da64186fe5a/boti_dask-1.3.0.tar.gz", hash = "sha256:fd44e3f54c363945b67092faf4a922a7cb73cc4007f0adbb1db26b5d638f67bd", size = 38479, upload-time = "2026-11-10T00:12:43.253Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/fd/b1f51fda6c8446f53e709618a40d9c1c9a1b6621b27df1649e384e8cbb91/boti_dask-1.0.7-py3-none-any.whl", hash = "sha256:cb8186d683a191b8ba54cfa6d79291c3d2916136f50a37c13bee28d9a2a107e8", size = 21406, upload-time = "2026-09-22T17:52:36.135Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/c9/c27ab092637e86d32c8a911ff500338cad972c3a265bb7b6ad92db944fc0/boti_dask-1.3.0-py3-none-any.whl", hash = "sha256:0637057aee44de12c94d27ba0010e2a02b86d5a62084ff28468de16e4ec3925a", size = 44201, upload-time = "2026-11-10T00:12:41.928Z" },
 ]
 
 [[package]]
@@ -558,7 +559,7 @@ requires-dist = [
     { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.30.0,<0.32.0" },
     { name = "boti", specifier = ">=1.2.0,<2.0.0" },
     { name = "boti", extras = ["s3"], marker = "extra == 's3'", specifier = ">=1.1.0,<2.0.0" },
-    { name = "boti-dask", marker = "extra == 'dask'", specifier = ">=1.0.0,<2.0.0" },
+    { name = "boti-dask", marker = "extra == 'dask'", specifier = ">=1.3.0,<2.0.0" },
     { name = "boti-data", extras = ["dask", "pandas", "polars"], marker = "extra == 'dataframes'" },
     { name = "clickhouse-connect", marker = "extra == 'clickhouse'", specifier = ">=1.6.0,<2.0.0" },
     { name = "dask", extras = ["dataframe", "distributed"], marker = "extra == 'dask'", specifier = ">=2026.3.0,<2027.0.0" },
@@ -583,7 +584,7 @@ dev = [
     { name = "adbc-driver-sqlite", specifier = ">=1.4.0,<2.0.0" },
     { name = "aiosqlite", specifier = ">=0.21.0,<0.23.0" },
     { name = "asyncmy", specifier = ">=0.2.11,<0.3.0" },
-    { name = "boti-dask", specifier = ">=1.0.0,<2.0.0" },
+    { name = "boti-dask", specifier = ">=1.3.0,<2.0.0" },
     { name = "clickhouse-connect", specifier = ">=1.6.0,<2.0.0" },
     { name = "dask", extras = ["dataframe", "distributed"], specifier = ">=2026.3.0,<2027.0.0" },
     { name = "duckdb-engine", specifier = ">=0.17.0,<0.18.0" },
