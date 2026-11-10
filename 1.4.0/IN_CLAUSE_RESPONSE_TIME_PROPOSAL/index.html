@@ -1,0 +1,1914 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Data access and transformation layer of the Boti ecosystem">
+      
+      
+      
+        <link rel="canonical" href="https://lvalverdeb.github.io/boti-data/1.4.0/IN_CLAUSE_RESPONSE_TIME_PROPOSAL/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+    
+    
+      
+        <title>IN-Clause Response Time Proposal (boti_data.db) - boti-data</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#in-clause-response-time-proposal-boti_datadb" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="boti-data" class="md-header__button md-logo" aria-label="boti-data" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            boti-data
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              IN-Clause Response Time Proposal (boti_data.db)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/lvalverdeb/boti-data" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lvalverdeb/boti-data
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="boti-data" class="md-nav__button md-logo" aria-label="boti-data" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    boti-data
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/lvalverdeb/boti-data" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lvalverdeb/boti-data
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/sql-loads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SQL loads
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/parquet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parquet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/sinks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sinks and enrichment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/incremental-loads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Incremental loads
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/distributed/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Distributed loading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/datacube/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datacube backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics and tracing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/db/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database access
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/gateway/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gateway and helper
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/parquet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parquet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipelines and sinks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/watermark/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Watermarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/enrichment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enrichment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/datacube/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datacube
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Proposals and reviews
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Proposals and reviews
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../proposals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../proposals/BIG_DATA_READYNESS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Big data readiness
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../proposals/DASK_RESILIENCE_USE_CASES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dask resilience use cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../proposals/DATACUBE_CONTRACT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datacube contract
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../proposals/DEPLOYMENT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../proposals/IN_CLAUSE_RESPONSE_TIME_PROPOSAL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    IN-clause response time
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../proposals/PYARROW_INTEGRATION_PROPOSAL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PyArrow integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../proposals/SECURITY_HARDENING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security hardening
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#objective" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Objective
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-paths-reviewed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Paths Reviewed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#baseline-benchmark" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Baseline Benchmark
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Baseline Benchmark">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#harness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Harness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#benchmark-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Benchmark Conditions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#current-response-times-median-ms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current Response Times (median ms)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-implementation-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 Implementation Status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-phase-1-benchmark-snapshot-median-ms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Post-Phase-1 Benchmark Snapshot (median ms)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Post-Phase-1 Benchmark Snapshot (median ms)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#observed-impact-vs-baseline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observed impact vs baseline
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-implementation-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 Implementation Status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-phase-2-benchmark-snapshot-median-ms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Post-Phase-2 Benchmark Snapshot (median ms)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Post-Phase-2 Benchmark Snapshot (median ms)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-impact-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase-2 impact summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#findings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Findings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#proposal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proposal
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Proposal">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-low-risk-tuning-recommended-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Low-Risk Tuning (recommended first)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-adaptive-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Adaptive Policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-very-large-in-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: Very Large IN Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rollout-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rollout Plan
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#acceptance-criteria" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Acceptance Criteria
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="in-clause-response-time-proposal-boti_datadb">IN-Clause Response Time Proposal (<code>boti_data.db</code>)<a class="headerlink" href="#in-clause-response-time-proposal-boti_datadb" title="Permanent link">&para;</a></h1>
+<h2 id="objective">Objective<a class="headerlink" href="#objective" title="Permanent link">&para;</a></h2>
+<p>Improve query response times when <code>WHERE ... IN (...)</code> filters are used, starting from a measured baseline of current behavior.</p>
+<h2 id="code-paths-reviewed">Code Paths Reviewed<a class="headerlink" href="#code-paths-reviewed" title="Permanent link">&para;</a></h2>
+<p>Primary paths involved in <code>IN</code> handling and query execution:</p>
+<ul>
+<li><code>src/boti_data/filters/utils.py</code></li>
+<li><code>apply_in_sqlalchemy(...)</code></li>
+<li><code>normalize_in_filter_values(...)</code></li>
+<li><code>suggest_in_filter_chunking(...)</code></li>
+<li><code>src/boti_data/filters/handler.py</code></li>
+<li><code>FilterHandler.suggest_sql_in_chunking(...)</code></li>
+<li><code>src/boti_data/gateway/core.py</code></li>
+<li><code>_resolve_in_chunk_controls(...)</code></li>
+<li><code>_chunked_in_load_sync(...)</code></li>
+<li><code>_chunked_in_load(...)</code></li>
+</ul>
+<h2 id="baseline-benchmark">Baseline Benchmark<a class="headerlink" href="#baseline-benchmark" title="Permanent link">&para;</a></h2>
+<h3 id="harness">Harness<a class="headerlink" href="#harness" title="Permanent link">&para;</a></h3>
+<p>A reproducible benchmark script was added:</p>
+<ul>
+<li><code>benchmarks/benchmark_in_clause_baseline.py</code></li>
+</ul>
+<p>Run it with:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>benchmarks/benchmark_in_clause_baseline.py
+</code></pre></div>
+<h3 id="benchmark-conditions">Benchmark Conditions<a class="headerlink" href="#benchmark-conditions" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Backend: SQLite (local file DB)</li>
+<li>Rows: <code>200,000</code></li>
+<li><code>IN</code> cardinalities: <code>100</code>, <code>1,000</code>, <code>5,000</code>, <code>10,000</code></li>
+<li>Repeats: <code>3</code> (median reported)</li>
+<li>Scenarios:</li>
+<li>sync pandas, single query (<code>in_chunk_strategy="off"</code>)</li>
+<li>sync pandas, auto chunking</li>
+<li>sync pandas, forced chunking</li>
+<li>sync dask, single query</li>
+<li>sync dask, auto chunking</li>
+<li>async pandas, single query</li>
+<li>async pandas, auto chunking</li>
+</ul>
+<h2 id="current-response-times-median-ms">Current Response Times (median ms)<a class="headerlink" href="#current-response-times-median-ms" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th style="text-align: right;">IN=100</th>
+<th style="text-align: right;">IN=1,000</th>
+<th style="text-align: right;">IN=5,000</th>
+<th style="text-align: right;">IN=10,000</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sync_pandas_single</code></td>
+<td style="text-align: right;">1.77</td>
+<td style="text-align: right;">3.94</td>
+<td style="text-align: right;">14.34</td>
+<td style="text-align: right;">26.36</td>
+</tr>
+<tr>
+<td><code>sync_pandas_auto_chunk</code></td>
+<td style="text-align: right;">1.53</td>
+<td style="text-align: right;">5.22</td>
+<td style="text-align: right;">57.50</td>
+<td style="text-align: right;">186.69</td>
+</tr>
+<tr>
+<td><code>sync_pandas_forced_chunk</code></td>
+<td style="text-align: right;">1.14</td>
+<td style="text-align: right;">4.02</td>
+<td style="text-align: right;">32.71</td>
+<td style="text-align: right;">73.38</td>
+</tr>
+<tr>
+<td><code>sync_dask_single</code></td>
+<td style="text-align: right;">3.46</td>
+<td style="text-align: right;">11.00</td>
+<td style="text-align: right;">125.30</td>
+<td style="text-align: right;">444.57</td>
+</tr>
+<tr>
+<td><code>sync_dask_auto_chunk</code></td>
+<td style="text-align: right;">3.85</td>
+<td style="text-align: right;">19.74</td>
+<td style="text-align: right;">86.07</td>
+<td style="text-align: right;">173.06</td>
+</tr>
+<tr>
+<td><code>async_pandas_single</code></td>
+<td style="text-align: right;">1.40</td>
+<td style="text-align: right;">3.99</td>
+<td style="text-align: right;">14.66</td>
+<td style="text-align: right;">32.34</td>
+</tr>
+<tr>
+<td><code>async_pandas_auto_chunk</code></td>
+<td style="text-align: right;">2.09</td>
+<td style="text-align: right;">5.12</td>
+<td style="text-align: right;">58.60</td>
+<td style="text-align: right;">185.65</td>
+</tr>
+</tbody>
+</table>
+<h2 id="phase-1-implementation-status">Phase 1 Implementation Status<a class="headerlink" href="#phase-1-implementation-status" title="Permanent link">&para;</a></h2>
+<p>Implemented in <code>src/boti_data/gateway/core.py</code>:</p>
+<ul>
+<li>Auto chunking now receives resolved execution mode (<code>eager</code>/<code>lazy</code>).</li>
+<li>Eager SQL auto chunking is disabled for medium IN lists on SQLite.</li>
+<li>Eager SQL auto chunking threshold is now dialect-aware:</li>
+<li>SQLite: auto chunk only when <code>IN &gt;= 8,000</code>.</li>
+<li>Other SQL backends: fallback threshold <code>5,000</code>.</li>
+<li>Eager SQL chunk fan-out concurrency is capped to <code>1</code> when auto chunking does apply.</li>
+</ul>
+<p>Unit tests added:</p>
+<ul>
+<li><code>tests/data/test_facade.py::test_facade_auto_in_chunking_disables_eager_sql_for_medium_in_lists</code></li>
+<li><code>tests/data/test_facade.py::test_facade_auto_in_chunking_keeps_lazy_sql_chunking_for_medium_in_lists</code></li>
+</ul>
+<h2 id="post-phase-1-benchmark-snapshot-median-ms">Post-Phase-1 Benchmark Snapshot (median ms)<a class="headerlink" href="#post-phase-1-benchmark-snapshot-median-ms" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th style="text-align: right;">IN=100</th>
+<th style="text-align: right;">IN=1,000</th>
+<th style="text-align: right;">IN=5,000</th>
+<th style="text-align: right;">IN=10,000</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sync_pandas_single</code></td>
+<td style="text-align: right;">1.24</td>
+<td style="text-align: right;">3.45</td>
+<td style="text-align: right;">14.07</td>
+<td style="text-align: right;">26.16</td>
+</tr>
+<tr>
+<td><code>sync_pandas_auto_chunk</code></td>
+<td style="text-align: right;">1.67</td>
+<td style="text-align: right;">4.24</td>
+<td style="text-align: right;">18.48</td>
+<td style="text-align: right;">42.50</td>
+</tr>
+<tr>
+<td><code>async_pandas_single</code></td>
+<td style="text-align: right;">1.38</td>
+<td style="text-align: right;">4.13</td>
+<td style="text-align: right;">15.20</td>
+<td style="text-align: right;">27.74</td>
+</tr>
+<tr>
+<td><code>async_pandas_auto_chunk</code></td>
+<td style="text-align: right;">2.12</td>
+<td style="text-align: right;">4.78</td>
+<td style="text-align: right;">15.86</td>
+<td style="text-align: right;">42.18</td>
+</tr>
+<tr>
+<td><code>sync_dask_single</code></td>
+<td style="text-align: right;">3.66</td>
+<td style="text-align: right;">12.26</td>
+<td style="text-align: right;">128.29</td>
+<td style="text-align: right;">437.40</td>
+</tr>
+<tr>
+<td><code>sync_dask_auto_chunk</code></td>
+<td style="text-align: right;">3.77</td>
+<td style="text-align: right;">20.50</td>
+<td style="text-align: right;">85.51</td>
+<td style="text-align: right;">173.07</td>
+</tr>
+</tbody>
+</table>
+<h3 id="observed-impact-vs-baseline">Observed impact vs baseline<a class="headerlink" href="#observed-impact-vs-baseline" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Eager auto chunking improved significantly for large IN lists:</li>
+<li><code>sync_pandas_auto_chunk</code>, IN=10k: <strong>186.69 ms -&gt; 42.50 ms</strong> (~4.4x faster).</li>
+<li><code>async_pandas_auto_chunk</code>, IN=10k: <strong>185.65 ms -&gt; 42.18 ms</strong> (~4.4x faster).</li>
+<li>Lazy Dask auto chunking remained beneficial for larger IN lists.</li>
+<li>Acceptance target (<code>&lt;=1.5x</code> of single-query eager baseline) is now close but not met at IN=10k:</li>
+<li><code>42.50 / 26.16 = 1.62x</code>.</li>
+</ul>
+<h2 id="phase-2-implementation-status">Phase 2 Implementation Status<a class="headerlink" href="#phase-2-implementation-status" title="Permanent link">&para;</a></h2>
+<p>Implemented in <code>src/boti_data/gateway/core.py</code>:</p>
+<ul>
+<li>Added adaptive policy object for eager auto chunking decisions (<code>_InChunkPolicy</code>).</li>
+<li>Policy now resolves by SQL dialect (SQLite gets a stricter eager threshold).</li>
+<li>Added chunk fan-out diagnostics telemetry for sync and async paths:</li>
+<li>chunk count</li>
+<li>total fan-out elapsed</li>
+<li>per-chunk elapsed list</li>
+<li>log labels: <code>Gateway IN chunk fan-out sync|async</code></li>
+</ul>
+<p>Additional tests added:</p>
+<ul>
+<li><code>tests/data/test_facade.py::test_facade_auto_in_chunking_disables_eager_sql_for_ten_thousand_sqlite_values</code></li>
+<li><code>tests/data/test_facade.py::test_facade_in_chunk_diagnostics_logs_sync_fanout</code></li>
+</ul>
+<h2 id="post-phase-2-benchmark-snapshot-median-ms">Post-Phase-2 Benchmark Snapshot (median ms)<a class="headerlink" href="#post-phase-2-benchmark-snapshot-median-ms" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th style="text-align: right;">IN=100</th>
+<th style="text-align: right;">IN=1,000</th>
+<th style="text-align: right;">IN=5,000</th>
+<th style="text-align: right;">IN=10,000</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sync_pandas_single</code></td>
+<td style="text-align: right;">1.35</td>
+<td style="text-align: right;">3.51</td>
+<td style="text-align: right;">14.12</td>
+<td style="text-align: right;">27.36</td>
+</tr>
+<tr>
+<td><code>sync_pandas_auto_chunk</code></td>
+<td style="text-align: right;">1.59</td>
+<td style="text-align: right;">4.15</td>
+<td style="text-align: right;">18.03</td>
+<td style="text-align: right;">28.62</td>
+</tr>
+<tr>
+<td><code>async_pandas_single</code></td>
+<td style="text-align: right;">1.46</td>
+<td style="text-align: right;">4.06</td>
+<td style="text-align: right;">15.26</td>
+<td style="text-align: right;">40.03</td>
+</tr>
+<tr>
+<td><code>async_pandas_auto_chunk</code></td>
+<td style="text-align: right;">1.99</td>
+<td style="text-align: right;">4.62</td>
+<td style="text-align: right;">16.83</td>
+<td style="text-align: right;">33.07</td>
+</tr>
+<tr>
+<td><code>sync_dask_single</code></td>
+<td style="text-align: right;">3.68</td>
+<td style="text-align: right;">11.22</td>
+<td style="text-align: right;">127.32</td>
+<td style="text-align: right;">446.81</td>
+</tr>
+<tr>
+<td><code>sync_dask_auto_chunk</code></td>
+<td style="text-align: right;">4.21</td>
+<td style="text-align: right;">19.82</td>
+<td style="text-align: right;">85.58</td>
+<td style="text-align: right;">180.54</td>
+</tr>
+</tbody>
+</table>
+<h3 id="phase-2-impact-summary">Phase-2 impact summary<a class="headerlink" href="#phase-2-impact-summary" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>sync_pandas_auto_chunk</code> at IN=10k now lands near single-query latency:</li>
+<li><strong>28.62 ms vs 27.36 ms</strong> (<code>1.05x</code>, acceptance achieved).</li>
+<li><code>sync_pandas_auto_chunk</code> at IN=5k remains within target:</li>
+<li><strong>18.03 ms vs 14.12 ms</strong> (<code>1.28x</code>, acceptance achieved).</li>
+<li>Lazy Dask auto chunking remains beneficial at larger IN sizes.</li>
+</ul>
+<h2 id="findings">Findings<a class="headerlink" href="#findings" title="Permanent link">&para;</a></h2>
+<ol>
+<li>For eager/pandas paths, chunking is a major regression once <code>IN</code> grows:</li>
+<li><code>IN=10,000</code>: <code>sync_pandas_auto_chunk</code> is ~7x slower than single-query.</li>
+<li>Similar degradation on async eager (<code>async_pandas_auto_chunk</code>).</li>
+<li>For lazy/dask paths, chunking helps at larger cardinalities:</li>
+<li><code>IN=10,000</code>: <code>sync_dask_auto_chunk</code> is ~2.6x faster than single-query.</li>
+<li>Current auto threshold (<code>~900</code>) is too low for eager paths on this backend.</li>
+<li>The same chunk policy is being applied without enough sensitivity to:</li>
+<li>execution mode (<code>eager</code> vs <code>lazy</code>)</li>
+<li>backend/dialect characteristics</li>
+<li>crossover point where chunk fan-out starts paying off.</li>
+</ol>
+<h2 id="proposal">Proposal<a class="headerlink" href="#proposal" title="Permanent link">&para;</a></h2>
+<h3 id="phase-1-low-risk-tuning-recommended-first">Phase 1: Low-Risk Tuning (recommended first)<a class="headerlink" href="#phase-1-low-risk-tuning-recommended-first" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Make auto chunking execution-mode aware in <code>DataGateway</code>:</li>
+<li>For eager paths (<code>pandas</code>/<code>polars</code>):<ul>
+<li>default to <code>in_chunk_strategy="off"</code> unless <code>IN</code> is very large.</li>
+</ul>
+</li>
+<li>For lazy/dask paths:<ul>
+<li>keep chunking enabled.</li>
+</ul>
+</li>
+<li>Raise eager auto chunk activation threshold (dialect-specific):</li>
+<li>SQLite baseline suggestion: do not auto-chunk until at least <code>IN &gt;= 8,000</code>.</li>
+<li>Cap eager chunk concurrency at <code>1</code> by default:</li>
+<li>Avoid thread fan-out overhead for local DB workloads.</li>
+</ol>
+<p>Expected impact:</p>
+<ul>
+<li>Substantial latency reduction for large eager <code>IN</code> filters (4x-7x in baseline patterns).</li>
+</ul>
+<h3 id="phase-2-adaptive-policy">Phase 2: Adaptive Policy<a class="headerlink" href="#phase-2-adaptive-policy" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Introduce a backend/dialect policy object, e.g.:</li>
+<li><code>sqlite</code>: high eager threshold, lower concurrency</li>
+<li><code>postgres/mysql</code>: threshold tuned from backend benchmarks</li>
+<li>Add crossover telemetry in diagnostics logs:</li>
+<li>chunk count</li>
+<li>per-chunk elapsed</li>
+<li>total fan-out overhead</li>
+</ol>
+<p>Expected impact:</p>
+<ul>
+<li>Better default behavior across environments without manual tuning.</li>
+</ul>
+<h3 id="phase-3-very-large-in-strategy">Phase 3: Very Large IN Strategy<a class="headerlink" href="#phase-3-very-large-in-strategy" title="Permanent link">&para;</a></h3>
+<p>For very large lists (e.g., &gt;20k to 50k, backend-dependent), evaluate:</p>
+<ol>
+<li>temporary table + join</li>
+<li>backend-native array strategies (where supported)</li>
+</ol>
+<p>Expected impact:</p>
+<ul>
+<li>Improved plan stability and lower SQL/parameter overhead for extreme cardinalities.</li>
+</ul>
+<h2 id="rollout-plan">Rollout Plan<a class="headerlink" href="#rollout-plan" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Implement Phase 1 tuning behind safe defaults.</li>
+<li>Re-run benchmark matrix and compare to this baseline.</li>
+<li>Add regression benchmarks to CI-adjacent perf checks (non-blocking initially).</li>
+<li>Progress to Phase 2 after validating no regressions in distributed/lazy paths.</li>
+</ol>
+<h2 id="acceptance-criteria">Acceptance Criteria<a class="headerlink" href="#acceptance-criteria" title="Permanent link">&para;</a></h2>
+<p>For the same baseline harness:</p>
+<ul>
+<li><code>sync_pandas_auto_chunk</code> at <code>IN=5,000</code> and <code>IN=10,000</code> should be within <code>1.5x</code> of <code>sync_pandas_single</code> (or better).</li>
+<li><code>sync_dask_auto_chunk</code> should not regress at <code>IN=5,000</code> and <code>IN=10,000</code>.</li>
+<li>No correctness deltas in returned row counts.</li>
+</ul>
+<h2 id="notes">Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h2>
+<ul>
+<li>These numbers are from a local SQLite benchmark and are intended as a baseline.</li>
+<li>Final tuning should be validated against your production DB engine and network profile.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      boti-data contributors
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "search.suggest"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

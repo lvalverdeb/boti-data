@@ -1,0 +1,4880 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Data access and transformation layer of the Boti ecosystem">
+      
+      
+      
+        <link rel="canonical" href="https://lvalverdeb.github.io/boti-data/1.4.0/api/db/">
+      
+      
+        <link rel="prev" href="../../guides/telemetry/">
+      
+      
+        <link rel="next" href="../gateway/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+    
+    
+      
+        <title>Database access - boti-data</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#database-access" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="boti-data" class="md-header__button md-logo" aria-label="boti-data" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            boti-data
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Database access
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/lvalverdeb/boti-data" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lvalverdeb/boti-data
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="boti-data" class="md-nav__button md-logo" aria-label="boti-data" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    boti-data
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/lvalverdeb/boti-data" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lvalverdeb/boti-data
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/sql-loads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SQL loads
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/parquet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parquet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/sinks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sinks and enrichment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/incremental-loads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Incremental loads
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/distributed/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Distributed loading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/datacube/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datacube backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics and tracing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database access
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database access
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbsql_repository" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.sql_repository
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_repository.SqlRepository" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlRepository
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SqlRepository">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_repository.SqlRepository.iter_batches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        iter_batches
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_repository.AsyncSqlRepository" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncSqlRepository
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AsyncSqlRepository">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_repository.AsyncSqlRepository.iter_batches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        iter_batches
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_repository.SqlUnitOfWork" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlUnitOfWork
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_repository.AsyncSqlUnitOfWork" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncSqlUnitOfWork
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbsql_resource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.sql_resource
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_resource.SqlDatabaseResource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlDatabaseResource
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_resource.AsyncSqlDatabaseResource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncSqlDatabaseResource
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AsyncSqlDatabaseResource">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_resource.AsyncSqlDatabaseResource.session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        session
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbsql_manager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.sql_manager
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.EngineRegistry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EngineRegistry
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="EngineRegistry">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.EngineRegistry.get_or_create" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_or_create
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.SqlDatabaseConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlDatabaseConfig
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.ReadOnlyAsyncSession" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReadOnlyAsyncSession
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.ReadOnlySession" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReadOnlySession
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.AsyncSqlDatabaseResource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncSqlDatabaseResource
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AsyncSqlDatabaseResource">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.AsyncSqlDatabaseResource.session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        session
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.SqlDatabaseResource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlDatabaseResource
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbsql_config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.sql_config
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_config.SqlDatabaseConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlDatabaseConfig
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_config.WorkerSqlConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WorkerSqlConfig
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbsql_model_builder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.sql_model_builder
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_builder.BuilderConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BuilderConfig
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="BuilderConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_builder.BuilderConfig.validate_module_label" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        validate_module_label
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_builder.SqlAlchemyModelBuilder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlAlchemyModelBuilder
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SqlAlchemyModelBuilder">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_builder.SqlAlchemyModelBuilder.build_model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        build_model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_builder.SqlAlchemyModelBuilder.build_model_async" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        build_model_async
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbsql_model_registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.sql_model_registry
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_registry.SqlModelRegistry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlModelRegistry
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SqlModelRegistry">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_registry.SqlModelRegistry.get_model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_registry.SqlModelRegistry.get_model_async" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_model_async
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_registry.SqlModelRegistry.clear" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        clear
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbvector_search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.vector_search
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.vector_search.vector_distance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vector_distance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.vector_search.nearest_neighbors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        nearest_neighbors
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbpartitioned_loader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.partitioned_loader
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_loader.SqlPartitionedLoader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlPartitionedLoader
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SqlPartitionedLoader">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_loader.SqlPartitionedLoader.load_request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        load_request
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbpartitioned_types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.partitioned_types
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_types.PlannerEngineAdapter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PlannerEngineAdapter
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_types.SqlPartitionSpec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlPartitionSpec
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SqlPartitionSpec">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_types.SqlPartitionSpec.key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        key
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_types.SqlPartitionPlan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlPartitionPlan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SqlPartitionPlan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_types.SqlPartitionPlan.to_json" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        to_json
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_types.SqlPartitionedLoadRequest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlPartitionedLoadRequest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbpartitioned_fetch_gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.partitioned_fetch_gate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_fetch_gate.GateWaitStats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GateWaitStats
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="GateWaitStats">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_fetch_gate.GateWaitStats.since" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        since
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_fetch_gate.fetch_gate_stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fetch_gate_stats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_fetch_gate.reset_fetch_gate_stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reset_fetch_gate_stats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_fetch_gate.format_gate_wait_suffix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        format_gate_wait_suffix
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gateway/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gateway and helper
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../parquet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parquet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipelines and sinks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../watermark/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Watermarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../enrichment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enrichment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datacube/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datacube
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Proposals and reviews
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Proposals and reviews
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/BIG_DATA_READYNESS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Big data readiness
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/DASK_RESILIENCE_USE_CASES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dask resilience use cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/DATACUBE_CONTRACT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datacube contract
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/DEPLOYMENT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/IN_CLAUSE_RESPONSE_TIME_PROPOSAL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    IN-clause response time
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/PYARROW_INTEGRATION_PROPOSAL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PyArrow integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/SECURITY_HARDENING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security hardening
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbsql_repository" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.sql_repository
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_repository.SqlRepository" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlRepository
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SqlRepository">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_repository.SqlRepository.iter_batches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        iter_batches
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_repository.AsyncSqlRepository" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncSqlRepository
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AsyncSqlRepository">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_repository.AsyncSqlRepository.iter_batches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        iter_batches
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_repository.SqlUnitOfWork" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlUnitOfWork
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_repository.AsyncSqlUnitOfWork" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncSqlUnitOfWork
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbsql_resource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.sql_resource
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_resource.SqlDatabaseResource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlDatabaseResource
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_resource.AsyncSqlDatabaseResource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncSqlDatabaseResource
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AsyncSqlDatabaseResource">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_resource.AsyncSqlDatabaseResource.session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        session
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbsql_manager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.sql_manager
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.EngineRegistry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EngineRegistry
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="EngineRegistry">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.EngineRegistry.get_or_create" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_or_create
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.SqlDatabaseConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlDatabaseConfig
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.ReadOnlyAsyncSession" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReadOnlyAsyncSession
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.ReadOnlySession" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReadOnlySession
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.AsyncSqlDatabaseResource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncSqlDatabaseResource
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AsyncSqlDatabaseResource">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.AsyncSqlDatabaseResource.session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        session
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_manager.SqlDatabaseResource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlDatabaseResource
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbsql_config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.sql_config
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_config.SqlDatabaseConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlDatabaseConfig
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_config.WorkerSqlConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WorkerSqlConfig
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbsql_model_builder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.sql_model_builder
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_builder.BuilderConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BuilderConfig
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="BuilderConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_builder.BuilderConfig.validate_module_label" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        validate_module_label
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_builder.SqlAlchemyModelBuilder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlAlchemyModelBuilder
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SqlAlchemyModelBuilder">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_builder.SqlAlchemyModelBuilder.build_model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        build_model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_builder.SqlAlchemyModelBuilder.build_model_async" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        build_model_async
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbsql_model_registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.sql_model_registry
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_registry.SqlModelRegistry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlModelRegistry
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SqlModelRegistry">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_registry.SqlModelRegistry.get_model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_registry.SqlModelRegistry.get_model_async" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_model_async
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.sql_model_registry.SqlModelRegistry.clear" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        clear
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbvector_search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.vector_search
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.vector_search.vector_distance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vector_distance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.vector_search.nearest_neighbors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        nearest_neighbors
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbpartitioned_loader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.partitioned_loader
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_loader.SqlPartitionedLoader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlPartitionedLoader
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SqlPartitionedLoader">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_loader.SqlPartitionedLoader.load_request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        load_request
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbpartitioned_types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.partitioned_types
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_types.PlannerEngineAdapter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PlannerEngineAdapter
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_types.SqlPartitionSpec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlPartitionSpec
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SqlPartitionSpec">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_types.SqlPartitionSpec.key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        key
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_types.SqlPartitionPlan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlPartitionPlan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SqlPartitionPlan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_types.SqlPartitionPlan.to_json" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        to_json
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_types.SqlPartitionedLoadRequest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlPartitionedLoadRequest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadbpartitioned_fetch_gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.db.partitioned_fetch_gate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_fetch_gate.GateWaitStats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GateWaitStats
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="GateWaitStats">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_fetch_gate.GateWaitStats.since" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        since
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_fetch_gate.fetch_gate_stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fetch_gate_stats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_fetch_gate.reset_fetch_gate_stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reset_fetch_gate_stats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.db.partitioned_fetch_gate.format_gate_wait_suffix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        format_gate_wait_suffix
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="database-access">Database access<a class="headerlink" href="#database-access" title="Permanent link">&para;</a></h1>
+<p>Single-row repositories and units of work, the SQL resources, model reflection, the partitioned loader and vector search.</p>
+<h2 id="boti_datadbsql_repository"><code>boti_data.db.sql_repository</code><a class="headerlink" href="#boti_datadbsql_repository" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+        <p>Lightweight single-row transactional access (get/insert/update/delete by
+primary key), returning plain dicts instead of a DataFrame — plus
+SqlUnitOfWork/AsyncSqlUnitOfWork for composing writes across several tables
+into one atomic transaction.</p>
+<p>boti_data's flagship API (DataGateway/DataHelper) is dataframe-shaped and
+bulk-oriented, pulling in the dask/pandas/polars dependency chain even for a
+consumer that only ever touches one row at a time (e.g. an OLTP request
+handler at p95 &lt;300ms). SqlRepository/AsyncSqlRepository sit directly on
+SqlDatabaseResource/AsyncSqlDatabaseResource + SqlModelRegistry — both already
+free of that dependency chain — so this module can be imported and used
+without dask/pandas/polars installed at all.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_repository.SqlRepository" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SqlRepository</span>
+
+
+<a href="#boti_data.db.sql_repository.SqlRepository" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">SqlRepository</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">SqlDatabaseConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">table_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">schema</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">query_only</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">session</span><span class="p">:</span> <span class="n">Session</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="boti.core.lifecycle.LifecycleCore">LifecycleCore</span></code></p>
+
+
+
+        <p>Single-row get/insert/update/delete against one table, by primary key.</p>
+<p>A thin repository layer over SqlDatabaseResource + SqlModelRegistry for
+consumers that want cheap transactional CRUD without pulling in
+DataGateway/DataHelper's dataframe-oriented machinery. Rows are plain
+<code>dict[str, Any]</code>, never a DataFrame.</p>
+<p>Exactly one of <code>config</code>/<code>session</code> must be given:</p>
+<ul>
+<li><code>config</code>: the repository owns a private <code>SqlDatabaseResource</code> and a
+  fresh, <code>query_only</code>-guarded session per call, committing after every
+  write. <code>query_only</code> defaults to <code>True</code> here and always wins over
+  whatever <code>config.query_only</code> says — insert/update/delete raise via the
+  same <code>ReadOnlySession</code> guard SqlDatabaseResource uses until a caller
+  passes <code>query_only=False</code> explicitly. This is deliberate: a <code>config</code>
+  object may be shared with or reused from a context where writes are
+  already enabled, and a repository shouldn't silently inherit write
+  access nobody asked it for.</li>
+<li><code>session</code>: an already-open <code>Session</code> supplied by the caller (e.g.
+  from <code>SqlUnitOfWork</code>, or hand-rolled session code composing several
+  repositories into one transaction). Writes <code>flush()</code> instead of
+  <code>commit()</code> — the caller controls the transaction boundary — and
+  closing this repository never closes the shared session. <code>query_only</code>
+  is accepted for signature uniformity but is inert here: the session's
+  own class (<code>ReadOnlySession</code> or not) already determines writability,
+  since this path never constructs a new guarded session.</li>
+</ul>
+<p><code>pk</code> accepts a scalar or a tuple for composite keys, mirroring
+<code>Session.get()</code>'s own signature.</p>
+<p><code>get()</code>/<code>update()</code>/<code>delete()</code> each accept <code>assume_unique_key</code>,
+which must be explicitly passed as <code>True</code> to run against a ClickHouse
+table: ClickHouse's ORDER BY/primary key is a sort prefix, not a
+uniqueness constraint, so without this assertion those calls could
+silently touch the wrong row (<code>get()</code>) or every row sharing a key
+(<code>update()</code>/<code>delete()</code>) instead of just one. <code>insert()</code> is
+unaffected — appending a row is never ambiguous.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.db.sql_repository.SqlRepository.iter_batches" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">iter_batches</span>
+
+
+<a href="#boti_data.db.sql_repository.SqlRepository.iter_batches" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">iter_batches</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">columns</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">STREAM_BATCH_SIZE</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="n">pa</span><span class="o">.</span><span class="n">RecordBatch</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Stream the table as Arrow record batches without loading it whole.</p>
+<p>Rows are read through a server-side cursor <code>batch_size</code> at a time, so
+memory stays at about one batch however large the table is.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_repository.AsyncSqlRepository" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">AsyncSqlRepository</span>
+
+
+<a href="#boti_data.db.sql_repository.AsyncSqlRepository" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">AsyncSqlRepository</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">SqlDatabaseConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">table_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">schema</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">query_only</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="boti.core.lifecycle.LifecycleCore">LifecycleCore</span></code></p>
+
+
+
+        <p>Async counterpart to :class:<code>SqlRepository</code> — see its docstring,
+including the <code>config</code>/<code>session</code> and <code>query_only</code> semantics.</p>
+<p>Async-only by design, mirroring <code>AsyncSqlDatabaseResource</code>: real
+resource acquisition (the engine, the reflected model) happens in
+<code>__aenter__</code>, not <code>__init__</code>, since resolving the engine requires
+awaiting <code>EngineRegistry.get_or_create_async()</code> (<code>config</code> path) or
+<code>SqlModelRegistry.get_model_async()</code> (<code>session</code> path either way).</p>
+<p><code>get()</code>/<code>update()</code>/<code>delete()</code> each accept <code>assume_unique_key</code> —
+see :class:<code>SqlRepository</code>'s docstring for why this is required against
+ClickHouse.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.db.sql_repository.AsyncSqlRepository.iter_batches" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">iter_batches</span>
+
+
+<a href="#boti_data.db.sql_repository.AsyncSqlRepository.iter_batches" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">iter_batches</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">columns</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">STREAM_BATCH_SIZE</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AsyncIterator</span><span class="p">[</span><span class="n">pa</span><span class="o">.</span><span class="n">RecordBatch</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Async twin of :meth:<code>SqlRepository.iter_batches</code>; iterate with <code>async for</code>.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_repository.SqlUnitOfWork" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SqlUnitOfWork</span>
+
+
+<a href="#boti_data.db.sql_repository.SqlUnitOfWork" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">SqlUnitOfWork</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">SqlDatabaseConfig</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">query_only</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Shares one transaction across several <code>SqlRepository</code> instances,
+potentially against different tables, so their writes commit or roll back
+together.</p>
+<p>Not a <code>LifecycleCore</code> subclass: <code>LifecycleCore.__exit__</code> is marked
+<code>@final</code> specifically so cleanup-suppression logic can't be overridden,
+but that also means there's no hook that receives exception info to
+decide "commit on success, roll back on exception" — exactly what a unit
+of work needs. A small hand-rolled context manager is simpler than
+fighting that sealed contract.</p>
+<p><code>query_only</code> defaults to <code>True</code>, consistent with <code>SqlRepository</code>'s
+own default — pass <code>query_only=False</code> explicitly to actually write.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_repository.AsyncSqlUnitOfWork" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">AsyncSqlUnitOfWork</span>
+
+
+<a href="#boti_data.db.sql_repository.AsyncSqlUnitOfWork" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">AsyncSqlUnitOfWork</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">SqlDatabaseConfig</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">query_only</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Async counterpart to :class:<code>SqlUnitOfWork</code> — see its docstring.</p>
+<p><code>repository()</code> is async here (unlike the sync version) because binding
+an <code>AsyncSqlRepository</code> to a shared session requires awaiting
+<code>SqlModelRegistry.get_model_async()</code> — the returned repository is
+already fully set up, so callers don't need to <code>async with</code> it too.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datadbsql_resource"><code>boti_data.db.sql_resource</code><a class="headerlink" href="#boti_datadbsql_resource" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_resource.SqlDatabaseResource" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SqlDatabaseResource</span>
+
+
+<a href="#boti_data.db.sql_resource.SqlDatabaseResource" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">SqlDatabaseResource</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">SqlDatabaseConfig</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="boti.core.managed_resource.ManagedResource">ManagedResource</span></code></p>
+
+
+
+        <p>Managed context object bridging SqlDatabaseConfig and the EngineRegistry.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_resource.AsyncSqlDatabaseResource" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">AsyncSqlDatabaseResource</span>
+
+
+<a href="#boti_data.db.sql_resource.AsyncSqlDatabaseResource" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">AsyncSqlDatabaseResource</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">SqlDatabaseConfig</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="boti.core.lifecycle.LifecycleCore">LifecycleCore</span></code></p>
+
+
+
+        <p>Asynchronous context manager providing reflection/query-only SQLAlchemy access.</p>
+<p>Async-only by design: real resource acquisition (the engine, session
+factory) happens in <code>__aenter__</code>, not <code>__init__</code>, since it requires
+awaiting <code>EngineRegistry.get_or_create_async()</code>. There is deliberately
+no sync <code>close()</code> support — see <code>_cleanup()</code> — because releasing a
+bound engine requires <code>await EngineRegistry.release_async()</code>; no sync
+path can do that safely. No pickle support either: even with
+LifecycleCore's own locks stripped, the SQLAlchemy <code>AsyncEngine</code>/
+<code>async_sessionmaker</code> attributes below aren't picklable, and unlike the
+sync resources in this module there's no "reopen by DSN" pattern that
+would make reconstructing one on the other end meaningful.</p>
+<p>DuckDB and ClickHouse have synchronous SQLAlchemy dialects only. For
+those DSNs <code>engine</code> and <code>session</code> are the executor-backed facades
+from :mod:<code>boti_data.db.threaded_async</code> (same <code>connect()</code>/<code>begin()</code>/
+<code>run_sync</code>/session shape, blocking calls run in worker threads; no
+<code>stream()</code>), sharing the sync engine with <code>SqlDatabaseResource</code> via
+the registry. A read-write DuckDB resource serialises its statements
+behind one <code>asyncio.Lock</code>; <code>query_only=True</code> reads run concurrently.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="boti_data.db.sql_resource.AsyncSqlDatabaseResource.session" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">session</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#boti_data.db.sql_resource.AsyncSqlDatabaseResource.session" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="n">session</span><span class="p">:</span> <span class="n">Any</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p><code>async_sessionmaker</code> for native async drivers; the threaded
+equivalent for DuckDB and ClickHouse (see the class docstring).</p>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datadbsql_manager"><code>boti_data.db.sql_manager</code><a class="headerlink" href="#boti_datadbsql_manager" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+        <p>Database configuration, engine helpers, and managed SQL resources.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_manager.EngineRegistry" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">EngineRegistry</span>
+
+
+<a href="#boti_data.db.sql_manager.EngineRegistry" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Thread-safe cache for SQLAlchemy engines constructed with identical footprints.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.db.sql_manager.EngineRegistry.get_or_create" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">get_or_create</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small>
+  </span>
+
+<a href="#boti_data.db.sql_manager.EngineRegistry.get_or_create" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">get_or_create</span><span class="p">(</span>
+    <span class="n">key</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">,</span>
+    <span class="n">url</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">configure</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Engine</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>The engine registered under <code>key</code>, created from <code>url</code> if absent.</p>
+<p><code>configure</code> runs on a new engine before it is registered, so no
+other holder can check out a connection from it unconfigured: the
+read-only <code>connect</code> listener used to be attached by the caller after
+registration, leaving that window open.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_manager.SqlDatabaseConfig" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SqlDatabaseConfig</span>
+
+
+<a href="#boti_data.db.sql_manager.SqlDatabaseConfig" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="boti.core.models.ResourceConfig">ResourceConfig</span></code></p>
+
+
+
+        <p>Immutable configuration for SQLAlchemy engine initialization.</p>
+<p><code>query_only=True</code> enforces read-only access at the database level (via
+a <code>SET ... READ ONLY</code>-style statement issued on the SQLAlchemy
+<code>"connect"</code> event, not just by blocking ORM methods in Python) — this
+assumes <code>connection_url</code> points directly at Postgres/MySQL, or at a
+<em>session</em>-pooling-mode connection pooler (one physical backend connection
+dedicated to one logical client for its whole lifetime). It does <strong>not</strong>
+cover a <em>transaction</em>-pooling-mode pooler (e.g. PgBouncer in <code>transaction</code>
+mode): there, a single physical connection can be handed to a different,
+unrelated logical client between transactions, and session-level state set
+once at physical-connect time is not guaranteed to survive that handoff.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_manager.ReadOnlyAsyncSession" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">ReadOnlyAsyncSession</span>
+
+
+<a href="#boti_data.db.sql_manager.ReadOnlyAsyncSession" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="sqlalchemy.ext.asyncio.AsyncSession">AsyncSession</span></code></p>
+
+
+
+        <p>Async session that blocks ORM mutations; raw SQL protection must come from the database.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_manager.ReadOnlySession" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">ReadOnlySession</span>
+
+
+<a href="#boti_data.db.sql_manager.ReadOnlySession" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="sqlalchemy.orm.Session">Session</span></code></p>
+
+
+
+        <p>Session that blocks ORM mutations; raw SQL protection must come from the database.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_manager.AsyncSqlDatabaseResource" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">AsyncSqlDatabaseResource</span>
+
+
+<a href="#boti_data.db.sql_manager.AsyncSqlDatabaseResource" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">AsyncSqlDatabaseResource</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">SqlDatabaseConfig</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="boti.core.lifecycle.LifecycleCore">LifecycleCore</span></code></p>
+
+
+
+        <p>Asynchronous context manager providing reflection/query-only SQLAlchemy access.</p>
+<p>Async-only by design: real resource acquisition (the engine, session
+factory) happens in <code>__aenter__</code>, not <code>__init__</code>, since it requires
+awaiting <code>EngineRegistry.get_or_create_async()</code>. There is deliberately
+no sync <code>close()</code> support — see <code>_cleanup()</code> — because releasing a
+bound engine requires <code>await EngineRegistry.release_async()</code>; no sync
+path can do that safely. No pickle support either: even with
+LifecycleCore's own locks stripped, the SQLAlchemy <code>AsyncEngine</code>/
+<code>async_sessionmaker</code> attributes below aren't picklable, and unlike the
+sync resources in this module there's no "reopen by DSN" pattern that
+would make reconstructing one on the other end meaningful.</p>
+<p>DuckDB and ClickHouse have synchronous SQLAlchemy dialects only. For
+those DSNs <code>engine</code> and <code>session</code> are the executor-backed facades
+from :mod:<code>boti_data.db.threaded_async</code> (same <code>connect()</code>/<code>begin()</code>/
+<code>run_sync</code>/session shape, blocking calls run in worker threads; no
+<code>stream()</code>), sharing the sync engine with <code>SqlDatabaseResource</code> via
+the registry. A read-write DuckDB resource serialises its statements
+behind one <code>asyncio.Lock</code>; <code>query_only=True</code> reads run concurrently.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="boti_data.db.sql_manager.AsyncSqlDatabaseResource.session" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">session</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#boti_data.db.sql_manager.AsyncSqlDatabaseResource.session" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="n">session</span><span class="p">:</span> <span class="n">Any</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p><code>async_sessionmaker</code> for native async drivers; the threaded
+equivalent for DuckDB and ClickHouse (see the class docstring).</p>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_manager.SqlDatabaseResource" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SqlDatabaseResource</span>
+
+
+<a href="#boti_data.db.sql_manager.SqlDatabaseResource" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">SqlDatabaseResource</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">SqlDatabaseConfig</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="boti.core.managed_resource.ManagedResource">ManagedResource</span></code></p>
+
+
+
+        <p>Managed context object bridging SqlDatabaseConfig and the EngineRegistry.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datadbsql_config"><code>boti_data.db.sql_config</code><a class="headerlink" href="#boti_datadbsql_config" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_config.SqlDatabaseConfig" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SqlDatabaseConfig</span>
+
+
+<a href="#boti_data.db.sql_config.SqlDatabaseConfig" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="boti.core.models.ResourceConfig">ResourceConfig</span></code></p>
+
+
+
+        <p>Immutable configuration for SQLAlchemy engine initialization.</p>
+<p><code>query_only=True</code> enforces read-only access at the database level (via
+a <code>SET ... READ ONLY</code>-style statement issued on the SQLAlchemy
+<code>"connect"</code> event, not just by blocking ORM methods in Python) — this
+assumes <code>connection_url</code> points directly at Postgres/MySQL, or at a
+<em>session</em>-pooling-mode connection pooler (one physical backend connection
+dedicated to one logical client for its whole lifetime). It does <strong>not</strong>
+cover a <em>transaction</em>-pooling-mode pooler (e.g. PgBouncer in <code>transaction</code>
+mode): there, a single physical connection can be handed to a different,
+unrelated logical client between transactions, and session-level state set
+once at physical-connect time is not guaranteed to survive that handoff.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_config.WorkerSqlConfig" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">WorkerSqlConfig</span>
+
+
+<a href="#boti_data.db.sql_config.WorkerSqlConfig" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="pydantic.BaseModel">BaseModel</span></code></p>
+
+
+
+        <p>Minimal SQL configuration shipped to worker tasks.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datadbsql_model_builder"><code>boti_data.db.sql_model_builder</code><a class="headerlink" href="#boti_datadbsql_model_builder" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+        <p>SQLAlchemy Model Builder mapping declarative ORM constructs towards the Thread-Safe Registry.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_model_builder.BuilderConfig" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">BuilderConfig</span>
+
+
+<a href="#boti_data.db.sql_model_builder.BuilderConfig" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="pydantic.BaseModel">BaseModel</span></code></p>
+
+
+
+        <p>Structure managing contextual format overrides across the model boundaries.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.db.sql_model_builder.BuilderConfig.validate_module_label" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">validate_module_label</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small>
+  </span>
+
+<a href="#boti_data.db.sql_model_builder.BuilderConfig.validate_module_label" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">validate_module_label</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Restrict runtime module injection targets to valid module paths.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_model_builder.SqlAlchemyModelBuilder" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SqlAlchemyModelBuilder</span>
+
+
+<a href="#boti_data.db.sql_model_builder.SqlAlchemyModelBuilder" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">SqlAlchemyModelBuilder</span><span class="p">(</span>
+    <span class="n">engine</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Engine</span><span class="p">,</span> <span class="n">AsyncEngine</span><span class="p">],</span>
+    <span class="n">table_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">BuilderConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Builds a single SQLAlchemy ORM model representing a target database table.
+Delegates dynamic reflection tracking natively to the caching registry.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.db.sql_model_builder.SqlAlchemyModelBuilder.build_model" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">build_model</span>
+
+
+<a href="#boti_data.db.sql_model_builder.SqlAlchemyModelBuilder.build_model" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">build_model</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">type</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Reflects the table and returns the stable mapped ORM class.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.db.sql_model_builder.SqlAlchemyModelBuilder.build_model_async" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">build_model_async</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#boti_data.db.sql_model_builder.SqlAlchemyModelBuilder.build_model_async" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">build_model_async</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">type</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Reflects the table and returns the stable mapped ORM class across parallel async loops.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datadbsql_model_registry"><code>boti_data.db.sql_model_registry</code><a class="headerlink" href="#boti_datadbsql_model_registry" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+        <p>Thread-safe SQLAlchemy Model Registry.</p>
+<p>Dynamically reflects SQL tables and provisions declarative ORM classes,
+designed to bypass serialisation constraints using structural module injections.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.sql_model_registry.SqlModelRegistry" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SqlModelRegistry</span>
+
+
+<a href="#boti_data.db.sql_model_registry.SqlModelRegistry" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">SqlModelRegistry</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">RegistryConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">logger</span><span class="p">:</span> <span class="n">Logger</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Thread-safe registry that reflects tables sequentially and
+returns a single mapped class per (engine, schema, table).</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.db.sql_model_registry.SqlModelRegistry.get_model" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">get_model</span>
+
+
+<a href="#boti_data.db.sql_model_registry.SqlModelRegistry.get_model" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">get_model</span><span class="p">(</span>
+    <span class="n">engine</span><span class="p">:</span> <span class="n">Engine</span><span class="p">,</span>
+    <span class="n">table_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">refresh</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">schema</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">module_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">prefer_stable_names</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">base_class</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">DefaultBase</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">type</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Atomically reflects a table schema and scaffolds its ORM class safely.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.db.sql_model_registry.SqlModelRegistry.get_model_async" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">get_model_async</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#boti_data.db.sql_model_registry.SqlModelRegistry.get_model_async" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">get_model_async</span><span class="p">(</span>
+    <span class="n">engine</span><span class="p">:</span> <span class="n">AsyncEngine</span><span class="p">,</span>
+    <span class="n">table_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">refresh</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">schema</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">module_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">prefer_stable_names</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">base_class</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">DefaultBase</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">type</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Atomically reflects schemas asynchronously bridging Non-Blocking asyncio event pools.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.db.sql_model_registry.SqlModelRegistry.clear" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">clear</span>
+
+
+<a href="#boti_data.db.sql_model_registry.SqlModelRegistry.clear" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">clear</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Reset internal caches unconditionally.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datadbvector_search"><code>boti_data.db.vector_search</code><a class="headerlink" href="#boti_datadbvector_search" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+        <p>Nearest-neighbour query helpers for pgvector columns.</p>
+<p>Builds an <code>ORDER BY &lt;distance&gt; LIMIT k</code> SQLAlchemy <code>Select</code> for a vector
+column, with the query vector bound as a driver parameter (via SQLAlchemy's
+own <code>ColumnOperators.op()</code>) rather than interpolated into the SQL string.
+Deliberately duck-typed against the column's comparator instead of importing
+pgvector directly: this module has no import-time dependency on the
+<code>pgvector</code> package, so it stays available on the base install. Using it on
+a non-vector column (or a vector column reflected without <code>boti-data[pgvector]</code>
+installed, see <code>boti_data.db.sql_model_registry</code>) raises a clear <code>TypeError</code>
+rather than silently building broken SQL.</p>
+<p>Pass the returned statement straight to <code>DataGateway.load(statement=...,
+model=...)</code> or a plain SQLAlchemy session.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="boti_data.db.vector_search.vector_distance" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">vector_distance</span>
+
+
+<a href="#boti_data.db.vector_search.vector_distance" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">vector_distance</span><span class="p">(</span>
+    <span class="n">column</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">query_vector</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">metric</span><span class="p">:</span> <span class="n">VectorMetric</span> <span class="o">=</span> <span class="s2">&quot;cosine&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Build a distance expression for <code>column</code> against <code>query_vector</code>.</p>
+<p><code>query_vector</code> is bound as a parameter by the underlying pgvector
+comparator method, never string-interpolated.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="boti_data.db.vector_search.nearest_neighbors" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">nearest_neighbors</span>
+
+
+<a href="#boti_data.db.vector_search.nearest_neighbors" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">nearest_neighbors</span><span class="p">(</span>
+    <span class="n">model</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">column</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">query_vector</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">k</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">metric</span><span class="p">:</span> <span class="n">VectorMetric</span> <span class="o">=</span> <span class="s2">&quot;cosine&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Select</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p><code>SELECT * FROM model ORDER BY column &lt;metric&gt; query_vector LIMIT k</code>.</p>
+<p><code>column</code> is the mapped attribute to search against (e.g. <code>Model.vector</code>).
+Add further filtering with <code>.where(...)</code> on the returned statement before
+passing it to <code>DataGateway.load(statement=..., model=model)</code>.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datadbpartitioned_loader"><code>boti_data.db.partitioned_loader</code><a class="headerlink" href="#boti_datadbpartitioned_loader" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.partitioned_loader.SqlPartitionedLoader" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SqlPartitionedLoader</span>
+
+
+<a href="#boti_data.db.partitioned_loader.SqlPartitionedLoader" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">SqlPartitionedLoader</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">SqlDatabaseConfig</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">resource</span><span class="p">:</span> <span class="n">SqlDatabaseResource</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">use_arrow</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="boti.core.lifecycle_pickle.PicklableLifecycleCoreMixin">PicklableLifecycleCoreMixin</span></code>, <code><span title="boti.core.lifecycle.LifecycleCore">LifecycleCore</span></code></p>
+
+
+
+        <p>Partition-aware SQL loader that returns a lazy Dask DataFrame.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.db.partitioned_loader.SqlPartitionedLoader.load_request" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">load_request</span>
+
+
+<a href="#boti_data.db.partitioned_loader.SqlPartitionedLoader.load_request" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">load_request</span><span class="p">(</span>
+    <span class="n">request</span><span class="p">:</span> <span class="n">SqlPartitionedLoadRequest</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">checkpoint</span><span class="p">:</span> <span class="n">PlanCheckpoint</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span> <span class="o">|</span> <span class="n">dd</span><span class="o">.</span><span class="n">DataFrame</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Run <code>request</code>; with <code>checkpoint</code> the plan is resumable (see partitioned_checkpoint).</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datadbpartitioned_types"><code>boti_data.db.partitioned_types</code><a class="headerlink" href="#boti_datadbpartitioned_types" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.partitioned_types.PlannerEngineAdapter" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">PlannerEngineAdapter</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#boti_data.db.partitioned_types.PlannerEngineAdapter" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">PlannerEngineAdapter</span><span class="p">(</span>
+    <span class="n">engine</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">logger</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">debug</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Duck-typed engine/logger/debug shim satisfying SqlPartitionPlanner's resource contract.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.partitioned_types.SqlPartitionSpec" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SqlPartitionSpec</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#boti_data.db.partitioned_types.SqlPartitionSpec" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">SqlPartitionSpec</span><span class="p">(</span>
+    <span class="n">sql</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">params</span><span class="p">:</span> <span class="n">SqlPartitionParams</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.db.partitioned_types.SqlPartitionSpec.key" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">key</span>
+
+
+<a href="#boti_data.db.partitioned_types.SqlPartitionSpec.key" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">key</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Stable identity of this partition inside a plan (used by checkpoints).</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.partitioned_types.SqlPartitionPlan" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SqlPartitionPlan</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#boti_data.db.partitioned_types.SqlPartitionPlan" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">SqlPartitionPlan</span><span class="p">(</span>
+    <span class="n">total_rows</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">strategy</span><span class="p">:</span> <span class="n">PartitionStrategy</span><span class="p">,</span>
+    <span class="n">partitions</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SqlPartitionSpec</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+    <span class="n">meta_dtypes</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.db.partitioned_types.SqlPartitionPlan.to_json" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">to_json</span>
+
+
+<a href="#boti_data.db.partitioned_types.SqlPartitionPlan.to_json" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">to_json</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>A JSON-serialisable form that :meth:<code>from_json</code> restores exactly.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.partitioned_types.SqlPartitionedLoadRequest" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SqlPartitionedLoadRequest</span>
+
+
+<a href="#boti_data.db.partitioned_types.SqlPartitionedLoadRequest" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="pydantic.BaseModel">BaseModel</span></code></p>
+
+
+
+        <p>Validated request model for lazy, partitioned SQL -&gt; Dask loading.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datadbpartitioned_fetch_gate"><code>boti_data.db.partitioned_fetch_gate</code><a class="headerlink" href="#boti_datadbpartitioned_fetch_gate" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+        <p>Partition-fetch concurrency gate and its contention accounting.</p>
+<p>Split out of partitioned_execution.py purely for long-file headroom. Every name
+here is re-exported from partitioned_execution.py so existing import paths keep
+working unchanged.</p>
+<p>The gate bounds how many partition fetches run at once, and the counters record
+how long fetches spent queueing for a slot. That second half exists because the
+gate is otherwise invisible: the <code>diagnostics=True</code> stage timers (<code>db_fetch</code>,
+<code>prepare_stmt</code>, <code>load_plan</code>) are all measured <em>inside</em> the gate, so under
+saturation total elapsed time rises while every stage timer still looks healthy.
+An idle database plus timing-out callers is the classic symptom, and without
+these counters it is indistinguishable from a database that is simply slow.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.db.partitioned_fetch_gate.GateWaitStats" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">GateWaitStats</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#boti_data.db.partitioned_fetch_gate.GateWaitStats" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">GateWaitStats</span><span class="p">(</span>
+    <span class="n">fetches</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">waited_fetches</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">total_wait_seconds</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">max_wait_seconds</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Time spent waiting for a partition-fetch slot, accumulated per process.</p>
+<p><code>max_wait_seconds</code> is cumulative for the life of the process and cannot be
+differenced into a per-load figure the way the other three can (a running
+maximum carries no record of when it was set). :meth:<code>since</code> therefore
+carries it through unchanged; it reads as "worst wait seen in this process
+so far", not "worst wait during this load".</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.db.partitioned_fetch_gate.GateWaitStats.since" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">since</span>
+
+
+<a href="#boti_data.db.partitioned_fetch_gate.GateWaitStats.since" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">since</span><span class="p">(</span><span class="n">baseline</span><span class="p">:</span> <span class="n">GateWaitStats</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GateWaitStats</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Return the stats accumulated since <code>baseline</code> was captured.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="boti_data.db.partitioned_fetch_gate.fetch_gate_stats" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">fetch_gate_stats</span>
+
+
+<a href="#boti_data.db.partitioned_fetch_gate.fetch_gate_stats" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">fetch_gate_stats</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">GateWaitStats</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Snapshot partition-fetch gate contention for <strong>this process</strong>, by gate key.</p>
+<p>Scope matters for interpreting the numbers. The gate itself is cluster-wide
+on a Dask cluster, but the wait counters are not: partition fetches are
+dispatched as Dask tasks, so in a distributed run each worker process
+accumulates its own counters and this function only ever sees the calling
+process's share.
+A lazy load returns before any fetch has run at all, so call this after
+<code>.compute()</code>, not after the load call returns.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="boti_data.db.partitioned_fetch_gate.reset_fetch_gate_stats" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">reset_fetch_gate_stats</span>
+
+
+<a href="#boti_data.db.partitioned_fetch_gate.reset_fetch_gate_stats" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">reset_fetch_gate_stats</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Clear accumulated gate-wait counters for this process.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="boti_data.db.partitioned_fetch_gate.format_gate_wait_suffix" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">format_gate_wait_suffix</span>
+
+
+<a href="#boti_data.db.partitioned_fetch_gate.format_gate_wait_suffix" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">format_gate_wait_suffix</span><span class="p">(</span>
+    <span class="n">gate_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">baseline</span><span class="p">:</span> <span class="n">GateWaitStats</span> <span class="o">|</span> <span class="kc">None</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Format gate contention for a diagnostics line, or <code>""</code> if nothing ran here.</p>
+<p>Shared by the sync loader and the async gateway so both diagnostics lines
+report contention identically.</p>
+<p>Returning empty is deliberate rather than reporting zeros. A lazy load
+returns a Dask graph before any partition has been fetched, and in a
+distributed run the fetches then happen inside other worker processes
+entirely — <code>gate_wait_total=0.000s</code> there would read as "no contention"
+when the truth is "not measured here". Callers wanting figures for a lazy
+load should read :func:<code>fetch_gate_stats</code> after <code>.compute()</code>.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      boti-data contributors
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "search.suggest"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

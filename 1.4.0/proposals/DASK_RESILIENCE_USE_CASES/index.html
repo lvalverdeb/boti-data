@@ -1,0 +1,2867 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Data access and transformation layer of the Boti ecosystem">
+      
+      
+      
+        <link rel="canonical" href="https://lvalverdeb.github.io/boti-data/1.4.0/proposals/DASK_RESILIENCE_USE_CASES/">
+      
+      
+        <link rel="prev" href="../BIG_DATA_READYNESS/">
+      
+      
+        <link rel="next" href="../DATACUBE_CONTRACT/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+    
+    
+      
+        <title>Dask resilience use cases - boti-data</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#dask-resilience-and-cluster-lifecycle-use-cases-for-boti-data" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="boti-data" class="md-header__button md-logo" aria-label="boti-data" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            boti-data
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Dask resilience use cases
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/lvalverdeb/boti-data" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lvalverdeb/boti-data
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="boti-data" class="md-nav__button md-logo" aria-label="boti-data" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    boti-data
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/lvalverdeb/boti-data" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lvalverdeb/boti-data
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/sql-loads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SQL loads
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/parquet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parquet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/sinks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sinks and enrichment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/incremental-loads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Incremental loads
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/distributed/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Distributed loading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/datacube/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datacube backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics and tracing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/db/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database access
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/gateway/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gateway and helper
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/parquet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parquet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipelines and sinks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/watermark/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Watermarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/enrichment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enrichment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/datacube/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datacube
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Proposals and reviews
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Proposals and reviews
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../BIG_DATA_READYNESS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Big data readiness
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dask resilience use cases
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dask resilience use cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#current-implementation-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current implementation status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-reviewed-modules-contribute" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the reviewed modules contribute
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sibi_fluxdask_cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sibi_flux.dask_cluster
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sibi_dstutilsdask_resilience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sibi_dst.utils.dask_resilience
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#current-boti-data-baseline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current boti-data baseline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#high-value-use-cases-for-boti-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        High-value use cases for boti-data
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-resilient-materialization-of-expensive-dask-loads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Resilient materialization of expensive Dask loads
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Resilient materialization of expensive Dask loads">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-case" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use case
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#likely-touchpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Likely touchpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#value" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-safer-post-join-and-post-index-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Safer post-join and post-index workflows
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Safer post-join and post-index workflows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-case_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use case
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#likely-touchpoints_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Likely touchpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#value_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-dry-run-graph-inspection-for-large-distributed-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Dry-run graph inspection for large distributed operations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Dry-run graph inspection for large distributed operations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-case_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use case
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#likely-touchpoints_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Likely touchpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#value_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-shared-clustersession-reuse-in-notebook-and-etl-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Shared cluster/session reuse in notebook and ETL workflows
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Shared cluster/session reuse in notebook and ETL workflows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-case_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use case
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#likely-touchpoints_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Likely touchpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#value_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-defensive-dask-defaults-for-shuffle-heavy-pipelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Defensive Dask defaults for shuffle-heavy pipelines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Defensive Dask defaults for shuffle-heavy pipelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-case_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use case
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#likely-touchpoints_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Likely touchpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#value_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-resilient-emptiness-and-sampling-helpers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Resilient emptiness and sampling helpers
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Resilient emptiness and sampling helpers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-case_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use case
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#likely-touchpoints_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Likely touchpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#value_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-remote-cluster-bootstrap-and-worker-code-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Remote-cluster bootstrap and worker code deployment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Remote-cluster bootstrap and worker code deployment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-case-in-boti-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use case in boti-data
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#value_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommended-adoption-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended adoption order
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#design-guidance-for-boti-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design guidance for boti-data
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prefer-wrappers-over-automatic-magic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefer wrappers over automatic magic
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keep-dataframe-safety-as-an-invariant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keep DataFrame safety as an invariant
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reuse-existing-diagnostics-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reuse existing diagnostics surface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#concrete-near-term-proposal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concrete near-term proposal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#final-assessment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Final assessment
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DATACUBE_CONTRACT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datacube contract
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DEPLOYMENT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../IN_CLAUSE_RESPONSE_TIME_PROPOSAL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    IN-clause response time
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../PYARROW_INTEGRATION_PROPOSAL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PyArrow integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../SECURITY_HARDENING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security hardening
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#current-implementation-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current implementation status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-reviewed-modules-contribute" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the reviewed modules contribute
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sibi_fluxdask_cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sibi_flux.dask_cluster
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sibi_dstutilsdask_resilience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sibi_dst.utils.dask_resilience
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#current-boti-data-baseline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current boti-data baseline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#high-value-use-cases-for-boti-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        High-value use cases for boti-data
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-resilient-materialization-of-expensive-dask-loads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Resilient materialization of expensive Dask loads
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Resilient materialization of expensive Dask loads">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-case" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use case
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#likely-touchpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Likely touchpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#value" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-safer-post-join-and-post-index-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Safer post-join and post-index workflows
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Safer post-join and post-index workflows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-case_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use case
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#likely-touchpoints_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Likely touchpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#value_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-dry-run-graph-inspection-for-large-distributed-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Dry-run graph inspection for large distributed operations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Dry-run graph inspection for large distributed operations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-case_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use case
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#likely-touchpoints_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Likely touchpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#value_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-shared-clustersession-reuse-in-notebook-and-etl-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Shared cluster/session reuse in notebook and ETL workflows
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Shared cluster/session reuse in notebook and ETL workflows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-case_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use case
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#likely-touchpoints_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Likely touchpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#value_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-defensive-dask-defaults-for-shuffle-heavy-pipelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Defensive Dask defaults for shuffle-heavy pipelines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Defensive Dask defaults for shuffle-heavy pipelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-case_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use case
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#likely-touchpoints_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Likely touchpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#value_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-resilient-emptiness-and-sampling-helpers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Resilient emptiness and sampling helpers
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Resilient emptiness and sampling helpers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-case_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use case
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#likely-touchpoints_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Likely touchpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#value_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-remote-cluster-bootstrap-and-worker-code-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Remote-cluster bootstrap and worker code deployment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Remote-cluster bootstrap and worker code deployment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-case-in-boti-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use case in boti-data
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#value_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommended-adoption-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended adoption order
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#design-guidance-for-boti-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design guidance for boti-data
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prefer-wrappers-over-automatic-magic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefer wrappers over automatic magic
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keep-dataframe-safety-as-an-invariant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keep DataFrame safety as an invariant
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reuse-existing-diagnostics-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reuse existing diagnostics surface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#concrete-near-term-proposal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concrete near-term proposal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#final-assessment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Final assessment
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="dask-resilience-and-cluster-lifecycle-use-cases-for-boti-data">Dask resilience and cluster-lifecycle use cases for <code>boti-data</code><a class="headerlink" href="#dask-resilience-and-cluster-lifecycle-use-cases-for-boti-data" title="Permanent link">&para;</a></h1>
+<h2 id="summary">Summary<a class="headerlink" href="#summary" title="Permanent link">&para;</a></h2>
+<p>Reviewing <code>sibi_flux.dask_cluster</code> and <code>sibi_dst.utils.dask_resilience</code> shows a consistent theme: both packages add a <strong>resilience layer above ordinary Dask usage</strong> rather than replacing Dask itself. The main ideas are:</p>
+<ul>
+<li>keep a healthy client available</li>
+<li>retry on recoverable comm failures</li>
+<li>avoid unsafe fallback for Dask DataFrame graphs</li>
+<li>expose graph and cluster diagnostics</li>
+<li>optionally share or heal cluster state across processes</li>
+</ul>
+<p><code>boti-data</code> now relies on <code>boti_dask</code> for this runtime foundation:</p>
+<ul>
+<li><code>../boti-dask/src/boti_dask/session.py</code> for explicit client/session ownership</li>
+<li><code>../boti-dask/src/boti_dask/resilience.py</code> for resilient wrappers and emptiness helpers</li>
+<li><code>../boti-dask/src/boti_dask/diagnostics.py</code> for graph/frame diagnostics</li>
+<li><code>src/boti_data/gateway/core.py</code> for load diagnostics and client summaries</li>
+<li><code>src/boti_data/joins.py</code> for diagnostics around large distributed joins</li>
+<li><code>src/boti_data/db/partitioned_loader.py</code> for worker-safe partitioned SQL loading</li>
+</ul>
+<p>That means the best opportunity is <strong>selective adoption</strong>: add resilience and observability around high-value distributed operations without importing the full lifecycle model from the reviewed projects.</p>
+<h2 id="current-implementation-status">Current implementation status<a class="headerlink" href="#current-implementation-status" title="Permanent link">&para;</a></h2>
+<p>The prioritized opt-in resilience slice is now implemented via <code>boti_dask</code> and consumed by <code>boti-data</code>.</p>
+<p>Available today:</p>
+<ul>
+<li><code>inspect_graph(...)</code></li>
+<li><code>safe_compute(...)</code></li>
+<li><code>safe_head(...)</code></li>
+<li><code>safe_gather(...)</code></li>
+<li><code>safe_persist(...)</code></li>
+<li><code>safe_wait(...)</code></li>
+<li><code>async_safe_compute(...)</code></li>
+<li><code>async_safe_head(...)</code></li>
+<li><code>async_safe_gather(...)</code></li>
+<li><code>async_safe_persist(...)</code></li>
+<li><code>async_safe_wait(...)</code></li>
+<li><code>dask_is_probably_empty(...)</code></li>
+<li><code>dask_is_empty(...)</code></li>
+<li><code>UniqueValuesExtractor</code></li>
+<li><code>recommended_dask_config(...)</code></li>
+<li><code>apply_recommended_dask_config(...)</code></li>
+<li><code>DataGateway.load(..., dry_run=True)</code> / <code>aload(..., dry_run=True)</code> for lazy Dask preflight</li>
+<li><code>DataGateway.preview(...)</code> / <code>apreview(...)</code></li>
+<li><code>DataHelper.preview(...)</code> / <code>apreview(...)</code></li>
+<li><code>indexed_left_join(..., dry_run=True)</code> and <code>left_join_frames(..., dry_run=True)</code></li>
+<li>opt-in Dask session connectivity verification</li>
+<li>opt-in shared session reuse</li>
+<li><code>indexed_left_join(..., resilient=True)</code></li>
+<li>gateway diagnostics that include Dask graph metrics</li>
+</ul>
+<p>Still pending or intentionally deferred:</p>
+<ul>
+<li>registry/watchdog lifecycle management</li>
+<li>worker code deployment</li>
+</ul>
+<h2 id="what-the-reviewed-modules-contribute">What the reviewed modules contribute<a class="headerlink" href="#what-the-reviewed-modules-contribute" title="Permanent link">&para;</a></h2>
+<h2 id="sibi_fluxdask_cluster"><code>sibi_flux.dask_cluster</code><a class="headerlink" href="#sibi_fluxdask_cluster" title="Permanent link">&para;</a></h2>
+<p>Most relevant patterns:</p>
+<ul>
+<li><strong>persistent/shared client registry</strong> via a temp-file registry and refcounting</li>
+<li><strong>connectivity verification</strong> before accepting a scheduler/client as healthy</li>
+<li><strong>watchdog-based healing</strong> when scheduler comms fail</li>
+<li><strong>safe compute/persist/gather wrappers</strong> with one retry after client rebind</li>
+<li><strong>strict invariant</strong>: never silently fall back to local threaded compute for Dask DataFrame/Series graphs</li>
+<li><strong>graph inspection / dry run</strong> to log task count, layers, and partition counts before execution</li>
+<li><strong>optional local code deployment</strong> to workers for remote scheduler scenarios</li>
+</ul>
+<p>This module is the stronger reference for <strong>cluster lifecycle and operational safety</strong>.</p>
+<h2 id="sibi_dstutilsdask_resilience"><code>sibi_dst.utils.dask_resilience</code><a class="headerlink" href="#sibi_dstutilsdask_resilience" title="Permanent link">&para;</a></h2>
+<p>Most relevant patterns:</p>
+<ul>
+<li><strong>global Dask config hardening</strong>, especially <code>dataframe.shuffle.method = "tasks"</code></li>
+<li><strong>narrower recoverable exception policy</strong></li>
+<li><strong>sync and async safe wrappers</strong> for compute/persist/gather/wait</li>
+<li><strong>cheap emptiness probes</strong> for Dask collections</li>
+<li><strong>resilient unique value extraction</strong></li>
+</ul>
+<p>This module is the stronger reference for <strong>execution wrappers and defensive data utilities</strong>.</p>
+<h2 id="current-boti-data-baseline">Current <code>boti-data</code> baseline<a class="headerlink" href="#current-boti-data-baseline" title="Permanent link">&para;</a></h2>
+<p><code>boti-data</code> already supports (directly or through <code>boti_dask</code>):</p>
+<ul>
+<li>explicit <code>DaskSession</code> / <code>dask_session(...)</code></li>
+<li>local or remote scheduler attachment</li>
+<li>diagnostics for gateway loads and joins</li>
+<li>partitioned SQL execution designed for worker-local engines</li>
+<li>Dask-first joins through <code>indexed_left_join(...)</code></li>
+</ul>
+<p>What it does <strong>not</strong> currently provide:</p>
+<ul>
+<li>automatic client healing or rebind-and-retry</li>
+<li>resilient wrappers around expensive distributed actions</li>
+<li>persistent shared-cluster reuse across notebook/process boundaries</li>
+<li>explicit dry-run graph inspection before large actions</li>
+<li>Dask-specific helpers like resilient emptiness/unique-value probes</li>
+</ul>
+<h2 id="high-value-use-cases-for-boti-data">High-value use cases for <code>boti-data</code><a class="headerlink" href="#high-value-use-cases-for-boti-data" title="Permanent link">&para;</a></h2>
+<h2 id="1-resilient-materialization-of-expensive-dask-loads">1. Resilient materialization of expensive Dask loads<a class="headerlink" href="#1-resilient-materialization-of-expensive-dask-loads" title="Permanent link">&para;</a></h2>
+<h3 id="problem">Problem<a class="headerlink" href="#problem" title="Permanent link">&para;</a></h3>
+<p>Large <code>DataGateway.load(..., return_type="dask")</code> workloads often end in a small number of materialization points:</p>
+<ul>
+<li><code>.persist()</code> after repartition or indexing</li>
+<li><code>.compute()</code> for exports or model inputs</li>
+<li><code>.head()</code> / sample extraction for notebook inspection</li>
+</ul>
+<p>If the client drops during these steps, users currently have to manage recovery themselves.</p>
+<h3 id="use-case">Use case<a class="headerlink" href="#use-case" title="Permanent link">&para;</a></h3>
+<p>Add opt-in helpers such as:</p>
+<ul>
+<li><code>safe_compute(frame, client=None, logger=None)</code></li>
+<li><code>safe_persist(frame, client=None, logger=None)</code></li>
+<li><code>safe_wait(obj, client=None, timeout=None)</code></li>
+</ul>
+<p>These should:</p>
+<ol>
+<li>detect an active client</li>
+<li>retry once on recoverable comm failures</li>
+<li>refuse unsafe local fallback for Dask DataFrames</li>
+<li>surface a clear error instructing the caller to rebuild the collection when the graph is orphaned</li>
+</ol>
+<h3 id="likely-touchpoints">Likely touchpoints<a class="headerlink" href="#likely-touchpoints" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>../boti-dask/src/boti_dask/resilience.py</code></li>
+<li><code>src/boti_data/gateway/core.py</code></li>
+<li><code>src/boti_data/joins.py</code></li>
+</ul>
+<h3 id="value">Value<a class="headerlink" href="#value" title="Permanent link">&para;</a></h3>
+<p>High. This directly protects the most expensive user-visible operations in <code>boti-data</code>.</p>
+<h2 id="2-safer-post-join-and-post-index-workflows">2. Safer post-join and post-index workflows<a class="headerlink" href="#2-safer-post-join-and-post-index-workflows" title="Permanent link">&para;</a></h2>
+<h3 id="problem_1">Problem<a class="headerlink" href="#problem_1" title="Permanent link">&para;</a></h3>
+<p><code>indexed_left_join(...)</code> already recommends <code>persist=True</code> for expensive join pipelines, but the actual persist step is still a plain Dask action. If a cluster hiccup happens after <code>set_index(...)</code>, the user may face recomputation or ambiguous failures.</p>
+<h3 id="use-case_1">Use case<a class="headerlink" href="#use-case_1" title="Permanent link">&para;</a></h3>
+<p>Wrap the expensive boundary operations used by distributed joins:</p>
+<ul>
+<li>optional resilient persist after <code>set_index(...)</code></li>
+<li>resilient persist on the final joined frame</li>
+<li>clearer diagnostics when a join graph becomes invalid after cluster recreation</li>
+</ul>
+<h3 id="likely-touchpoints_1">Likely touchpoints<a class="headerlink" href="#likely-touchpoints_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>src/boti_data/joins.py</code></li>
+</ul>
+<h3 id="value_1">Value<a class="headerlink" href="#value_1" title="Permanent link">&para;</a></h3>
+<p>High. Join-heavy workflows are one of the clearest “big data” use cases in this repo.</p>
+<h2 id="3-dry-run-graph-inspection-for-large-distributed-operations">3. Dry-run graph inspection for large distributed operations<a class="headerlink" href="#3-dry-run-graph-inspection-for-large-distributed-operations" title="Permanent link">&para;</a></h2>
+<h3 id="problem_2">Problem<a class="headerlink" href="#problem_2" title="Permanent link">&para;</a></h3>
+<p><code>boti-data</code> already logs frame summaries after work is planned or completed, but it does not provide a first-class way to inspect graph size before execution.</p>
+<h3 id="use-case_2">Use case<a class="headerlink" href="#use-case_2" title="Permanent link">&para;</a></h3>
+<p>Add an optional dry-run / inspection helper for Dask-backed frames that logs:</p>
+<ul>
+<li>task count</li>
+<li>number of partitions</li>
+<li>number of graph layers</li>
+<li>active client summary</li>
+</ul>
+<p>This could be used in:</p>
+<ul>
+<li><code>DataGateway.load(..., diagnostics=True, dry_run=True)</code> for distributed loads</li>
+<li><code>indexed_left_join(..., diagnostics=True, dry_run=True)</code> before a large shuffle/index stage</li>
+</ul>
+<h3 id="likely-touchpoints_2">Likely touchpoints<a class="headerlink" href="#likely-touchpoints_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>../boti-dask/src/boti_dask/diagnostics.py</code></li>
+<li><code>src/boti_data/gateway/core.py</code></li>
+<li><code>src/boti_data/joins.py</code></li>
+</ul>
+<h3 id="value_2">Value<a class="headerlink" href="#value_2" title="Permanent link">&para;</a></h3>
+<p>Medium-high. This would improve notebook ergonomics and preflight checks for production jobs.</p>
+<h2 id="4-shared-clustersession-reuse-in-notebook-and-etl-workflows">4. Shared cluster/session reuse in notebook and ETL workflows<a class="headerlink" href="#4-shared-clustersession-reuse-in-notebook-and-etl-workflows" title="Permanent link">&para;</a></h2>
+<h3 id="problem_3">Problem<a class="headerlink" href="#problem_3" title="Permanent link">&para;</a></h3>
+<p><code>boti-data</code> has explicit session ownership, which is clean and predictable, but repeated notebook cells or multi-step ETL scripts may repeatedly reconnect or recreate clients.</p>
+<h3 id="use-case_3">Use case<a class="headerlink" href="#use-case_3" title="Permanent link">&para;</a></h3>
+<p>Introduce an <strong>optional</strong> shared-session mode on top of <code>DaskSession</code>, for example:</p>
+<ul>
+<li>reuse the current context client if one exists</li>
+<li>otherwise attach to a configured scheduler address</li>
+<li>optionally keep a process-local singleton client for repeated operations</li>
+</ul>
+<p>This does <strong>not</strong> require the full file-registry model from <code>sibi_flux</code> on day one.</p>
+<h3 id="likely-touchpoints_3">Likely touchpoints<a class="headerlink" href="#likely-touchpoints_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>../boti-dask/src/boti_dask/session.py</code></li>
+<li><code>src/boti_data/helper.py</code></li>
+</ul>
+<h3 id="value_3">Value<a class="headerlink" href="#value_3" title="Permanent link">&para;</a></h3>
+<p>Medium. Good fit for notebook-heavy and service-like workloads, but should remain opt-in.</p>
+<h2 id="5-defensive-dask-defaults-for-shuffle-heavy-pipelines">5. Defensive Dask defaults for shuffle-heavy pipelines<a class="headerlink" href="#5-defensive-dask-defaults-for-shuffle-heavy-pipelines" title="Permanent link">&para;</a></h2>
+<h3 id="problem_4">Problem<a class="headerlink" href="#problem_4" title="Permanent link">&para;</a></h3>
+<p>The reviewed modules explicitly harden Dask config for comm timeouts, memory spill thresholds, and shuffle behavior. <code>boti-data</code> currently leaves these concerns largely to caller environment and cluster configuration.</p>
+<h3 id="use-case_4">Use case<a class="headerlink" href="#use-case_4" title="Permanent link">&para;</a></h3>
+<p>Provide a documented or opt-in config profile for large distributed <code>boti-data</code> workloads, especially:</p>
+<ul>
+<li><code>dataframe.shuffle.method = "tasks"</code></li>
+<li>conservative comm timeout defaults</li>
+<li>memory spill / pause thresholds</li>
+<li>large-graph warning thresholds</li>
+</ul>
+<p>This is especially relevant for:</p>
+<ul>
+<li><code>indexed_left_join(...)</code></li>
+<li>partitioned SQL loads feeding downstream joins</li>
+<li>large parquet scans followed by repartition or groupby</li>
+</ul>
+<h3 id="likely-touchpoints_4">Likely touchpoints<a class="headerlink" href="#likely-touchpoints_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>../boti-dask/src/boti_dask/resilience.py</code></li>
+<li>docs and example notebooks</li>
+</ul>
+<h3 id="value_4">Value<a class="headerlink" href="#value_4" title="Permanent link">&para;</a></h3>
+<p>Medium-high. Likely the simplest way to reduce operational failures without invasive code changes.</p>
+<h2 id="6-resilient-emptiness-and-sampling-helpers">6. Resilient emptiness and sampling helpers<a class="headerlink" href="#6-resilient-emptiness-and-sampling-helpers" title="Permanent link">&para;</a></h2>
+<h3 id="problem_5">Problem<a class="headerlink" href="#problem_5" title="Permanent link">&para;</a></h3>
+<p>Big Dask frames are often probed for:</p>
+<ul>
+<li>“is this empty?”</li>
+<li>“give me representative unique values”</li>
+<li>“can I cheaply inspect a few results before computing all of it?”</li>
+</ul>
+<p>Naive implementations can be either too expensive or fragile.</p>
+<h3 id="use-case_5">Use case<a class="headerlink" href="#use-case_5" title="Permanent link">&para;</a></h3>
+<p>Add small utilities such as:</p>
+<ul>
+<li><code>dask_is_probably_empty(frame)</code></li>
+<li><code>dask_is_empty(frame, sample=4, client=None)</code></li>
+<li><code>extract_unique_values(frame, *columns, limit=...)</code></li>
+</ul>
+<p>These would be useful in:</p>
+<ul>
+<li>UI/data validation layers built on top of <code>DataHelper</code></li>
+<li>diagnostics notebooks</li>
+<li>data quality checks before exporting or joining</li>
+</ul>
+<h3 id="likely-touchpoints_5">Likely touchpoints<a class="headerlink" href="#likely-touchpoints_5" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>../boti-dask/src/boti_dask/resilience.py</code></li>
+</ul>
+<h3 id="value_5">Value<a class="headerlink" href="#value_5" title="Permanent link">&para;</a></h3>
+<p>Medium. Useful, but secondary to resilient compute/persist/wait.</p>
+<h2 id="7-remote-cluster-bootstrap-and-worker-code-deployment">7. Remote-cluster bootstrap and worker code deployment<a class="headerlink" href="#7-remote-cluster-bootstrap-and-worker-code-deployment" title="Permanent link">&para;</a></h2>
+<h3 id="problem_6">Problem<a class="headerlink" href="#problem_6" title="Permanent link">&para;</a></h3>
+<p><code>sibi_flux</code> includes automatic package zip/upload to workers and registry-driven cluster healing. That is useful when workers do not automatically have the same Python package available.</p>
+<h3 id="use-case-in-boti-data">Use case in <code>boti-data</code><a class="headerlink" href="#use-case-in-boti-data" title="Permanent link">&para;</a></h3>
+<p>Limited. <code>boti-data</code> is primarily a library, and worker environment packaging is usually better solved through deployment tooling, container images, or environment management rather than runtime zip upload.</p>
+<h3 id="value_6">Value<a class="headerlink" href="#value_6" title="Permanent link">&para;</a></h3>
+<p>Low for near-term adoption. This is probably <strong>not</strong> the first place to invest.</p>
+<h2 id="recommended-adoption-order">Recommended adoption order<a class="headerlink" href="#recommended-adoption-order" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Priority</th>
+<th>Candidate</th>
+<th>Why it fits <code>boti-data</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>resilient <code>compute/persist/wait</code> wrappers</td>
+<td>protects the most expensive distributed actions with minimal API surface</td>
+</tr>
+<tr>
+<td>2</td>
+<td>join-boundary resilience</td>
+<td>directly improves <code>indexed_left_join(...)</code> workflows</td>
+</tr>
+<tr>
+<td>3</td>
+<td>dry-run graph inspection</td>
+<td>complements existing diagnostics cleanly</td>
+</tr>
+<tr>
+<td>4</td>
+<td>opt-in Dask config profile</td>
+<td>low-cost operational improvement</td>
+</tr>
+<tr>
+<td>5</td>
+<td>emptiness/unique-value helpers</td>
+<td>useful utilities for notebook and validation workflows</td>
+</tr>
+<tr>
+<td>6</td>
+<td>shared singleton session mode</td>
+<td>helpful, but should stay optional</td>
+</tr>
+<tr>
+<td>7</td>
+<td>registry/watchdog + code deployment</td>
+<td>operationally heavier than current repo needs</td>
+</tr>
+</tbody>
+</table>
+<h2 id="design-guidance-for-boti-data">Design guidance for <code>boti-data</code><a class="headerlink" href="#design-guidance-for-boti-data" title="Permanent link">&para;</a></h2>
+<h2 id="prefer-wrappers-over-automatic-magic">Prefer wrappers over automatic magic<a class="headerlink" href="#prefer-wrappers-over-automatic-magic" title="Permanent link">&para;</a></h2>
+<p>The reviewed packages are comfortable with hidden healing and shared global state. <code>boti-data</code> currently favors more explicit control. The best fit is:</p>
+<ul>
+<li>explicit session ownership by default</li>
+<li>opt-in resilience helpers</li>
+<li>strong diagnostics when healing or retry happens</li>
+<li>no silent fallback from distributed DataFrame graphs to local execution</li>
+</ul>
+<h2 id="keep-dataframe-safety-as-an-invariant">Keep DataFrame safety as an invariant<a class="headerlink" href="#keep-dataframe-safety-as-an-invariant" title="Permanent link">&para;</a></h2>
+<p>One of the best ideas in both reviewed modules is the rule:</p>
+<blockquote>
+<p>if a Dask DataFrame graph loses its client or worker dependencies, do not pretend local compute is a safe fallback.</p>
+</blockquote>
+<p>That rule aligns well with <code>boti-data</code>’s big-data positioning and should be preserved if resilience helpers are added.</p>
+<h2 id="reuse-existing-diagnostics-surface">Reuse existing diagnostics surface<a class="headerlink" href="#reuse-existing-diagnostics-surface" title="Permanent link">&para;</a></h2>
+<p><code>boti-data</code> already has:</p>
+<ul>
+<li><code>current_client_summary()</code></li>
+<li><code>describe_frame(...)</code></li>
+<li>gateway load diagnostics</li>
+<li>join diagnostics</li>
+</ul>
+<p>New resilience features should plug into that existing logging model instead of creating a parallel system.</p>
+<h2 id="concrete-near-term-proposal">Concrete near-term proposal<a class="headerlink" href="#concrete-near-term-proposal" title="Permanent link">&para;</a></h2>
+<p>The first increment was implemented in <code>boti_dask</code>, which now provides:</p>
+<ol>
+<li><code>safe_compute</code></li>
+<li><code>safe_persist</code></li>
+<li><code>safe_wait</code></li>
+<li><code>inspect_graph</code></li>
+<li>an opt-in Dask config helper for large shuffles</li>
+</ol>
+<p>Then wire those helpers into:</p>
+<ul>
+<li><code>indexed_left_join(..., persist=True, diagnostics=True)</code></li>
+<li>large <code>DataGateway</code> distributed loads when <code>diagnostics=True</code></li>
+<li>examples and docs for notebook / ETL usage</li>
+</ul>
+<p>This would capture most of the practical value from the reviewed modules without importing the heaviest parts of their lifecycle model.</p>
+<h2 id="final-assessment">Final assessment<a class="headerlink" href="#final-assessment" title="Permanent link">&para;</a></h2>
+<p>The reviewed modules are relevant to <code>boti-data</code>, but <strong>not as a direct transplant</strong>.</p>
+<p>The strongest <code>boti-data</code> use cases are:</p>
+<ul>
+<li>resilient compute/persist/wait around large Dask frames</li>
+<li>safer distributed join workflows</li>
+<li>graph inspection before expensive execution</li>
+<li>documented Dask hardening defaults for shuffle-heavy analytics</li>
+</ul>
+<p>The weakest use cases are:</p>
+<ul>
+<li>full registry-based cluster lifecycle management</li>
+<li>automatic worker code deployment</li>
+</ul>
+<p>In short, <code>boti-data</code> should borrow the <strong>execution-safety and observability ideas</strong> first, while keeping cluster ownership explicit and lightweight.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      boti-data contributors
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "search.suggest"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

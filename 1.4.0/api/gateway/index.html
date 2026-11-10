@@ -1,0 +1,5073 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Data access and transformation layer of the Boti ecosystem">
+      
+      
+      
+        <link rel="canonical" href="https://lvalverdeb.github.io/boti-data/1.4.0/api/gateway/">
+      
+      
+        <link rel="prev" href="../db/">
+      
+      
+        <link rel="next" href="../parquet/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+    
+    
+      
+        <title>Gateway and helper - boti-data</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#gateway-and-helper" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="boti-data" class="md-header__button md-logo" aria-label="boti-data" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            boti-data
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Gateway and helper
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/lvalverdeb/boti-data" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lvalverdeb/boti-data
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="boti-data" class="md-nav__button md-logo" aria-label="boti-data" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    boti-data
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/lvalverdeb/boti-data" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lvalverdeb/boti-data
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/sql-loads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SQL loads
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/parquet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parquet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/sinks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sinks and enrichment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/incremental-loads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Incremental loads
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/distributed/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Distributed loading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/datacube/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datacube backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics and tracing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../db/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database access
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gateway and helper
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gateway and helper
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datagatewaycore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.gateway.core
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DataGateway
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="DataGateway">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.load_executor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        load_executor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.logger" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        logger
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.from_config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        from_config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.preview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        preview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.apreview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        apreview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.describe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        describe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.adescribe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        adescribe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.load" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        load
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.iter_batches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        iter_batches
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.aload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        aload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.load_period" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        load_period
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.aload_period" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        aload_period
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.semi_join" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        semi_join
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.asemi_join" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        asemi_join
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datagatewayrequests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.gateway.requests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.DataFrameParams" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DataFrameParams
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.DataFrameOptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DataFrameOptions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.NormalizedFilters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NormalizedFilters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.ConfiguredRequest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ConfiguredRequest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.PartitionedLoadConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PartitionedLoadConfig
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.SqlLoadRequest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlLoadRequest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.ParquetLoadRequest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ParquetLoadRequest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.TableDescription" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TableDescription
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datagatewaypolicies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.gateway.policies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datahelper" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.helper
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.helper.DataHelper" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DataHelper
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_dataconnection_catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.connection_catalog
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.connection_catalog.ConnectionCatalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ConnectionCatalog
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.connection_catalog.S3Catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        S3Catalog
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datafield_map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.field_map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FieldMap
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="FieldMap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap.to_db" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        to_db
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap.to_semantic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        to_semantic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap.translate_filters_to_db" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        translate_filters_to_db
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap.select_db_columns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        select_db_columns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap.rename_dataframe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        rename_dataframe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap.rename_table" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        rename_table
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap.apply_column_names" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        apply_column_names
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_dataschema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.schema.SchemaValidationError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SchemaValidationError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.schema.normalize_dtype_alias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        normalize_dtype_alias
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.schema.normalize_schema_map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        normalize_schema_map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.schema.infer_schema_map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        infer_schema_map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.schema.apply_schema_map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        apply_schema_map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.schema.validate_schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        validate_schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.schema.align_frames_for_join" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        align_frames_for_join
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datajoins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.joins
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.joins.PersistOptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PersistOptions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.joins.left_join_frames" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        left_join_frames
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.joins.indexed_left_join" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        indexed_left_join
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadatasethybrid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.dataset.hybrid
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.dataset.hybrid.HybridDataset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HybridDataset
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../parquet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parquet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipelines and sinks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../watermark/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Watermarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../enrichment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enrichment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datacube/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datacube
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Proposals and reviews
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Proposals and reviews
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/BIG_DATA_READYNESS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Big data readiness
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/DASK_RESILIENCE_USE_CASES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dask resilience use cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/DATACUBE_CONTRACT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datacube contract
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/DEPLOYMENT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/IN_CLAUSE_RESPONSE_TIME_PROPOSAL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    IN-clause response time
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/PYARROW_INTEGRATION_PROPOSAL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PyArrow integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../proposals/SECURITY_HARDENING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security hardening
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datagatewaycore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.gateway.core
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DataGateway
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="DataGateway">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.load_executor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        load_executor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.logger" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        logger
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.from_config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        from_config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.preview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        preview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.apreview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        apreview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.describe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        describe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.adescribe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        adescribe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.load" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        load
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.iter_batches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        iter_batches
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.aload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        aload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.load_period" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        load_period
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.aload_period" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        aload_period
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.semi_join" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        semi_join
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.gateway.core.DataGateway.asemi_join" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        asemi_join
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datagatewayrequests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.gateway.requests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.DataFrameParams" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DataFrameParams
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.DataFrameOptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DataFrameOptions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.NormalizedFilters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NormalizedFilters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.ConfiguredRequest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ConfiguredRequest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.PartitionedLoadConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PartitionedLoadConfig
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.SqlLoadRequest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqlLoadRequest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.ParquetLoadRequest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ParquetLoadRequest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.gateway.requests.TableDescription" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TableDescription
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datagatewaypolicies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.gateway.policies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datahelper" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.helper
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.helper.DataHelper" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DataHelper
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_dataconnection_catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.connection_catalog
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.connection_catalog.ConnectionCatalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ConnectionCatalog
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.connection_catalog.S3Catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        S3Catalog
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datafield_map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.field_map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FieldMap
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="FieldMap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap.to_db" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        to_db
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap.to_semantic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        to_semantic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap.translate_filters_to_db" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        translate_filters_to_db
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap.select_db_columns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        select_db_columns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap.rename_dataframe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        rename_dataframe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap.rename_table" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        rename_table
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boti_data.field_map.FieldMap.apply_column_names" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        apply_column_names
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_dataschema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.schema.SchemaValidationError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SchemaValidationError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.schema.normalize_dtype_alias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        normalize_dtype_alias
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.schema.normalize_schema_map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        normalize_schema_map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.schema.infer_schema_map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        infer_schema_map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.schema.apply_schema_map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        apply_schema_map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.schema.validate_schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        validate_schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.schema.align_frames_for_join" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        align_frames_for_join
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datajoins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.joins
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.joins.PersistOptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PersistOptions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.joins.left_join_frames" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        left_join_frames
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.joins.indexed_left_join" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        indexed_left_join
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_datadatasethybrid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        boti_data.dataset.hybrid
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boti_data.dataset.hybrid.HybridDataset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HybridDataset
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="gateway-and-helper">Gateway and helper<a class="headerlink" href="#gateway-and-helper" title="Permanent link">&para;</a></h1>
+<p><code>DataGateway</code>, the request models, <code>DataHelper</code> and its engine-bound views.</p>
+<h2 id="boti_datagatewaycore"><code>boti_data.gateway.core</code><a class="headerlink" href="#boti_datagatewaycore" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+        <p>Dask-first gateway over existing boti_data backend resources.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.gateway.core.DataGateway" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">DataGateway</span>
+
+
+<a href="#boti_data.gateway.core.DataGateway" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">DataGateway</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">BackendConfig</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">field_map</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">table</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">sticky_filters</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">exclude</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">df_params</span><span class="p">:</span> <span class="n">DataFrameParams</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">df_options</span><span class="p">:</span> <span class="n">DataFrameOptions</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">fs</span><span class="p">:</span> <span class="n">AbstractFileSystem</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">fs_factory</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">raw_sql_policy</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">policies</span><span class="p">:</span> <span class="n">GatewayPolicies</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">strict_filter_validation</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">allowed_filter_fields</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">require_datacube_request_validator</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="boti.core.lifecycle_pickle.PicklableLifecycleCoreMixin">PicklableLifecycleCoreMixin</span></code>, <code><span title="boti.core.lifecycle.LifecycleCore">LifecycleCore</span></code></p>
+
+
+
+        <p>Dask-first gateway that delegates to existing backend resources.</p>
+<p>There are two usage modes:</p>
+<p><strong>Structured mode</strong> (default)
+    Pass explicit <code>statement</code>, <code>model</code>, <code>filters</code>, etc. to
+    :meth:<code>load</code> / :meth:<code>aload</code> exactly as before.</p>
+<p><strong>Configured mode</strong>
+    Set <code>table=</code> at construction time.  All keyword arguments passed
+    to :meth:<code>load</code> / :meth:<code>aload</code> that are <strong>not</strong> control keywords are
+    treated as runtime filter values and merged with <code>sticky_filters</code>.</p>
+<pre><code>All filter keys and ``fieldnames`` are always expressed as **semantic
+names** (the right-hand side of *field_map*).  When a ``field_map`` is
+provided the gateway translates them to DB column names before the query
+and renames results back to semantic names on return.  When no
+``field_map`` is given the DB is assumed to already use semantic names
+and no translation is performed.
+
+Pass ``exclude=True`` to invert the combined filter — the query returns
+all rows that do **not** match the specified conditions (``WHERE NOT
+(condition1 AND condition2 AND ...)``).
+
+Example::
+
+    gw = DataGateway(
+        SqlDatabaseConfig(connection_url=SecretStr(db_url)),
+        table="asm_tracking_productos",
+        field_map=product_fields,      # present → DB has legacy names
+        sticky_filters={"product_type_id": 1},
+        exclude=True,                  # return rows where type != 1
+    )
+    df = await gw.aload(global_track_id=1)   # returns Dask DataFrame
+    df = df.compute()
+</code></pre>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="boti_data.gateway.core.DataGateway.load_executor" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">load_executor</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#boti_data.gateway.core.DataGateway.load_executor" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="n">load_executor</span><span class="p">:</span> <span class="n">Any</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>The load orchestration layer; used by streaming and diagnostics helpers.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="boti_data.gateway.core.DataGateway.logger" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">logger</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#boti_data.gateway.core.DataGateway.logger" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="n">logger</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>LifecycleCore's error-logging and GC leak-warning read this.</p>
+<p>Overrides LifecycleCore's plain <code>logger = None</code> class default to
+reuse whichever backend resource's logger is already configured,
+rather than defaulting to no logger at all.</p>
+
+    </div>
+
+</div>
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.gateway.core.DataGateway.from_config" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">from_config</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small>
+  </span>
+
+<a href="#boti_data.gateway.core.DataGateway.from_config" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">from_config</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">overrides</span><span class="p">:</span> <span class="n">Any</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DataGateway</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Build a :class:<code>DataGateway</code> from a legacy-style config dict.</p>
+<p>Accepts the same keys that <code>DfHelper</code> used to accept::</p>
+<pre><code>DataGateway.from_config({
+    "backend": "sqlalchemy",
+    "connection_url": db_url,
+    "table": "asm_tracking_productos",
+    "field_map": product_fields,
+    "sticky_filters": {"product_type_id": 1},
+    "df_params": {
+        "fieldnames": ("id", "process_track_id"),
+        "column_names": ["id", "process_track_id_x"],
+        "chunk_size": 50000,
+        "index_col": "id",
+    },
+    "df_options": {
+        "sort_field": "global_track_id",
+        "duplicate_expr": ["id"],
+        "duplicate_keep": "last",
+    },
+})
+</code></pre>
+<p>Translation is automatically enabled whenever a <code>field_map</code> is
+provided.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.gateway.core.DataGateway.preview" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">preview</span>
+
+
+<a href="#boti_data.gateway.core.DataGateway.preview" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">preview</span><span class="p">(</span>
+    <span class="n">statement</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">model</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span>
+    <span class="n">npartitions</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">options</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Load a preview (first <em>n</em> rows) as a pandas DataFrame.</p>
+<p>Leverages lazy loading + <code>safe_head</code> so a distributed client is used
+when one is active.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.gateway.core.DataGateway.apreview" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">apreview</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#boti_data.gateway.core.DataGateway.apreview" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">apreview</span><span class="p">(</span>
+    <span class="n">statement</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">model</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span>
+    <span class="n">npartitions</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">options</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Async version of :meth:<code>preview</code>.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.gateway.core.DataGateway.describe" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">describe</span>
+
+
+<a href="#boti_data.gateway.core.DataGateway.describe" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">describe</span><span class="p">(</span>
+    <span class="n">table</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">row_count_limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10000</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TableDescription</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Cheaply inspect a table's schema and an approximate row count.</p>
+<p>Runs a bounded introspection query — reflecting column dtypes without
+loading any rows, then counting up to <em>row_count_limit</em> rows — instead
+of requiring callers to know to self-impose <code>limit=</code> on a full
+:meth:<code>load</code> before exploring an unfamiliar table.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>table</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>DB table name. Defaults to the table configured at
+construction time (configured mode).</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>row_count_limit</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Row count is exact up to this many rows; beyond
+it, :attr:<code>TableDescription.row_count_is_exact</code> is <code>False</code>
+and :attr:<code>TableDescription.row_count</code> reports this cap.</p>
+              </div>
+            </td>
+            <td>
+                  <code>10000</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.gateway.core.DataGateway.adescribe" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">adescribe</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#boti_data.gateway.core.DataGateway.adescribe" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">adescribe</span><span class="p">(</span>
+    <span class="n">table</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">row_count_limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10000</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TableDescription</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Async variant of :meth:<code>describe</code>.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.gateway.core.DataGateway.load" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">load</span>
+
+
+<a href="#boti_data.gateway.core.DataGateway.load" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">load</span><span class="p">(</span><span class="o">**</span><span class="n">options</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FrameResult</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Load data from the configured backend.</p>
+<p>In <strong>structured mode</strong> (no <code>table</code> set at construction) pass explicit
+<code>statement</code>, <code>model</code>, <code>filters</code>, etc.</p>
+<p>In <strong>configured mode</strong> (<code>table</code> set at construction) pass runtime
+filter values as keyword arguments.  Control keywords like <code>limit</code>,
+<code>as_pandas</code>, and <code>persist</code> are still recognised and forwarded.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>persist</code>
+            </td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>True</code> and the result is a Dask DataFrame, pin it on
+the workers with <code>.persist()</code> before returning.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>as_pandas</code>
+            </td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>True</code>, compute the result to a Pandas DataFrame.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>since</code>
+            </td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Opt-in incremental load. A watermark field name (with
+<code>watermark_store=</code> and, in structured mode, <code>watermark_source=</code>)
+or a <code>(field, store, source)</code> tuple. Rows above the stored
+watermark are loaded, the result is computed, and the watermark
+advances to the new maximum before the frame is returned.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>**options</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Filter kwargs (configured mode) or load-request fields.</p>
+              </div>
+            </td>
+            <td>
+                  <code>{}</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.gateway.core.DataGateway.iter_batches" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">iter_batches</span>
+
+
+<a href="#boti_data.gateway.core.DataGateway.iter_batches" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">iter_batches</span><span class="p">(</span><span class="o">**</span><span class="n">options</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="n">pa</span><span class="o">.</span><span class="n">RecordBatch</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Stream the load described by <code>options</code> as Arrow record batches.</p>
+<p>Accepts the same source options as :meth:<code>load</code> (<code>statement</code>/<code>model</code>/
+<code>sql</code>/<code>filters</code>/<code>columns</code>/<code>limit</code> in structured mode, filter
+kwargs in configured mode, <code>raw_filters</code>/<code>columns</code> for Parquet) plus
+<code>batch_size</code> (default 100 000 rows). The whole result is never held in
+memory: SQL reads use a server-side cursor and Parquet reads use dataset
+batches, so peak memory stays at about one batch.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.gateway.core.DataGateway.aload" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">aload</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#boti_data.gateway.core.DataGateway.aload" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">aload</span><span class="p">(</span><span class="o">**</span><span class="n">options</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FrameResult</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Async variant of :meth:<code>load</code>.</p>
+<p>Additional kwargs beyond :meth:<code>load</code>:</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>timeout</code>
+            </td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Seconds to wait for the backend load before raising
+<code>asyncio.TimeoutError</code>.  <code>None</code> means no timeout.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>chunk_size</code>
+            </td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Override for splitting massive <code>field__in</code> filter
+lists.  Defaults to <code>_DEFAULT_IN_CHUNK_SIZE</code> (900).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>in_chunk_concurrency</code>
+            </td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional cap on how many chunked <code>__in</code>
+sub-queries run at once. <code>None</code> preserves the existing
+unbounded fan-out behavior.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.gateway.core.DataGateway.load_period" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">load_period</span>
+
+
+<a href="#boti_data.gateway.core.DataGateway.load_period" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">load_period</span><span class="p">(</span>
+    <span class="n">dt_field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">start</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">end</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FrameResult</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Load rows within a date range.</p>
+<p><code>dt_field</code> is always expressed as a <strong>semantic name</strong>.  When a
+<code>field_map</code> is configured the gateway translates it to the DB column
+name automatically during the load — no manual mapping needed here.</p>
+<p>Uses direct <code>__exact</code> / <code>__gte</code> + <code>__lte</code> comparison so the
+filters work correctly for DATE, TIMESTAMP, and ISO-text columns across
+all supported databases.  If you specifically need date-part extraction
+from a full DATETIME column, pass <code>field__date__gte</code> / <code>__lte</code>
+filters directly instead.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>dt_field</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Semantic column name of the datetime/date field.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>start</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>ISO-8601 start date (inclusive).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>end</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>ISO-8601 end date (inclusive).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>**kwargs</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Forwarded to :meth:<code>load</code> as control or filter kwargs.</p>
+              </div>
+            </td>
+            <td>
+                  <code>{}</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.gateway.core.DataGateway.aload_period" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">aload_period</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#boti_data.gateway.core.DataGateway.aload_period" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">aload_period</span><span class="p">(</span>
+    <span class="n">dt_field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">start</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">end</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FrameResult</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Async variant of :meth:<code>load_period</code>.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.gateway.core.DataGateway.semi_join" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">semi_join</span>
+
+
+<a href="#boti_data.gateway.core.DataGateway.semi_join" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">semi_join</span><span class="p">(</span>
+    <span class="n">join_series</span><span class="p">:</span> <span class="n">Series</span> <span class="o">|</span> <span class="n">Series</span> <span class="o">|</span> <span class="n">Series</span><span class="p">,</span>
+    <span class="n">on</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FrameResult</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Load rows whose <em>on</em> column value appears in <em>join_series</em>.</p>
+<p>This is the primary entry point for the <strong>distributed semi-join</strong> pattern:
+callers can pass a Dask or pandas Series of key values and the gateway
+resolves it to a deduplicated list before issuing the query.</p>
+<p>Syntactic sugar for <code>load(field__in=join_series, ...)</code>.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>join_series</code>
+            </td>
+            <td>
+                  <code><span title="pandas.Series">Series</span> | <span title="dask.dataframe.Series">Series</span> | <span title="polars.Series">Series</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Pandas, Dask, or Polars Series of key values to filter by.
+Duplicate values and <code>NaN</code> are silently discarded.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>on</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Semantic column name to match against (translated through the
+<code>field_map</code> automatically when one is configured).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>**kwargs</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Additional filter / control kwargs forwarded to
+:meth:<code>load</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>{}</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.gateway.core.DataGateway.asemi_join" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">asemi_join</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#boti_data.gateway.core.DataGateway.asemi_join" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">asemi_join</span><span class="p">(</span>
+    <span class="n">join_series</span><span class="p">:</span> <span class="n">Series</span> <span class="o">|</span> <span class="n">Series</span> <span class="o">|</span> <span class="n">Series</span><span class="p">,</span>
+    <span class="n">on</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FrameResult</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Async variant of :meth:<code>semi_join</code>.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datagatewayrequests"><code>boti_data.gateway.requests</code><a class="headerlink" href="#boti_datagatewayrequests" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.gateway.requests.DataFrameParams" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">DataFrameParams</span>
+
+
+<a href="#boti_data.gateway.requests.DataFrameParams" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="pydantic.BaseModel">BaseModel</span></code></p>
+
+
+
+        <p>Controls column selection, load behaviour, and output shaping for configured-mode loads.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="boti_data.gateway.requests.DataFrameParams.fieldnames">fieldnames</span></code></td>
+            <td>
+                  <code><span title="tuple">tuple</span>[<span title="str">str</span>, ...] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Semantic column names to SELECT from the table.  When set,
+only these columns are fetched (translated to DB column names before
+the query is built).  <code>None</code> means fetch all columns.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="boti_data.gateway.requests.DataFrameParams.column_names">column_names</span></code></td>
+            <td>
+                  <code><span title="list">list</span>[<span title="str">str</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Final positional column rename applied <em>after</em> the
+field_map semantic rename.  Length must match the number of columns
+in the result.  <code>None</code> means no override.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="boti_data.gateway.requests.DataFrameParams.chunk_size">chunk_size</span></code></td>
+            <td>
+                  <code><span title="int">int</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Partition/chunk size passed to the SQL partitioned loader.
+Overrides the runtime <code>chunk_size</code> kwarg when set here.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="boti_data.gateway.requests.DataFrameParams.index_col">index_col</span></code></td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Column name (semantic) to promote as the DataFrame index
+after load.  Applied after field_map rename.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="boti_data.gateway.requests.DataFrameParams.datetime_index">datetime_index</span></code></td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Column name (semantic) to parse as datetime and set
+as the DataFrame index.  Takes precedence over <code>index_col</code> when
+both are set.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="boti_data.gateway.requests.DataFrameParams.return_type">return_type</span></code></td>
+            <td>
+                  <code><span title="boti_data.gateway.requests.ReturnType">ReturnType</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Output format — <code>'dask'</code> (default), <code>'arrow'</code> for
+PyArrow Table, <code>'pandas'</code> for an eager pandas DataFrame,
+<code>'polars'</code> for an eager Polars DataFrame, or <code>'auto'</code> as
+legacy shorthand for pandas-on-small / Dask-on-large behaviour.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="boti_data.gateway.requests.DataFrameParams.execution_mode">execution_mode</span></code></td>
+            <td>
+                  <code><span title="boti_data.gateway.requests.ExecutionMode">ExecutionMode</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Fetch strategy — <code>'lazy'</code> for partitioned/Dask-first
+execution, <code>'eager'</code> for direct eager reads, or <code>'auto'</code> to
+choose a sensible fetch path from the requested result type.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.gateway.requests.DataFrameOptions" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">DataFrameOptions</span>
+
+
+<a href="#boti_data.gateway.requests.DataFrameOptions" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="pydantic.BaseModel">BaseModel</span></code></p>
+
+
+
+        <p>Post-load DataFrame transformations applied in configured-mode gateway loads.</p>
+<p>Operations are applied in order: sort → dedup → groupby.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="boti_data.gateway.requests.DataFrameOptions.sort_field">sort_field</span></code></td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Column name (semantic) to sort the result by.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="boti_data.gateway.requests.DataFrameOptions.duplicate_expr">duplicate_expr</span></code></td>
+            <td>
+                  <code><span title="typing.Union">Union</span>[<span title="str">str</span>, <span title="list">list</span>[<span title="str">str</span>]] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Column(s) used as the subset for <code>drop_duplicates</code>.
+<code>None</code> means use all columns.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="boti_data.gateway.requests.DataFrameOptions.duplicate_keep">duplicate_keep</span></code></td>
+            <td>
+                  <code><span title="typing.Union">Union</span>[<span title="typing.Literal">Literal</span>[&#39;first&#39;, &#39;last&#39;], <span title="bool">bool</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Which duplicate to keep — <code>'first'</code>, <code>'last'</code>,
+or <code>False</code> to drop all duplicates.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="boti_data.gateway.requests.DataFrameOptions.group_by_expr">group_by_expr</span></code></td>
+            <td>
+                  <code><span title="typing.Union">Union</span>[<span title="str">str</span>, <span title="list">list</span>[<span title="str">str</span>]] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Column(s) to group by.  Requires <code>group_expr</code>.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="boti_data.gateway.requests.DataFrameOptions.group_expr">group_expr</span></code></td>
+            <td>
+                  <code><span title="typing.Union">Union</span>[<span title="str">str</span>, <span title="dict">dict</span>[<span title="str">str</span>, <span title="str">str</span>]] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Aggregation mapping passed to <code>.agg()</code>.
+e.g. <code>{"amount": "sum", "count": "first"}</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.gateway.requests.NormalizedFilters" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">NormalizedFilters</span>
+
+
+<a href="#boti_data.gateway.requests.NormalizedFilters" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="pydantic.BaseModel">BaseModel</span></code></p>
+
+
+
+        <p>Result of normalizing configured-mode filters into control + filter buckets.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.gateway.requests.ConfiguredRequest" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">ConfiguredRequest</span>
+
+
+<a href="#boti_data.gateway.requests.ConfiguredRequest" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="pydantic.BaseModel">BaseModel</span></code></p>
+
+
+
+        <p>Typed result of building a configured-mode SQL request.</p>
+<p>Carries the reflected SA model, prepared statement, DB-translated filters,
+control kwargs, and resolved fieldnames so callers don't need to recompute
+fieldnames from the control dict.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.gateway.requests.PartitionedLoadConfig" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">PartitionedLoadConfig</span>
+
+
+<a href="#boti_data.gateway.requests.PartitionedLoadConfig" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="pydantic.BaseModel">BaseModel</span></code></p>
+
+
+
+        <p>Typed configuration for building a partitioned SQL load request.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.gateway.requests.SqlLoadRequest" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SqlLoadRequest</span>
+
+
+<a href="#boti_data.gateway.requests.SqlLoadRequest" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="pydantic.BaseModel">BaseModel</span></code></p>
+
+
+
+        <p>Validated eager load request for SQL-backed gateway usage.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.gateway.requests.ParquetLoadRequest" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">ParquetLoadRequest</span>
+
+
+<a href="#boti_data.gateway.requests.ParquetLoadRequest" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="pydantic.BaseModel">BaseModel</span></code></p>
+
+
+
+        <p>Validated load request for parquet-backed gateway usage.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.gateway.requests.TableDescription" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">TableDescription</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#boti_data.gateway.requests.TableDescription" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">TableDescription</span><span class="p">(</span>
+    <span class="n">table</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">columns</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+    <span class="n">row_count</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">row_count_is_exact</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Result of :meth:<code>~boti_data.gateway.core.DataGateway.describe</code>.</p>
+<p><code>row_count</code> is exact when <code>row_count_is_exact</code> is <code>True</code>; otherwise
+it reports the <code>row_count_limit</code> cap that was hit, meaning "at least
+this many rows" rather than the real total.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datagatewaypolicies"><code>boti_data.gateway.policies</code><a class="headerlink" href="#boti_datagatewaypolicies" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datahelper"><code>boti_data.helper</code><a class="headerlink" href="#boti_datahelper" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.helper.DataHelper" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">DataHelper</span>
+
+
+<a href="#boti_data.helper.DataHelper" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">DataHelper</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">DataGateway</span>
+    <span class="o">|</span> <span class="n">BackendConfig</span>
+    <span class="o">|</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
+    <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">overrides</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="boti.core.lifecycle_pickle.PicklableLifecycleCoreMixin">PicklableLifecycleCoreMixin</span></code>, <code><span title="boti.core.lifecycle.LifecycleCore">LifecycleCore</span></code></p>
+
+
+
+        <p>Thin compatibility facade over :class:<code>DataGateway</code> and related helpers.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_dataconnection_catalog"><code>boti_data.connection_catalog</code><a class="headerlink" href="#boti_dataconnection_catalog" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+        <p>Typed catalog for named SQL and filesystem connection profiles.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.connection_catalog.ConnectionCatalog" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">ConnectionCatalog</span>
+
+
+<a href="#boti_data.connection_catalog.ConnectionCatalog" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">ConnectionCatalog</span><span class="p">()</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Named registry for typed connection profiles and runtime adapters.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.connection_catalog.S3Catalog" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">S3Catalog</span>
+
+
+<a href="#boti_data.connection_catalog.S3Catalog" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">S3Catalog</span><span class="p">(</span>
+    <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">env_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span> <span class="o">=</span> <span class="s2">&quot;.env&quot;</span><span class="p">,</span>
+    <span class="n">max_attempts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+    <span class="n">retry_base_delay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">overrides</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Local helper for S3-compatible servers configured from a prefixed .env block.</p>
+<p>Expected keys are PREFIX + field_name.upper(), for example:</p>
+<pre><code>MINIO_FS_TYPE=s3
+MINIO_FS_PATH=my-bucket/raw/events
+MINIO_FS_KEY=...
+MINIO_FS_SECRET=...
+MINIO_FS_ENDPOINT=https://minio.local:9000
+MINIO_FS_REGION=us-east-1
+MINIO_FS_VERIFY_SSL=false
+</code></pre>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datafield_map"><code>boti_data.field_map</code><a class="headerlink" href="#boti_datafield_map" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+        <p>Bidirectional translator between raw DB column names and clean semantic names.</p>
+
+
+<details class="field_map-convention" open>
+  <summary>{db_column_name: semantic_name}</summary>
+  <p>e.g. {'id_tipo_producto': 'product_type_id'}</p>
+</details>
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.field_map.FieldMap" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">FieldMap</span>
+
+
+<a href="#boti_data.field_map.FieldMap" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">FieldMap</span><span class="p">(</span><span class="n">mapping</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="n">strict</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Translates filter keys, selects columns, and renames DataFrame output
+between raw database column names and application-level semantic names.</p>
+<p>The mapping direction is always  db_column -&gt; semantic_name  (same as
+Django-style field_map / DfHelper convention).</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.field_map.FieldMap.to_db" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">to_db</span>
+
+
+<a href="#boti_data.field_map.FieldMap.to_db" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">to_db</span><span class="p">(</span><span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Translate a semantic name to the DB column name.</p>
+<p>Returns <em>key</em> unchanged when it is not a known semantic name,
+so unknown keys (or already-DB keys) pass through safely.
+When <em>strict</em> mode is enabled, raises <code>KeyError</code> for unknown keys.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.field_map.FieldMap.to_semantic" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">to_semantic</span>
+
+
+<a href="#boti_data.field_map.FieldMap.to_semantic" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">to_semantic</span><span class="p">(</span><span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Translate a DB column name to its semantic name.</p>
+<p>Returns <em>key</em> unchanged when the column has no entry in the map.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.field_map.FieldMap.translate_filters_to_db" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">translate_filters_to_db</span>
+
+
+<a href="#boti_data.field_map.FieldMap.translate_filters_to_db" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">translate_filters_to_db</span><span class="p">(</span>
+    <span class="n">filters</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">input_keys_are</span><span class="p">:</span> <span class="n">InputKeyMode</span> <span class="o">=</span> <span class="s2">&quot;semantic&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Return a copy of <em>filters</em> with all field keys translated to DB column names.</p>
+<p>Handles:
+- Nested <code>$and</code> / <code>$or</code> / <code>$not</code> operators (recursively)
+- <code>field__op</code> and <code>field__casting__op</code> key syntax — only the
+  leading field segment is translated; operator suffixes are preserved</p>
+<p>When <code>input_keys_are="db"</code> the dict is returned as-is (no translation
+needed; the keys are already DB column names).</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.field_map.FieldMap.select_db_columns" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">select_db_columns</span>
+
+
+<a href="#boti_data.field_map.FieldMap.select_db_columns" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">select_db_columns</span><span class="p">(</span>
+    <span class="n">semantic_names</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Convert a list/tuple of semantic column names to DB column names.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.field_map.FieldMap.rename_dataframe" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">rename_dataframe</span>
+
+
+<a href="#boti_data.field_map.FieldMap.rename_dataframe" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">rename_dataframe</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Rename DB column names to semantic names in the output DataFrame.</p>
+<p>Only columns present in <em>df</em> are renamed; extras in the map are ignored.
+Works with both pandas and Dask DataFrames.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.field_map.FieldMap.rename_table" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">rename_table</span>
+
+
+<a href="#boti_data.field_map.FieldMap.rename_table" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">rename_table</span><span class="p">(</span><span class="n">table</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Rename DB column names to semantic names in a PyArrow Table.</p>
+<p>Uses <code>table.rename_columns()</code> which is O(1) — no data movement.
+Only columns present in <em>table</em> are renamed.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="boti_data.field_map.FieldMap.apply_column_names" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">apply_column_names</span>
+
+
+<a href="#boti_data.field_map.FieldMap.apply_column_names" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">apply_column_names</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">column_names</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Positionally rename all output columns via an explicit list.</p>
+<p>Useful when the consumer wants names that differ from both the DB
+and semantic conventions.  <code>column_names</code> must cover every column
+that is currently in <em>df</em>.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_dataschema"><code>boti_data.schema</code><a class="headerlink" href="#boti_dataschema" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.schema.SchemaValidationError" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SchemaValidationError</span>
+
+
+<a href="#boti_data.schema.SchemaValidationError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="TypeError">TypeError</span></code></p>
+
+
+
+        <p>Raised when a DataFrame does not satisfy an expected schema contract.</p>
+
+
+
+
+
+
+
+
+
+    </div>
+
+</div>
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="boti_data.schema.normalize_dtype_alias" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">normalize_dtype_alias</span>
+
+
+<a href="#boti_data.schema.normalize_dtype_alias" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">normalize_dtype_alias</span><span class="p">(</span><span class="n">dtype</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Normalize pandas/Dask/PyArrow dtype strings to a canonical comparison form.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="boti_data.schema.normalize_schema_map" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">normalize_schema_map</span>
+
+
+<a href="#boti_data.schema.normalize_schema_map" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">normalize_schema_map</span><span class="p">(</span>
+    <span class="n">schema_map</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Normalize an expected schema map to the canonical dtype alias form.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="boti_data.schema.infer_schema_map" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">infer_schema_map</span>
+
+
+<a href="#boti_data.schema.infer_schema_map" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">infer_schema_map</span><span class="p">(</span>
+    <span class="n">dataframe</span><span class="p">:</span> <span class="n">DataFrameLike</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">columns</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Infer the normalized dtype map for the given DataFrame.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="boti_data.schema.apply_schema_map" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">apply_schema_map</span>
+
+
+<a href="#boti_data.schema.apply_schema_map" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">apply_schema_map</span><span class="p">(</span>
+    <span class="n">dataframe</span><span class="p">:</span> <span class="n">DataFrameLike</span><span class="p">,</span>
+    <span class="n">schema_map</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">require_columns</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">use_arrow</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DataFrameLike</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Cast the provided DataFrame columns to a canonical schema.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="boti_data.schema.validate_schema" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">validate_schema</span>
+
+
+<a href="#boti_data.schema.validate_schema" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">validate_schema</span><span class="p">(</span>
+    <span class="n">dataframe</span><span class="p">:</span> <span class="n">DataFrameLike</span><span class="p">,</span>
+    <span class="n">expected_schema_map</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">require_columns</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Validate that the current DataFrame dtypes match the expected schema.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="boti_data.schema.align_frames_for_join" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">align_frames_for_join</span>
+
+
+<a href="#boti_data.schema.align_frames_for_join" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">align_frames_for_join</span><span class="p">(</span>
+    <span class="n">left</span><span class="p">:</span> <span class="n">DataFrameLike</span><span class="p">,</span>
+    <span class="n">right</span><span class="p">:</span> <span class="n">DataFrameLike</span><span class="p">,</span>
+    <span class="n">join_schema_map</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">DataFrameLike</span><span class="p">,</span> <span class="n">DataFrameLike</span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Normalize and validate both DataFrames against a shared join-key schema.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datajoins"><code>boti_data.joins</code><a class="headerlink" href="#boti_datajoins" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.joins.PersistOptions" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">PersistOptions</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#boti_data.joins.PersistOptions" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">PersistOptions</span><span class="p">(</span>
+    <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">persist</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">dry_run</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">resilient</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">logger</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Shared persist/dry-run/resilient policy for _safe_persist_side()'s callers.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="boti_data.joins.left_join_frames" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">left_join_frames</span>
+
+
+<a href="#boti_data.joins.left_join_frames" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">left_join_frames</span><span class="p">(</span>
+    <span class="n">left</span><span class="p">:</span> <span class="n">DataFrameLike</span><span class="p">,</span>
+    <span class="n">right</span><span class="p">:</span> <span class="n">DataFrameLike</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">left_on</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">right_on</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">join_schema_map</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+    <span class="n">diagnostics</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">logger</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;left_join_frames&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DataFrameLike</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Left join two frames after normalizing join-key dtypes to an explicit schema.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="boti_data.joins.indexed_left_join" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">indexed_left_join</span>
+
+
+<a href="#boti_data.joins.indexed_left_join" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">indexed_left_join</span><span class="p">(</span>
+    <span class="n">left</span><span class="p">:</span> <span class="n">DataFrameLike</span><span class="p">,</span>
+    <span class="n">right</span><span class="p">:</span> <span class="n">DataFrameLike</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">join_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">join_schema_map</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+    <span class="n">persist</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">resilient</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">dry_run</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">reset_index</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">diagnostics</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">logger</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;indexed_left_join&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DataFrameLike</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Align two frames on a join key, index them, and perform a left join.</p>
+<p>This is the preferred pattern for large Dask joins: pay the repartition/index
+cost once, persist both sides, then join on aligned indexes.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="boti_datadatasethybrid"><code>boti_data.dataset.hybrid</code><a class="headerlink" href="#boti_datadatasethybrid" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="boti_data.dataset.hybrid.HybridDataset" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">HybridDataset</span>
+
+
+<a href="#boti_data.dataset.hybrid.HybridDataset" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">HybridDataset</span><span class="p">(</span>
+    <span class="n">historical</span><span class="p">:</span> <span class="n">DataHelper</span>
+    <span class="o">|</span> <span class="n">BackendConfig</span>
+    <span class="o">|</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="n">live</span><span class="p">:</span> <span class="n">DataHelper</span> <span class="o">|</span> <span class="n">BackendConfig</span> <span class="o">|</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">date_field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">split_date</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">date</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="boti.core.lifecycle_pickle.PicklableLifecycleCoreMixin">PicklableLifecycleCoreMixin</span></code>, <code><span title="boti.core.lifecycle.LifecycleCore">LifecycleCore</span></code></p>
+
+
+
+        <p>Compose historical + live datasets behind one date-aware load API.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      boti-data contributors
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "search.suggest"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>
