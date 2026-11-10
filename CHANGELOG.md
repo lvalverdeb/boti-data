@@ -22,6 +22,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-09
+
 Targeting 1.4.0.
 
 ### Added
@@ -173,6 +175,9 @@ Low findings of the same audit:
 
 ### Changed
 
+- `boti-dask` floor raised to 1.3.0: the fetch gate relies on
+  `cluster_semaphore(strict=False)`, and the shared-session rebind and
+  primitives fixes of that release.
 - `boti` floor raised to 1.2.0: `ParquetDataResource` resolves a relative
   `parquet_storage_path` against the project root, which boti anchors there
   only from 1.2.0 (1.0.x anchored to the working directory).
@@ -208,5 +213,6 @@ Last release before this changelog was kept. Sinks honour an injected
 filesystem on remote paths and reject NUL bytes for every scheme; the
 `dataframes` extra is named in the error when its dependencies are missing.
 
-[Unreleased]: https://github.com/lvalverdeb/boti-data/compare/v1.3.11...HEAD
+[Unreleased]: https://github.com/lvalverdeb/boti-data/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/lvalverdeb/boti-data/compare/v1.3.11...v1.4.0
 [1.3.11]: https://github.com/lvalverdeb/boti-data/releases/tag/v1.3.11
